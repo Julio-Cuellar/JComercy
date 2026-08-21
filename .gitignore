@@ -50,7 +50,7 @@ DOCKER.md
 uploads/
 
 # Documentation
-documentacion/
+# JComercy architecture and product specifications are tracked.
 
 # Server and environment configs / collections
 nginx.conf
