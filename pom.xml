@@ -27,11 +27,9 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
 
-    <!--
-        Los módulos se agregarán uno por uno conforme se construyan y validen.
-        Ejemplo futuro:
-        <module>jcomercy-company-management</module>
-    -->
+    <modules>
+        <module>jcomercy-core</module>
+    </modules>
 
     <build>
         <pluginManagement>

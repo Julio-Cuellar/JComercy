@@ -1,0 +1,15 @@
+package com.jcode.jcomercy.core.errors;
+
+public enum CoreErrorCode {
+    UNAUTHORIZED,
+    FORBIDDEN,
+    NOT_FOUND,
+    INVALID_SCOPE,
+    INVALID_STATE,
+    VALIDATION_ERROR,
+    CAPACITY_EXCEEDED,
+    CONFLICT,
+    DUPLICATE_MESSAGE,
+    DEPENDENCY_UNAVAILABLE,
+    INTERNAL_ERROR
+}
