@@ -335,6 +335,10 @@ Estas operaciones necesitan una respuesta inmediata para que el Portal o el mód
 
 REST será el contrato de entrada para clientes externos, como el Portal Web o una aplicación móvil. Entre módulos que compartan el mismo despliegue se preferirá una interfaz de aplicación interna; si posteriormente se separan como servicios, podrá exponerse mediante REST.
 
+GraphQL podrá utilizarse sobre estos contratos para consultas compuestas o pantallas que requieran seleccionar campos variables. No será propietario de datos ni accederá directamente a esquemas.
+
+WebSockets se utilizará para notificar cambios en tiempo real, como activación de sucursales, cambios de permisos, estados de suscripción o notificaciones del Portal. El mensaje WebSocket será una proyección de un evento autorizado; no sustituirá la persistencia ni el bus de eventos.
+
 ### Operaciones por bus de eventos
 
 Todos los eventos del diagrama pasan por el bus, agrupados así:

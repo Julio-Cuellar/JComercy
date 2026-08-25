@@ -72,6 +72,16 @@ JComercy/
 - El núcleo no dependerá de Clinerya.
 - Clinerya podrá depender de Company Management, Customers, Billing y Notifications mediante contratos.
 
+## 5.1 Transportes de comunicación
+
+La plataforma utilizará el transporte adecuado según el requisito:
+
+- **REST:** APIs operativas, comandos, consultas simples e integraciones externas.
+- **GraphQL:** consultas compuestas y vistas que requieran selección flexible de campos.
+- **WebSockets:** notificaciones y actualizaciones en tiempo real.
+
+Los transportes serán implementados por las capas de aplicación e infraestructura. No conceden acceso directo a esquemas ni reemplazan los contratos y eventos definidos entre módulos.
+
 ## 6. Ubicación de migraciones
 
 La línea nueva de JComercy utilizará una ubicación separada:
