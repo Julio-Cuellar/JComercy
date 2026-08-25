@@ -3,7 +3,7 @@
 ## Módulo técnico `jcomercy-core`
 
 **Versión:** 1.0.0-draft  
-**Estado:** Propuesta pendiente de aprobación  
+**Estado:** Aprobado
 **Proyecto:** JComercy  
 **Referencia:** IEEE 1016-2009
 
@@ -317,6 +317,8 @@ El módulo se considerará listo cuando:
 
 ## 13. Estado de aprobación
 
-**Estado: PROPUESTA PENDIENTE DE APROBACIÓN.**
+**Estado: APROBADO por el propietario del proyecto.**
 
-Este SDD debe aprobarse antes de implementar el módulo `jcomercy-core`.
+El SDD queda aprobado para implementar el módulo Maven `jcomercy-core`, respetando su alcance técnico, sus límites de dependencia y sus criterios de aceptación.
+
+La aprobación no autoriza agregar lógica de negocio, persistencia ni dependencias directas hacia otros módulos.
