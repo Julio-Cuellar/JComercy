@@ -74,7 +74,7 @@ JComercy/
 
 ## 5.1 Transportes de comunicación
 
-La plataforma utilizará el transporte adecuado según el requisito:
+Toda la plataforma utilizará el transporte adecuado según el requisito, tanto para módulos base como para módulos futuros y productos verticales:
 
 - **REST:** APIs operativas, comandos, consultas simples e integraciones externas.
 - **GraphQL:** consultas compuestas y vistas que requieran selección flexible de campos.

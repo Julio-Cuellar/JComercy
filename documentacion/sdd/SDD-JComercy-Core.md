@@ -300,6 +300,18 @@ Los productos verticales consumirán contratos de JComercy Core para:
 
 Los productos verticales no compartirán entidades de persistencia con JComercy Core.
 
+### 8.1 Transportes transversales
+
+REST, GraphQL y WebSockets son transportes estándar de la plataforma JComercy y no una característica exclusiva de un módulo.
+
+| Transporte | Aplicación transversal |
+|---|---|
+| REST | APIs operativas, comandos, consultas e integraciones externas. |
+| GraphQL | Consultas compuestas y composición de información autorizada. |
+| WebSockets | Notificaciones y actualizaciones en tiempo real. |
+
+Cada módulo podrá exponer uno o varios transportes según sus requisitos. La implementación se ubicará fuera del dominio y respetará la propiedad de datos, los contratos y la autorización del módulo correspondiente.
+
 ## 11. Vista de despliegue
 
 La primera implementación se diseñará como monolito modular. Cada módulo tendrá límites claros y un esquema de base de datos propio, aunque inicialmente comparta el mismo despliegue y motor de base de datos. Compartir el motor no implica compartir tablas ni permitir acceso directo entre esquemas.

@@ -227,6 +227,16 @@ El precio puede considerar que cada sucursal genera consumo adicional de recurso
 
 Los módulos de inventario, ventas, caja, compras, contabilidad y personal se incorporarán sobre este núcleo, utilizando `companyId` y `branchId` según su alcance.
 
+## Transportes estándar de JComercy
+
+Todos los módulos actuales y futuros podrán utilizar los siguientes transportes, seleccionando el adecuado según el requisito:
+
+- **REST:** comandos, consultas operativas, APIs de recursos e integraciones externas.
+- **GraphQL:** consultas compuestas, agregación de contratos y vistas con selección flexible de campos.
+- **WebSockets:** notificaciones, colaboración y actualizaciones de estado en tiempo real.
+
+Los transportes pertenecerán a las capas de aplicación e infraestructura de cada módulo o de la aplicación de entrada. No tendrán acceso directo a tablas de otros módulos ni sustituirán las reglas de autorización, los contratos internos o los eventos del sistema.
+
 ## 6. Frontera con Clinerya
 
 Clinerya será un producto vertical conectado a JComercy Core.
