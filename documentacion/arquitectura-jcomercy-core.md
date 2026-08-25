@@ -283,7 +283,7 @@ Las relaciones entre ambos contextos deben utilizar identificadores y contratos 
 - Cliente es un concepto comercial general; paciente es una especialización clínica.
 - Clinerya conserva su modelo clínico especializado.
 - JComercy Core no debe depender de Clinerya.
-- Se comenzará con un monolito modular y una base de datos organizada por esquemas o propietarios de módulo.
+- Se comenzará con un monolito modular y una base de datos organizada por esquemas. Cada módulo será dueño de su esquema y de sus tablas; ningún módulo podrá acceder directamente a las tablas de otro. La colaboración se realizará mediante interfaces, APIs internas, eventos y mensajes síncronos o asíncronos.
 - La fiscalidad será una capa independiente por país, comenzando con México y el SAT.
 
 ## 8. Próxima fase
