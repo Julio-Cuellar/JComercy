@@ -29,6 +29,7 @@
 
     <modules>
         <module>jcomercy-core</module>
+        <module>company-management</module>
     </modules>
 
     <build>

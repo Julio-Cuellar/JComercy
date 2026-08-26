@@ -1,0 +1,80 @@
+package com.jcode.jcomercy.companymanagement.infra.web.exception;
+
+import com.jcode.jcomercy.companymanagement.domain.exception.DomainRuleViolationException;
+import com.jcode.jcomercy.companymanagement.domain.exception.DuplicateResourceException;
+import com.jcode.jcomercy.companymanagement.domain.exception.EntityNotFoundException;
+import com.jcode.jcomercy.companymanagement.domain.exception.UnauthorizedAccessException;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(EntityNotFoundException.class)
+    public ResponseEntity<ProblemDetails> handleNotFound(EntityNotFoundException ex, HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/not-found",
+            "Recurso No Encontrado",
+            HttpStatus.NOT_FOUND.value(),
+            ex.getMessage(),
+            request.getRequestURI(),
+            "RESOURCE_NOT_FOUND"
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
+    }
+
+    @ExceptionHandler(DuplicateResourceException.class)
+    public ResponseEntity<ProblemDetails> handleConflict(DuplicateResourceException ex, HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/conflict",
+            "Conflicto de Recurso",
+            HttpStatus.CONFLICT.value(),
+            ex.getMessage(),
+            request.getRequestURI(),
+            "RESOURCE_ALREADY_EXISTS"
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
+    }
+
+    @ExceptionHandler(DomainRuleViolationException.class)
+    public ResponseEntity<ProblemDetails> handleUnprocessable(DomainRuleViolationException ex, HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/unprocessable-entity",
+            "Regla de Negocio Violada",
+            HttpStatus.UNPROCESSABLE_ENTITY.value(),
+            ex.getMessage(),
+            request.getRequestURI(),
+            "DOMAIN_RULE_VIOLATION"
+        );
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(problem);
+    }
+
+    @ExceptionHandler(UnauthorizedAccessException.class)
+    public ResponseEntity<ProblemDetails> handleUnauthorized(UnauthorizedAccessException ex, HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/forbidden",
+            "Acceso Denegado",
+            HttpStatus.FORBIDDEN.value(),
+            ex.getMessage(),
+            request.getRequestURI(),
+            "INSUFFICIENT_PERMISSIONS"
+        );
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ProblemDetails> handleGeneral(Exception ex, HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/internal-server-error",
+            "Error Interno del Servidor",
+            HttpStatus.INTERNAL_SERVER_ERROR.value(),
+            ex.getMessage(),
+            request.getRequestURI(),
+            "INTERNAL_SERVER_ERROR"
+        );
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
+    }
+}
