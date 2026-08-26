@@ -819,7 +819,7 @@ components:
       - name: Eventos de Cuentas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/AccountCreatedEnvelope'
     AccountUpdated:
       name: AccountUpdated
       title: AccountUpdated
@@ -829,7 +829,7 @@ components:
       - name: Eventos de Cuentas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/AccountUpdatedEnvelope'
     AccountSuspended:
       name: AccountSuspended
       title: AccountSuspended
@@ -838,7 +838,7 @@ components:
       - name: Eventos de Cuentas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/AccountSuspendedEnvelope'
     AccountReactivated:
       name: AccountReactivated
       title: AccountReactivated
@@ -847,7 +847,7 @@ components:
       - name: Eventos de Cuentas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/AccountReactivatedEnvelope'
     AccountDeactivated:
       name: AccountDeactivated
       title: AccountDeactivated
@@ -856,7 +856,7 @@ components:
       - name: Eventos de Cuentas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/AccountDeactivatedEnvelope'
     CompanyCreated:
       name: CompanyCreated
       title: CompanyCreated
@@ -865,7 +865,7 @@ components:
       - name: Eventos de Empresas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/CompanyCreatedEnvelope'
     CompanyUpdated:
       name: CompanyUpdated
       title: CompanyUpdated
@@ -875,7 +875,7 @@ components:
       - name: Eventos de Empresas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/CompanyUpdatedEnvelope'
     CompanyConfigurationCompleted:
       name: CompanyConfigurationCompleted
       title: CompanyConfigurationCompleted
@@ -884,7 +884,7 @@ components:
       - name: Eventos de Empresas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/CompanyConfigurationCompletedEnvelope'
     CompanyActivated:
       name: CompanyActivated
       title: CompanyActivated
@@ -893,7 +893,7 @@ components:
       - name: Eventos de Empresas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/CompanyActivatedEnvelope'
     CompanySuspended:
       name: CompanySuspended
       title: CompanySuspended
@@ -902,7 +902,7 @@ components:
       - name: Eventos de Empresas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/CompanySuspendedEnvelope'
     CompanyReactivated:
       name: CompanyReactivated
       title: CompanyReactivated
@@ -911,7 +911,7 @@ components:
       - name: Eventos de Empresas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/CompanyReactivatedEnvelope'
     CompanyDeletionRequested:
       name: CompanyDeletionRequested
       title: CompanyDeletionRequested
@@ -920,7 +920,7 @@ components:
       - name: Eventos de Empresas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/CompanyDeletionRequestedEnvelope'
     CompanyDeleted:
       name: CompanyDeleted
       title: CompanyDeleted
@@ -929,7 +929,7 @@ components:
       - name: Eventos de Empresas
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/CompanyDeletedEnvelope'
     BranchCreated:
       name: BranchCreated
       title: BranchCreated
@@ -938,7 +938,7 @@ components:
       - name: Eventos de Sucursales
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchCreatedEnvelope'
     BranchUpdated:
       name: BranchUpdated
       title: BranchUpdated
@@ -947,7 +947,7 @@ components:
       - name: Eventos de Sucursales
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchUpdatedEnvelope'
     BranchConfigurationCompleted:
       name: BranchConfigurationCompleted
       title: BranchConfigurationCompleted
@@ -956,7 +956,7 @@ components:
       - name: Eventos de Sucursales
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchConfigurationCompletedEnvelope'
     BranchActivated:
       name: BranchActivated
       title: BranchActivated
@@ -965,7 +965,7 @@ components:
       - name: Eventos de Sucursales
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchActivatedEnvelope'
     BranchSuspended:
       name: BranchSuspended
       title: BranchSuspended
@@ -974,7 +974,7 @@ components:
       - name: Eventos de Sucursales
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchSuspendedEnvelope'
     BranchReactivated:
       name: BranchReactivated
       title: BranchReactivated
@@ -983,7 +983,7 @@ components:
       - name: Eventos de Sucursales
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchReactivatedEnvelope'
     BranchCoverageRequired:
       name: BranchCoverageRequired
       title: BranchCoverageRequired
@@ -993,7 +993,7 @@ components:
       - name: Eventos de Sucursales
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchCoverageRequiredEnvelope'
     BranchCoverageConfirmed:
       name: BranchCoverageConfirmed
       title: BranchCoverageConfirmed
@@ -1002,7 +1002,7 @@ components:
       - name: Eventos de Sucursales
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchCoverageConfirmedEnvelope'
     BranchHeadOfficeChanged:
       name: BranchHeadOfficeChanged
       title: BranchHeadOfficeChanged
@@ -1011,7 +1011,7 @@ components:
       - name: Eventos de Sucursales
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchHeadOfficeChangedEnvelope'
     BranchDeletionRequested:
       name: BranchDeletionRequested
       title: BranchDeletionRequested
@@ -1020,7 +1020,7 @@ components:
       - name: Eventos de Sucursales
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchDeletionRequestedEnvelope'
     BranchDeleted:
       name: BranchDeleted
       title: BranchDeleted
@@ -1029,7 +1029,7 @@ components:
       - name: Eventos de Sucursales
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchDeletedEnvelope'
     MembershipInvitationCreated:
       name: MembershipInvitationCreated
       title: MembershipInvitationCreated
@@ -1038,7 +1038,7 @@ components:
       - name: Eventos de Acceso
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/MembershipInvitationCreatedEnvelope'
     MembershipInvitationAccepted:
       name: MembershipInvitationAccepted
       title: MembershipInvitationAccepted
@@ -1047,7 +1047,7 @@ components:
       - name: Eventos de Acceso
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/MembershipInvitationAcceptedEnvelope'
     MembershipInvitationRevoked:
       name: MembershipInvitationRevoked
       title: MembershipInvitationRevoked
@@ -1056,7 +1056,7 @@ components:
       - name: Eventos de Acceso
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/MembershipInvitationRevokedEnvelope'
     MembershipCreated:
       name: MembershipCreated
       title: MembershipCreated
@@ -1065,7 +1065,7 @@ components:
       - name: Eventos de Acceso
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/MembershipCreatedEnvelope'
     MembershipUpdated:
       name: MembershipUpdated
       title: MembershipUpdated
@@ -1074,7 +1074,7 @@ components:
       - name: Eventos de Acceso
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/MembershipUpdatedEnvelope'
     MembershipSuspended:
       name: MembershipSuspended
       title: MembershipSuspended
@@ -1083,7 +1083,7 @@ components:
       - name: Eventos de Acceso
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/MembershipSuspendedEnvelope'
     MembershipReactivated:
       name: MembershipReactivated
       title: MembershipReactivated
@@ -1092,7 +1092,7 @@ components:
       - name: Eventos de Acceso
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/MembershipReactivatedEnvelope'
     MembershipRevoked:
       name: MembershipRevoked
       title: MembershipRevoked
@@ -1101,7 +1101,7 @@ components:
       - name: Eventos de Acceso
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/MembershipRevokedEnvelope'
     BranchAssignmentCreated:
       name: BranchAssignmentCreated
       title: BranchAssignmentCreated
@@ -1110,7 +1110,7 @@ components:
       - name: Eventos de Acceso
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchAssignmentCreatedEnvelope'
     BranchAssignmentUpdated:
       name: BranchAssignmentUpdated
       title: BranchAssignmentUpdated
@@ -1119,7 +1119,7 @@ components:
       - name: Eventos de Acceso
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchAssignmentUpdatedEnvelope'
     BranchAssignmentRevoked:
       name: BranchAssignmentRevoked
       title: BranchAssignmentRevoked
@@ -1128,7 +1128,7 @@ components:
       - name: Eventos de Acceso
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchAssignmentRevokedEnvelope'
     OperationalContextChanged:
       name: OperationalContextChanged
       title: OperationalContextChanged
@@ -1138,7 +1138,7 @@ components:
       - name: Eventos de Acceso
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/OperationalContextChangedEnvelope'
     RoleCreated:
       name: RoleCreated
       title: RoleCreated
@@ -1147,7 +1147,7 @@ components:
       - name: Eventos de Roles y Permisos
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/RoleCreatedEnvelope'
     RoleUpdated:
       name: RoleUpdated
       title: RoleUpdated
@@ -1156,7 +1156,7 @@ components:
       - name: Eventos de Roles y Permisos
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/RoleUpdatedEnvelope'
     RoleDeactivated:
       name: RoleDeactivated
       title: RoleDeactivated
@@ -1165,7 +1165,7 @@ components:
       - name: Eventos de Roles y Permisos
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/RoleDeactivatedEnvelope'
     RoleDeleted:
       name: RoleDeleted
       title: RoleDeleted
@@ -1174,7 +1174,7 @@ components:
       - name: Eventos de Roles y Permisos
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/RoleDeletedEnvelope'
     RoleAssigned:
       name: RoleAssigned
       title: RoleAssigned
@@ -1183,7 +1183,7 @@ components:
       - name: Eventos de Roles y Permisos
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/RoleAssignedEnvelope'
     RoleUnassigned:
       name: RoleUnassigned
       title: RoleUnassigned
@@ -1192,7 +1192,7 @@ components:
       - name: Eventos de Roles y Permisos
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/RoleUnassignedEnvelope'
     EffectivePermissionsChanged:
       name: EffectivePermissionsChanged
       title: EffectivePermissionsChanged
@@ -1201,7 +1201,7 @@ components:
       - name: Eventos de Roles y Permisos
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/EffectivePermissionsChangedEnvelope'
     OperationCreated:
       name: OperationCreated
       title: OperationCreated
@@ -1210,7 +1210,7 @@ components:
       - name: Eventos de Operaciones
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/OperationCreatedEnvelope'
     OperationProgressed:
       name: OperationProgressed
       title: OperationProgressed
@@ -1219,7 +1219,7 @@ components:
       - name: Eventos de Operaciones
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/OperationProgressedEnvelope'
     OperationCompleted:
       name: OperationCompleted
       title: OperationCompleted
@@ -1228,7 +1228,7 @@ components:
       - name: Eventos de Operaciones
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/OperationCompletedEnvelope'
     OperationPartiallyCompleted:
       name: OperationPartiallyCompleted
       title: OperationPartiallyCompleted
@@ -1237,7 +1237,7 @@ components:
       - name: Eventos de Operaciones
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/OperationPartiallyCompletedEnvelope'
     OperationFailed:
       name: OperationFailed
       title: OperationFailed
@@ -1246,7 +1246,7 @@ components:
       - name: Eventos de Operaciones
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/OperationFailedEnvelope'
     OperationCancelled:
       name: OperationCancelled
       title: OperationCancelled
@@ -1255,7 +1255,7 @@ components:
       - name: Eventos de Operaciones
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/OperationCancelledEnvelope'
     OperationExpired:
       name: OperationExpired
       title: OperationExpired
@@ -1264,7 +1264,7 @@ components:
       - name: Eventos de Operaciones
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/OperationExpiredEnvelope'
     SubscriptionActivated:
       name: SubscriptionActivated
       title: SubscriptionActivated
@@ -1273,7 +1273,7 @@ components:
       - name: Eventos de Billing
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/SubscriptionActivatedEnvelope'
     SubscriptionSuspended:
       name: SubscriptionSuspended
       title: SubscriptionSuspended
@@ -1282,7 +1282,7 @@ components:
       - name: Eventos de Billing
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/SubscriptionSuspendedEnvelope'
     SubscriptionCancelled:
       name: SubscriptionCancelled
       title: SubscriptionCancelled
@@ -1291,7 +1291,7 @@ components:
       - name: Eventos de Billing
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/SubscriptionCancelledEnvelope'
     SubscriptionPlanChanged:
       name: SubscriptionPlanChanged
       title: SubscriptionPlanChanged
@@ -1300,7 +1300,7 @@ components:
       - name: Eventos de Billing
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/SubscriptionPlanChangedEnvelope'
     SubscriptionPaymentApproved:
       name: SubscriptionPaymentApproved
       title: SubscriptionPaymentApproved
@@ -1309,7 +1309,7 @@ components:
       - name: Eventos de Billing
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/SubscriptionPaymentApprovedEnvelope'
     SubscriptionPaymentRejected:
       name: SubscriptionPaymentRejected
       title: SubscriptionPaymentRejected
@@ -1318,7 +1318,7 @@ components:
       - name: Eventos de Billing
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/SubscriptionPaymentRejectedEnvelope'
     SubscriptionGracePeriodStarted:
       name: SubscriptionGracePeriodStarted
       title: SubscriptionGracePeriodStarted
@@ -1327,7 +1327,7 @@ components:
       - name: Eventos de Billing
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/SubscriptionGracePeriodStartedEnvelope'
     SubscriptionGracePeriodEnded:
       name: SubscriptionGracePeriodEnded
       title: SubscriptionGracePeriodEnded
@@ -1336,7 +1336,7 @@ components:
       - name: Eventos de Billing
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/SubscriptionGracePeriodEndedEnvelope'
     BranchAddonCreated:
       name: BranchAddonCreated
       title: BranchAddonCreated
@@ -1345,7 +1345,7 @@ components:
       - name: Eventos de Billing
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchAddonCreatedEnvelope'
     BranchAddonCancelled:
       name: BranchAddonCancelled
       title: BranchAddonCancelled
@@ -1354,7 +1354,7 @@ components:
       - name: Eventos de Billing
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BranchAddonCancelledEnvelope'
     PlatformUserLimitChanged:
       name: PlatformUserLimitChanged
       title: PlatformUserLimitChanged
@@ -1372,15 +1372,18 @@ components:
       - name: Eventos de Billing
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/BillingAdministrativeCorrectionAppliedEnvelope'
   schemas:
     EventEnvelope:
       type: object
       required:
       - eventId
       - eventType
-      - eventVersion
+      - schemaVersion
+      - aggregateVersion
+      - sequence
       - occurredAt
+      - producerModule
       - correlationId
       - accountId
       - companyId
@@ -1388,53 +1391,49 @@ components:
       properties:
         eventId:
           type: string
-          description: 'Identificador único universal del evento (prefix: evt_)'
           example: evt_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
         eventType:
           type: string
-          description: Nombre canónico del evento en notación punto
           example: company.updated
-        eventVersion:
+        schemaVersion:
           type: string
-          description: Versión del esquema de contrato del evento
           example: '1.0'
+        aggregateVersion:
+          type: integer
+          example: 3
+        sequence:
+          type: integer
+          example: 105
         occurredAt:
           type: string
           format: date-time
-          description: Fecha y hora de ocurrencia en UTC, ISO 8601
           example: '2026-08-26T20:00:00Z'
+        producerModule:
+          type: string
+          example: company_management
         correlationId:
           type: string
-          description: Identificador de correlación para trazabilidad de la solicitud
           example: cor_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
         causationId:
           type: string
           nullable: true
-          description: Identificador del evento u operación causante
           example: cause_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
         accountId:
           type: string
-          description: Identificador público de la cuenta propietaria
           example: acc_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
         companyId:
           type: string
-          description: Identificador público de la empresa
           example: com_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
         branchId:
           type: string
           nullable: true
-          description: Identificador público de la sucursal (opcional si el evento
-            es a nivel empresa/cuenta)
           example: brn_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
         actorUserId:
           type: string
           nullable: true
-          description: Identificador del usuario iniciador (nulo en eventos automáticos
-            del sistema o Billing)
           example: usr_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
         data:
           type: object
-          description: Payload específico del evento (sin secretos, tokens ni contraseñas)
           additionalProperties: true
     WebSocketSubscribeMessage:
       type: object
@@ -1463,6 +1462,629 @@ components:
         notificationId:
           type: string
           example: not_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+    AccountData:
+      type: object
+      properties:
+        accountId:
+          type: string
+        name:
+          type: string
+        ownerUserId:
+          type: string
+        status:
+          type: string
+          enum:
+          - CONFIGURING
+          - ACTIVE
+          - SUSPENDED
+          - DEACTIVATED
+    CompanyData:
+      type: object
+      properties:
+        companyId:
+          type: string
+        legalName:
+          type: string
+        tradeName:
+          type: string
+        taxId:
+          type: string
+        status:
+          type: string
+          enum:
+          - CONFIGURING
+          - READY_FOR_ACTIVATION
+          - ACTIVE
+          - SUSPENDED
+          - DELETION_REQUESTED
+          - DELETED
+    BranchData:
+      type: object
+      properties:
+        branchId:
+          type: string
+        companyId:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        isHeadOffice:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - CONFIGURING
+          - READY_FOR_ACTIVATION
+          - PENDING_PLAN
+          - ACTIVE
+          - SUSPENDED
+          - DELETED
+    MembershipData:
+      type: object
+      properties:
+        membershipId:
+          type: string
+        companyId:
+          type: string
+        userId:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACTIVE
+          - SUSPENDED
+          - REVOKED
+    AssignmentData:
+      type: object
+      properties:
+        assignmentId:
+          type: string
+        membershipId:
+          type: string
+        branchId:
+          type: string
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - SUSPENDED
+    RoleData:
+      type: object
+      properties:
+        roleId:
+          type: string
+        companyId:
+          type: string
+        name:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+    OperationData:
+      type: object
+      properties:
+        operationId:
+          type: string
+        operationType:
+          type: string
+        progressPercentage:
+          type: integer
+        status:
+          type: string
+          enum:
+          - PENDING
+          - PROCESSING
+          - COMPLETED
+          - PARTIALLY_COMPLETED
+          - FAILED
+          - CANCELLED
+          - EXPIRED
+    SubscriptionData:
+      type: object
+      properties:
+        subscriptionId:
+          type: string
+        companyId:
+          type: string
+        planId:
+          type: string
+        status:
+          type: string
+          enum:
+          - PENDING
+          - TRIAL
+          - ACTIVE
+          - PAST_DUE
+          - GRACE_PERIOD
+          - SUSPENDED
+          - CANCELLED
+          - EXPIRED
+    WebSocketConnectRequest:
+      type: object
+      required:
+      - token
+      properties:
+        token:
+          type: string
+          description: JWT de autenticación 'Bearer {token}'
+    WebSocketUnsubscribeMessage:
+      type: object
+      required:
+      - action
+      - channel
+      properties:
+        action:
+          type: string
+          enum:
+          - UNSUBSCRIBE
+        channel:
+          type: string
+    WebSocketNotificationMessage:
+      type: object
+      required:
+      - notificationId
+      - channel
+      - severity
+      - occurredAt
+      - data
+      properties:
+        notificationId:
+          type: string
+          example: not_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        channel:
+          type: string
+          example: company.com_01J...notifications
+        severity:
+          type: string
+          enum:
+          - CRITICAL
+          - OPERATIONAL
+          - INFORMATIONAL
+        occurredAt:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: true
+    AccountCreatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/AccountData'
+    AccountUpdatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/AccountData'
+    AccountSuspendedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/AccountData'
+    AccountReactivatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/AccountData'
+    AccountDeactivatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/AccountData'
+    CompanyCreatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/CompanyData'
+    CompanyUpdatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/CompanyData'
+    CompanyConfigurationCompletedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/CompanyData'
+    CompanyActivatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/CompanyData'
+    CompanySuspendedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/CompanyData'
+    CompanyReactivatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/CompanyData'
+    CompanyDeletionRequestedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/CompanyData'
+    CompanyDeletedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/CompanyData'
+    BranchCreatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/BranchData'
+    BranchUpdatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/BranchData'
+    BranchConfigurationCompletedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/BranchData'
+    BranchActivatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/BranchData'
+    BranchSuspendedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/BranchData'
+    BranchReactivatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/BranchData'
+    BranchCoverageRequiredEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/BranchData'
+    BranchCoverageConfirmedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/BranchData'
+    BranchHeadOfficeChangedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/BranchData'
+    BranchDeletionRequestedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/BranchData'
+    BranchDeletedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/BranchData'
+    MembershipInvitationCreatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/MembershipData'
+    MembershipInvitationAcceptedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/MembershipData'
+    MembershipInvitationRevokedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/MembershipData'
+    MembershipCreatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/MembershipData'
+    MembershipUpdatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/MembershipData'
+    MembershipSuspendedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/MembershipData'
+    MembershipReactivatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/MembershipData'
+    MembershipRevokedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/MembershipData'
+    BranchAssignmentCreatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/AssignmentData'
+    BranchAssignmentUpdatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/AssignmentData'
+    BranchAssignmentRevokedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/AssignmentData'
+    OperationalContextChangedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/OperationData'
+    RoleCreatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/RoleData'
+    RoleUpdatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/RoleData'
+    RoleDeactivatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/RoleData'
+    RoleDeletedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/RoleData'
+    RoleAssignedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/RoleData'
+    RoleUnassignedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/RoleData'
+    EffectivePermissionsChangedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/RoleData'
+    OperationCreatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/OperationData'
+    OperationProgressedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/OperationData'
+    OperationCompletedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/OperationData'
+    OperationPartiallyCompletedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/OperationData'
+    OperationFailedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/OperationData'
+    OperationCancelledEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/OperationData'
+    OperationExpiredEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/OperationData'
+    SubscriptionActivatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/SubscriptionData'
+    SubscriptionSuspendedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/SubscriptionData'
+    SubscriptionCancelledEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/SubscriptionData'
+    SubscriptionPlanChangedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/SubscriptionData'
+    SubscriptionPaymentApprovedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/SubscriptionData'
+    SubscriptionPaymentRejectedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/SubscriptionData'
+    SubscriptionGracePeriodStartedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/SubscriptionData'
+    SubscriptionGracePeriodEndedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/SubscriptionData'
+    BranchAddonCreatedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/SubscriptionData'
+    BranchAddonCancelledEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/SubscriptionData'
+    BillingAdministrativeCorrectionAppliedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/SubscriptionData'
   securitySchemes:
     userJwt:
       type: httpApiKey

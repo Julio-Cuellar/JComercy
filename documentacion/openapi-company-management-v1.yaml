@@ -1941,6 +1941,15 @@ paths:
         '415':
           description: Formato no soportado
       x-required-permission: imports.validate
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: Clave única para garantizar idempotencia en operaciones de mutación
+          y comandos
+        schema:
+          type: string
+          example: idem_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
   /api/v1/companies/{publicCompanyId}/imports:
     parameters:
     - $ref: '#/components/parameters/PublicCompanyId'
@@ -2573,6 +2582,14 @@ paths:
       security: []
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: Clave única para garantizar idempotencia en operaciones de mutación
+          y comandos
+        schema:
+          type: string
+          example: idem_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
       responses:
         '200':
           description: Invitación aceptada
@@ -3156,6 +3173,14 @@ paths:
       x-required-permission: cross_branch.authorizations.create
       parameters:
       - $ref: '#/components/parameters/PublicCompanyId'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: Clave única para garantizar idempotencia en operaciones de mutación
+          y comandos
+        schema:
+          type: string
+          example: idem_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
       requestBody:
         required: true
         content:
