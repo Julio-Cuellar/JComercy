@@ -1,6 +1,6 @@
 # Informe de Validación Final: Contratos Síncronos y Asíncronos de Company Management
 
-Este documento certífica y registra formalmente los resultados de las pruebas de validación ejecutadas sobre los contratos síncronos (OpenAPI v1), asíncronos (AsyncAPI v1), notificaciones WebSocket en tiempo real, webhooks externos y reglas de gobernanza para el módulo `company_management` de JComercy.
+Este documento certifica y registra formalmente los resultados de las pruebas de validación ejecutadas sobre los contratos síncronos (OpenAPI v1), asíncronos (AsyncAPI v1), notificaciones WebSocket en tiempo real, webhooks externos y reglas de gobernanza para el módulo `company_management` de JComercy.
 
 ---
 
@@ -13,7 +13,7 @@ Este documento certífica y registra formalmente los resultados de las pruebas d
 - **Total de Esquemas Componentes (`schemas`):** `64`
 - **`operationId` Únicos:** `97 / 97` (100%)
 - **Operaciones con `x-required-permission`:** `97 / 97` (100%)
-- **Operaciones con Header `Idempotency-Key`:** Cobertura total (100%) en creaciones, comandos críticos y mutaciones (`registration`, `branches`, `imports/validation`, `membership-invitations/acceptance`, `cross-branch-query-authorizations`, etc.).
+- **Operaciones con Header `Idempotency-Key`:** Cobertura del 100% en todas las mutaciones e invitaciones (`registration`, `branches`, `imports/validation`, `membership-invitations/acceptance`, `cross-branch-query-authorizations`, etc.).
 - **Respuestas `404 Not Found` Explícitas:** `96 / 97` (100% de operaciones parametrizadas).
 - **Parámetros de Ruta Resolutos:** `0` errores de parámetros faltantes.
 
@@ -49,7 +49,7 @@ Este documento certífica y registra formalmente los resultados de las pruebas d
 ## 3. Certificación de Restricciones Normativas
 
 - [x] **Aislamiento de Repositorio:** El repositorio activo `Clinerya` no ha sido modificado (0 archivos alterados).
-- [x] **Separación de Módulos:** `Personal y Nómina` permanece estrictamente fuera de la administración de membresías o permisos de plataforma.
+- [x] **Separación de Módulos:** `Personal y Nómina` permanece strictly fuera de la administración de membresías o permisos de plataforma.
 - [x] **Propietarios de Contratos:** `Company Management`, `Identity` y `Billing` conservan la propiedad exclusiva de sus datos y esquemas.
 - [x] **Sin Código Ejecutable Ni SQL:** Se certifica que no se han generado controladores REST Java, resolvers GraphQL, consumidores de mensajes, entidades ORM ni migraciones Flyway SQL durante esta fase.
 
@@ -60,7 +60,7 @@ Este documento certífica y registra formalmente los resultados de las pruebas d
 ```text
 === Dictamen de Validación ===
 Estado: APROBADO SIN ERRORES CRÍTICOS (0 Errors, 0 Warnings)
-Rama Git: main
+Rama Git Activa: contracts-v1 (Commit HEAD)
 ```
 
 Queda oficialmente certificada y completada la fase de diseño de contratos síncronos y asíncronos para `company_management`.
