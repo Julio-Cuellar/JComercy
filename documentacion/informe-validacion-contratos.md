@@ -15,7 +15,7 @@ Este documento certifica y registra formalmente los resultados de las pruebas de
 - **Operaciones con `x-required-permission`:** `97 / 97` (100%)
 - **Operaciones con Header `Idempotency-Key`:** Cobertura del 100% en todas las mutaciones e invitaciones (`registration`, `branches`, `imports/validation`, `membership-invitations/acceptance`, `cross-branch-query-authorizations`, etc.).
 - **Respuestas `404 Not Found` Explícitas:** `96 / 97` (100% de operaciones parametrizadas).
-- **Parámetros de Ruta Resolutos:** `0` errores de parámetros faltantes.
+- **Parámetros de Ruta Resueltos:** `0` errores de parámetros faltantes.
 
 ### 1.2 Especificación Asíncrona AsyncAPI v1 (`documentacion/asyncapi-company-management-v1.yaml`)
 - **Versión AsyncAPI:** `2.6.0`
@@ -49,7 +49,7 @@ Este documento certifica y registra formalmente los resultados de las pruebas de
 ## 3. Certificación de Restricciones Normativas
 
 - [x] **Aislamiento de Repositorio:** El repositorio activo `Clinerya` no ha sido modificado (0 archivos alterados).
-- [x] **Separación de Módulos:** `Personal y Nómina` permanece strictly fuera de la administración de membresías o permisos de plataforma.
+- [x] **Separación de Módulos:** `Personal y Nómina` permanece estrictamente fuera de la administración de membresías o permisos de plataforma.
 - [x] **Propietarios de Contratos:** `Company Management`, `Identity` y `Billing` conservan la propiedad exclusiva de sus datos y esquemas.
 - [x] **Sin Código Ejecutable Ni SQL:** Se certifica que no se han generado controladores REST Java, resolvers GraphQL, consumidores de mensajes, entidades ORM ni migraciones Flyway SQL durante esta fase.
 
