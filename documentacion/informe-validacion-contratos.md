@@ -13,7 +13,7 @@ Este documento certífica y registra formalmente los resultados de las pruebas d
 - **Total de Esquemas Componentes (`schemas`):** `64`
 - **`operationId` Únicos:** `97 / 97` (100%)
 - **Operaciones con `x-required-permission`:** `97 / 97` (100%)
-- **Operaciones con Header `Idempotency-Key`:** Cobertura total en creaciones y comandos críticos (incluyendo `registration`, `branches`, `imports/validation`, `membership-invitations/acceptance`, `cross-branch-query-authorizations`, etc.).
+- **Operaciones con Header `Idempotency-Key`:** Cobertura total (100%) en creaciones, comandos críticos y mutaciones (`registration`, `branches`, `imports/validation`, `membership-invitations/acceptance`, `cross-branch-query-authorizations`, etc.).
 - **Respuestas `404 Not Found` Explícitas:** `96 / 97` (100% de operaciones parametrizadas).
 - **Parámetros de Ruta Resolutos:** `0` errores de parámetros faltantes.
 
@@ -22,8 +22,8 @@ Este documento certífica y registra formalmente los resultados de las pruebas d
 - **Total de Canales:** `67` (62 de eventos del bus + 5 canales de tiempo real WebSocket).
 - **Total de Mensajes de Evento:** `62` eventos clasificados por dominio.
 - **Nomenclatura Canónica:** Notación punto en minúsculas unificada (ej: `account.created`, `company.updated`, `branch.activated`, `membership.invitation.created`, `subscription.activated`).
-- **Esquemas de Payload `data` Específicos:** Todos los mensajes de evento cuentan con esquemas de datos tipados (`AccountData`, `CompanyData`, `BranchData`, `MembershipData`, `AssignmentData`, `RoleData`, `OperationData`, `SubscriptionData`).
-- **Envelope Común Unificado:** 11 campos estandarizados (`eventId`, `eventType`, `schemaVersion`, `aggregateVersion`, `sequence`, `occurredAt`, `producerModule`, `correlationId`, `causationId`, `accountId`, `companyId`, `branchId`, `actorUserId`, `data`).
+- **Esquemas de Payload `data` Específicos:** Todos los mensajes de evento cuentan con esquemas de datos tipados (`AccountData`, `CompanyData`, `BranchData`, `MembershipData`, `AssignmentData`, `RoleData`, `OperationData`, `SubscriptionData`) y envelopes especializados (incluyendo `PlatformUserLimitChangedEnvelope`).
+- **Envelope Común Unificado (14 Campos):** Estandarizado con `eventId`, `eventType`, `schemaVersion`, `aggregateVersion`, `sequence`, `occurredAt`, `producerModule`, `correlationId`, `causationId`, `accountId`, `companyId`, `branchId`, `actorUserId` y `data`.
 
 ### 1.3 Protocolos WebSocket (`WSS /ws/v1`)
 - **Handshake y Autenticación:** Token JWT `Bearer` obligatorio.

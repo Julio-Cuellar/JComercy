@@ -1363,7 +1363,7 @@ components:
       - name: Eventos de Billing
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/EventEnvelope'
+        $ref: '#/components/schemas/PlatformUserLimitChangedEnvelope'
     BillingAdministrativeCorrectionApplied:
       name: BillingAdministrativeCorrectionApplied
       title: BillingAdministrativeCorrectionApplied
@@ -2079,6 +2079,13 @@ components:
           data:
             $ref: '#/components/schemas/SubscriptionData'
     BillingAdministrativeCorrectionAppliedEnvelope:
+      allOf:
+      - $ref: '#/components/schemas/EventEnvelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/SubscriptionData'
+    PlatformUserLimitChangedEnvelope:
       allOf:
       - $ref: '#/components/schemas/EventEnvelope'
       - type: object
