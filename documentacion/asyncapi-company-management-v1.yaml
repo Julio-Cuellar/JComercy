@@ -1,0 +1,1471 @@
+asyncapi: 2.6.0
+info:
+  title: JComercy Company Management Async API
+  version: 1.0.0
+  description: Especificación de eventos del bus de mensajería, WebSockets y Webhooks
+    externos para el módulo Company Management de JComercy.
+  contact:
+    name: Equipo de Arquitectura JComercy
+    email: architecture@jcomercy.com
+defaultContentType: application/json
+servers:
+  eventBus:
+    url: rabbitmq.jcomercy.internal:5672
+    protocol: amqp
+    description: Bus de eventos de integración interno entre módulos de JComercy
+  webSockets:
+    url: wss://ws.jcomercy.com/ws/v1
+    protocol: wss
+    description: Conexión WebSocket cifrada para notificaciones y actualizaciones
+      en tiempo real
+channels:
+  events/account/created:
+    description: Publicado cuando se crea una cuenta administrativa
+    publish:
+      operationId: publishAccountCreated
+      summary: Publicado cuando se crea una cuenta administrativa
+      message:
+        $ref: '#/components/messages/AccountCreated'
+    subscribe:
+      operationId: subscribeAccountCreated
+      summary: Suscripción a eventos de tipo account.created
+      message:
+        $ref: '#/components/messages/AccountCreated'
+  events/account/updated:
+    description: Publicado cuando se actualizan datos de preferencia o configuración
+      de la cuenta
+    publish:
+      operationId: publishAccountUpdated
+      summary: Publicado cuando se actualizan datos de preferencia o configuración
+        de la cuenta
+      message:
+        $ref: '#/components/messages/AccountUpdated'
+    subscribe:
+      operationId: subscribeAccountUpdated
+      summary: Suscripción a eventos de tipo account.updated
+      message:
+        $ref: '#/components/messages/AccountUpdated'
+  events/account/suspended:
+    description: Publicado cuando se suspende la cuenta por falta de pago o acción
+      administrativa
+    publish:
+      operationId: publishAccountSuspended
+      summary: Publicado cuando se suspende la cuenta por falta de pago o acción administrativa
+      message:
+        $ref: '#/components/messages/AccountSuspended'
+    subscribe:
+      operationId: subscribeAccountSuspended
+      summary: Suscripción a eventos de tipo account.suspended
+      message:
+        $ref: '#/components/messages/AccountSuspended'
+  events/account/reactivated:
+    description: Publicado cuando se reactiva una cuenta suspendida
+    publish:
+      operationId: publishAccountReactivated
+      summary: Publicado cuando se reactiva una cuenta suspendida
+      message:
+        $ref: '#/components/messages/AccountReactivated'
+    subscribe:
+      operationId: subscribeAccountReactivated
+      summary: Suscripción a eventos de tipo account.reactivated
+      message:
+        $ref: '#/components/messages/AccountReactivated'
+  events/account/deactivated:
+    description: Publicado cuando se completa la baja lógica de la cuenta
+    publish:
+      operationId: publishAccountDeactivated
+      summary: Publicado cuando se completa la baja lógica de la cuenta
+      message:
+        $ref: '#/components/messages/AccountDeactivated'
+    subscribe:
+      operationId: subscribeAccountDeactivated
+      summary: Suscripción a eventos de tipo account.deactivated
+      message:
+        $ref: '#/components/messages/AccountDeactivated'
+  events/company/created:
+    description: Publicado cuando se registra una empresa en la cuenta
+    publish:
+      operationId: publishCompanyCreated
+      summary: Publicado cuando se registra una empresa en la cuenta
+      message:
+        $ref: '#/components/messages/CompanyCreated'
+    subscribe:
+      operationId: subscribeCompanyCreated
+      summary: Suscripción a eventos de tipo company.created
+      message:
+        $ref: '#/components/messages/CompanyCreated'
+  events/company/updated:
+    description: Publicado cuando se actualizan perfil, contacto o preferencias de
+      la empresa
+    publish:
+      operationId: publishCompanyUpdated
+      summary: Publicado cuando se actualizan perfil, contacto o preferencias de la
+        empresa
+      message:
+        $ref: '#/components/messages/CompanyUpdated'
+    subscribe:
+      operationId: subscribeCompanyUpdated
+      summary: Suscripción a eventos de tipo company.updated
+      message:
+        $ref: '#/components/messages/CompanyUpdated'
+  events/company/configuration/completed:
+    description: Publicado cuando se completan los datos obligatorios de la empresa
+    publish:
+      operationId: publishCompanyConfigurationCompleted
+      summary: Publicado cuando se completan los datos obligatorios de la empresa
+      message:
+        $ref: '#/components/messages/CompanyConfigurationCompleted'
+    subscribe:
+      operationId: subscribeCompanyConfigurationCompleted
+      summary: Suscripción a eventos de tipo company.configuration.completed
+      message:
+        $ref: '#/components/messages/CompanyConfigurationCompleted'
+  events/company/activated:
+    description: Publicado cuando la empresa queda activada para operar
+    publish:
+      operationId: publishCompanyActivated
+      summary: Publicado cuando la empresa queda activada para operar
+      message:
+        $ref: '#/components/messages/CompanyActivated'
+    subscribe:
+      operationId: subscribeCompanyActivated
+      summary: Suscripción a eventos de tipo company.activated
+      message:
+        $ref: '#/components/messages/CompanyActivated'
+  events/company/suspended:
+    description: Publicado cuando la empresa se suspende comercial o administrativamente
+    publish:
+      operationId: publishCompanySuspended
+      summary: Publicado cuando la empresa se suspende comercial o administrativamente
+      message:
+        $ref: '#/components/messages/CompanySuspended'
+    subscribe:
+      operationId: subscribeCompanySuspended
+      summary: Suscripción a eventos de tipo company.suspended
+      message:
+        $ref: '#/components/messages/CompanySuspended'
+  events/company/reactivated:
+    description: Publicado cuando la empresa vuelve a estar activa
+    publish:
+      operationId: publishCompanyReactivated
+      summary: Publicado cuando la empresa vuelve a estar activa
+      message:
+        $ref: '#/components/messages/CompanyReactivated'
+    subscribe:
+      operationId: subscribeCompanyReactivated
+      summary: Suscripción a eventos de tipo company.reactivated
+      message:
+        $ref: '#/components/messages/CompanyReactivated'
+  events/company/deletion/requested:
+    description: Publicado cuando se solicita la baja lógica de la empresa
+    publish:
+      operationId: publishCompanyDeletionRequested
+      summary: Publicado cuando se solicita la baja lógica de la empresa
+      message:
+        $ref: '#/components/messages/CompanyDeletionRequested'
+    subscribe:
+      operationId: subscribeCompanyDeletionRequested
+      summary: Suscripción a eventos de tipo company.deletion.requested
+      message:
+        $ref: '#/components/messages/CompanyDeletionRequested'
+  events/company/deleted:
+    description: Publicado cuando se completa el proceso de borrado lógico
+    publish:
+      operationId: publishCompanyDeleted
+      summary: Publicado cuando se completa el proceso de borrado lógico
+      message:
+        $ref: '#/components/messages/CompanyDeleted'
+    subscribe:
+      operationId: subscribeCompanyDeleted
+      summary: Suscripción a eventos de tipo company.deleted
+      message:
+        $ref: '#/components/messages/CompanyDeleted'
+  events/branch/created:
+    description: Publicado cuando se registra una sucursal
+    publish:
+      operationId: publishBranchCreated
+      summary: Publicado cuando se registra una sucursal
+      message:
+        $ref: '#/components/messages/BranchCreated'
+    subscribe:
+      operationId: subscribeBranchCreated
+      summary: Suscripción a eventos de tipo branch.created
+      message:
+        $ref: '#/components/messages/BranchCreated'
+  events/branch/updated:
+    description: Publicado cuando se actualizan datos o perfil de sucursal
+    publish:
+      operationId: publishBranchUpdated
+      summary: Publicado cuando se actualizan datos o perfil de sucursal
+      message:
+        $ref: '#/components/messages/BranchUpdated'
+    subscribe:
+      operationId: subscribeBranchUpdated
+      summary: Suscripción a eventos de tipo branch.updated
+      message:
+        $ref: '#/components/messages/BranchUpdated'
+  events/branch/configuration/completed:
+    description: Publicado cuando se completa la configuración de la sucursal
+    publish:
+      operationId: publishBranchConfigurationCompleted
+      summary: Publicado cuando se completa la configuración de la sucursal
+      message:
+        $ref: '#/components/messages/BranchConfigurationCompleted'
+    subscribe:
+      operationId: subscribeBranchConfigurationCompleted
+      summary: Suscripción a eventos de tipo branch.configuration.completed
+      message:
+        $ref: '#/components/messages/BranchConfigurationCompleted'
+  events/branch/activated:
+    description: Publicado cuando la sucursal queda habilitada operacionalmente
+    publish:
+      operationId: publishBranchActivated
+      summary: Publicado cuando la sucursal queda habilitada operacionalmente
+      message:
+        $ref: '#/components/messages/BranchActivated'
+    subscribe:
+      operationId: subscribeBranchActivated
+      summary: Suscripción a eventos de tipo branch.activated
+      message:
+        $ref: '#/components/messages/BranchActivated'
+  events/branch/suspended:
+    description: Publicado cuando la sucursal se suspende
+    publish:
+      operationId: publishBranchSuspended
+      summary: Publicado cuando la sucursal se suspende
+      message:
+        $ref: '#/components/messages/BranchSuspended'
+    subscribe:
+      operationId: subscribeBranchSuspended
+      summary: Suscripción a eventos de tipo branch.suspended
+      message:
+        $ref: '#/components/messages/BranchSuspended'
+  events/branch/reactivated:
+    description: Publicado cuando se reactiva una sucursal
+    publish:
+      operationId: publishBranchReactivated
+      summary: Publicado cuando se reactiva una sucursal
+      message:
+        $ref: '#/components/messages/BranchReactivated'
+    subscribe:
+      operationId: subscribeBranchReactivated
+      summary: Suscripción a eventos de tipo branch.reactivated
+      message:
+        $ref: '#/components/messages/BranchReactivated'
+  events/branch/coverage/required:
+    description: Publicado cuando una sucursal queda en PENDING_PLAN por falta de
+      cobertura de suscripción
+    publish:
+      operationId: publishBranchCoverageRequired
+      summary: Publicado cuando una sucursal queda en PENDING_PLAN por falta de cobertura
+        de suscripción
+      message:
+        $ref: '#/components/messages/BranchCoverageRequired'
+    subscribe:
+      operationId: subscribeBranchCoverageRequired
+      summary: Suscripción a eventos de tipo branch.coverage.required
+      message:
+        $ref: '#/components/messages/BranchCoverageRequired'
+  events/branch/coverage/confirmed:
+    description: Publicado cuando Billing confirma cobertura para la sucursal
+    publish:
+      operationId: publishBranchCoverageConfirmed
+      summary: Publicado cuando Billing confirma cobertura para la sucursal
+      message:
+        $ref: '#/components/messages/BranchCoverageConfirmed'
+    subscribe:
+      operationId: subscribeBranchCoverageConfirmed
+      summary: Suscripción a eventos de tipo branch.coverage.confirmed
+      message:
+        $ref: '#/components/messages/BranchCoverageConfirmed'
+  events/branch/head-office/changed:
+    description: Publicado cuando se designa una nueva sucursal matriz
+    publish:
+      operationId: publishBranchHeadOfficeChanged
+      summary: Publicado cuando se designa una nueva sucursal matriz
+      message:
+        $ref: '#/components/messages/BranchHeadOfficeChanged'
+    subscribe:
+      operationId: subscribeBranchHeadOfficeChanged
+      summary: Suscripción a eventos de tipo branch.head-office.changed
+      message:
+        $ref: '#/components/messages/BranchHeadOfficeChanged'
+  events/branch/deletion/requested:
+    description: Publicado cuando se solicita la baja lógica de sucursal
+    publish:
+      operationId: publishBranchDeletionRequested
+      summary: Publicado cuando se solicita la baja lógica de sucursal
+      message:
+        $ref: '#/components/messages/BranchDeletionRequested'
+    subscribe:
+      operationId: subscribeBranchDeletionRequested
+      summary: Suscripción a eventos de tipo branch.deletion.requested
+      message:
+        $ref: '#/components/messages/BranchDeletionRequested'
+  events/branch/deleted:
+    description: Publicado cuando se confirma la baja lógica de sucursal
+    publish:
+      operationId: publishBranchDeleted
+      summary: Publicado cuando se confirma la baja lógica de sucursal
+      message:
+        $ref: '#/components/messages/BranchDeleted'
+    subscribe:
+      operationId: subscribeBranchDeleted
+      summary: Suscripción a eventos de tipo branch.deleted
+      message:
+        $ref: '#/components/messages/BranchDeleted'
+  events/membership/invitation/created:
+    description: Publicado cuando se emite una invitación a usuario
+    publish:
+      operationId: publishMembershipInvitationCreated
+      summary: Publicado cuando se emite una invitación a usuario
+      message:
+        $ref: '#/components/messages/MembershipInvitationCreated'
+    subscribe:
+      operationId: subscribeMembershipInvitationCreated
+      summary: Suscripción a eventos de tipo membership.invitation.created
+      message:
+        $ref: '#/components/messages/MembershipInvitationCreated'
+  events/membership/invitation/accepted:
+    description: Publicado cuando el usuario acepta la invitación de membresía
+    publish:
+      operationId: publishMembershipInvitationAccepted
+      summary: Publicado cuando el usuario acepta la invitación de membresía
+      message:
+        $ref: '#/components/messages/MembershipInvitationAccepted'
+    subscribe:
+      operationId: subscribeMembershipInvitationAccepted
+      summary: Suscripción a eventos de tipo membership.invitation.accepted
+      message:
+        $ref: '#/components/messages/MembershipInvitationAccepted'
+  events/membership/invitation/revoked:
+    description: Publicado cuando se revoca una invitación pendiente
+    publish:
+      operationId: publishMembershipInvitationRevoked
+      summary: Publicado cuando se revoca una invitación pendiente
+      message:
+        $ref: '#/components/messages/MembershipInvitationRevoked'
+    subscribe:
+      operationId: subscribeMembershipInvitationRevoked
+      summary: Suscripción a eventos de tipo membership.invitation.revoked
+      message:
+        $ref: '#/components/messages/MembershipInvitationRevoked'
+  events/membership/created:
+    description: Publicado cuando se crea la membresía en la empresa
+    publish:
+      operationId: publishMembershipCreated
+      summary: Publicado cuando se crea la membresía en la empresa
+      message:
+        $ref: '#/components/messages/MembershipCreated'
+    subscribe:
+      operationId: subscribeMembershipCreated
+      summary: Suscripción a eventos de tipo membership.created
+      message:
+        $ref: '#/components/messages/MembershipCreated'
+  events/membership/updated:
+    description: Publicado cuando cambian roles o alcance de la membresía
+    publish:
+      operationId: publishMembershipUpdated
+      summary: Publicado cuando cambian roles o alcance de la membresía
+      message:
+        $ref: '#/components/messages/MembershipUpdated'
+    subscribe:
+      operationId: subscribeMembershipUpdated
+      summary: Suscripción a eventos de tipo membership.updated
+      message:
+        $ref: '#/components/messages/MembershipUpdated'
+  events/membership/suspended:
+    description: Publicado cuando se suspende temporalmente el acceso del usuario
+    publish:
+      operationId: publishMembershipSuspended
+      summary: Publicado cuando se suspende temporalmente el acceso del usuario
+      message:
+        $ref: '#/components/messages/MembershipSuspended'
+    subscribe:
+      operationId: subscribeMembershipSuspended
+      summary: Suscripción a eventos de tipo membership.suspended
+      message:
+        $ref: '#/components/messages/MembershipSuspended'
+  events/membership/reactivated:
+    description: Publicado cuando se reactiva la membresía del usuario
+    publish:
+      operationId: publishMembershipReactivated
+      summary: Publicado cuando se reactiva la membresía del usuario
+      message:
+        $ref: '#/components/messages/MembershipReactivated'
+    subscribe:
+      operationId: subscribeMembershipReactivated
+      summary: Suscripción a eventos de tipo membership.reactivated
+      message:
+        $ref: '#/components/messages/MembershipReactivated'
+  events/membership/revoked:
+    description: Publicado cuando se revoca definitivamente el acceso
+    publish:
+      operationId: publishMembershipRevoked
+      summary: Publicado cuando se revoca definitivamente el acceso
+      message:
+        $ref: '#/components/messages/MembershipRevoked'
+    subscribe:
+      operationId: subscribeMembershipRevoked
+      summary: Suscripción a eventos de tipo membership.revoked
+      message:
+        $ref: '#/components/messages/MembershipRevoked'
+  events/branch-assignment/created:
+    description: Publicado cuando se asigna un usuario a una sucursal de trabajo
+    publish:
+      operationId: publishBranchAssignmentCreated
+      summary: Publicado cuando se asigna un usuario a una sucursal de trabajo
+      message:
+        $ref: '#/components/messages/BranchAssignmentCreated'
+    subscribe:
+      operationId: subscribeBranchAssignmentCreated
+      summary: Suscripción a eventos de tipo branch-assignment.created
+      message:
+        $ref: '#/components/messages/BranchAssignmentCreated'
+  events/branch-assignment/updated:
+    description: Publicado cuando se modifica el estado de una asignación de sucursal
+    publish:
+      operationId: publishBranchAssignmentUpdated
+      summary: Publicado cuando se modifica el estado de una asignación de sucursal
+      message:
+        $ref: '#/components/messages/BranchAssignmentUpdated'
+    subscribe:
+      operationId: subscribeBranchAssignmentUpdated
+      summary: Suscripción a eventos de tipo branch-assignment.updated
+      message:
+        $ref: '#/components/messages/BranchAssignmentUpdated'
+  events/branch-assignment/revoked:
+    description: Publicado cuando se retira la asignación de sucursal
+    publish:
+      operationId: publishBranchAssignmentRevoked
+      summary: Publicado cuando se retira la asignación de sucursal
+      message:
+        $ref: '#/components/messages/BranchAssignmentRevoked'
+    subscribe:
+      operationId: subscribeBranchAssignmentRevoked
+      summary: Suscripción a eventos de tipo branch-assignment.revoked
+      message:
+        $ref: '#/components/messages/BranchAssignmentRevoked'
+  events/operational-context/changed:
+    description: Publicado cuando un usuario selecciona o cambia su sucursal activa
+      de trabajo
+    publish:
+      operationId: publishOperationalContextChanged
+      summary: Publicado cuando un usuario selecciona o cambia su sucursal activa
+        de trabajo
+      message:
+        $ref: '#/components/messages/OperationalContextChanged'
+    subscribe:
+      operationId: subscribeOperationalContextChanged
+      summary: Suscripción a eventos de tipo operational-context.changed
+      message:
+        $ref: '#/components/messages/OperationalContextChanged'
+  events/role/created:
+    description: Publicado cuando se crea un rol personalizado
+    publish:
+      operationId: publishRoleCreated
+      summary: Publicado cuando se crea un rol personalizado
+      message:
+        $ref: '#/components/messages/RoleCreated'
+    subscribe:
+      operationId: subscribeRoleCreated
+      summary: Suscripción a eventos de tipo role.created
+      message:
+        $ref: '#/components/messages/RoleCreated'
+  events/role/updated:
+    description: Publicado cuando se modifican los permisos o nombre de un rol
+    publish:
+      operationId: publishRoleUpdated
+      summary: Publicado cuando se modifican los permisos o nombre de un rol
+      message:
+        $ref: '#/components/messages/RoleUpdated'
+    subscribe:
+      operationId: subscribeRoleUpdated
+      summary: Suscripción a eventos de tipo role.updated
+      message:
+        $ref: '#/components/messages/RoleUpdated'
+  events/role/deactivated:
+    description: Publicado cuando se desactiva un rol de empresa
+    publish:
+      operationId: publishRoleDeactivated
+      summary: Publicado cuando se desactiva un rol de empresa
+      message:
+        $ref: '#/components/messages/RoleDeactivated'
+    subscribe:
+      operationId: subscribeRoleDeactivated
+      summary: Suscripción a eventos de tipo role.deactivated
+      message:
+        $ref: '#/components/messages/RoleDeactivated'
+  events/role/deleted:
+    description: Publicado cuando se elimina un rol personalizado
+    publish:
+      operationId: publishRoleDeleted
+      summary: Publicado cuando se elimina un rol personalizado
+      message:
+        $ref: '#/components/messages/RoleDeleted'
+    subscribe:
+      operationId: subscribeRoleDeleted
+      summary: Suscripción a eventos de tipo role.deleted
+      message:
+        $ref: '#/components/messages/RoleDeleted'
+  events/role/assigned:
+    description: Publicado cuando se asigna un rol a un miembro
+    publish:
+      operationId: publishRoleAssigned
+      summary: Publicado cuando se asigna un rol a un miembro
+      message:
+        $ref: '#/components/messages/RoleAssigned'
+    subscribe:
+      operationId: subscribeRoleAssigned
+      summary: Suscripción a eventos de tipo role.assigned
+      message:
+        $ref: '#/components/messages/RoleAssigned'
+  events/role/unassigned:
+    description: Publicado cuando se desasigna un rol
+    publish:
+      operationId: publishRoleUnassigned
+      summary: Publicado cuando se desasigna un rol
+      message:
+        $ref: '#/components/messages/RoleUnassigned'
+    subscribe:
+      operationId: subscribeRoleUnassigned
+      summary: Suscripción a eventos de tipo role.unassigned
+      message:
+        $ref: '#/components/messages/RoleUnassigned'
+  events/effective-permissions/changed:
+    description: Publicado cuando cambian los permisos efectivos derivados de un usuario
+    publish:
+      operationId: publishEffectivePermissionsChanged
+      summary: Publicado cuando cambian los permisos efectivos derivados de un usuario
+      message:
+        $ref: '#/components/messages/EffectivePermissionsChanged'
+    subscribe:
+      operationId: subscribeEffectivePermissionsChanged
+      summary: Suscripción a eventos de tipo effective-permissions.changed
+      message:
+        $ref: '#/components/messages/EffectivePermissionsChanged'
+  events/operation/created:
+    description: Publicado al registrar una operación asíncrona
+    publish:
+      operationId: publishOperationCreated
+      summary: Publicado al registrar una operación asíncrona
+      message:
+        $ref: '#/components/messages/OperationCreated'
+    subscribe:
+      operationId: subscribeOperationCreated
+      summary: Suscripción a eventos de tipo operation.created
+      message:
+        $ref: '#/components/messages/OperationCreated'
+  events/operation/progressed:
+    description: Publicado con avances de progreso de una operación
+    publish:
+      operationId: publishOperationProgressed
+      summary: Publicado con avances de progreso de una operación
+      message:
+        $ref: '#/components/messages/OperationProgressed'
+    subscribe:
+      operationId: subscribeOperationProgressed
+      summary: Suscripción a eventos de tipo operation.progressed
+      message:
+        $ref: '#/components/messages/OperationProgressed'
+  events/operation/completed:
+    description: Publicado cuando una operación asíncrona finaliza exitosamente
+    publish:
+      operationId: publishOperationCompleted
+      summary: Publicado cuando una operación asíncrona finaliza exitosamente
+      message:
+        $ref: '#/components/messages/OperationCompleted'
+    subscribe:
+      operationId: subscribeOperationCompleted
+      summary: Suscripción a eventos de tipo operation.completed
+      message:
+        $ref: '#/components/messages/OperationCompleted'
+  events/operation/partially-completed:
+    description: Publicado cuando una operación termina con algunos registros fallidos
+    publish:
+      operationId: publishOperationPartiallyCompleted
+      summary: Publicado cuando una operación termina con algunos registros fallidos
+      message:
+        $ref: '#/components/messages/OperationPartiallyCompleted'
+    subscribe:
+      operationId: subscribeOperationPartiallyCompleted
+      summary: Suscripción a eventos de tipo operation.partially-completed
+      message:
+        $ref: '#/components/messages/OperationPartiallyCompleted'
+  events/operation/failed:
+    description: Publicado si la operación asíncrona falla
+    publish:
+      operationId: publishOperationFailed
+      summary: Publicado si la operación asíncrona falla
+      message:
+        $ref: '#/components/messages/OperationFailed'
+    subscribe:
+      operationId: subscribeOperationFailed
+      summary: Suscripción a eventos de tipo operation.failed
+      message:
+        $ref: '#/components/messages/OperationFailed'
+  events/operation/cancelled:
+    description: Publicado cuando se cancela una operación en curso
+    publish:
+      operationId: publishOperationCancelled
+      summary: Publicado cuando se cancela una operación en curso
+      message:
+        $ref: '#/components/messages/OperationCancelled'
+    subscribe:
+      operationId: subscribeOperationCancelled
+      summary: Suscripción a eventos de tipo operation.cancelled
+      message:
+        $ref: '#/components/messages/OperationCancelled'
+  events/operation/expired:
+    description: Publicado cuando una operación supera el tiempo límite de ejecución
+    publish:
+      operationId: publishOperationExpired
+      summary: Publicado cuando una operación supera el tiempo límite de ejecución
+      message:
+        $ref: '#/components/messages/OperationExpired'
+    subscribe:
+      operationId: subscribeOperationExpired
+      summary: Suscripción a eventos de tipo operation.expired
+      message:
+        $ref: '#/components/messages/OperationExpired'
+  events/subscription/activated:
+    description: Consumido/Publicado al activarse la suscripción contratada
+    publish:
+      operationId: publishSubscriptionActivated
+      summary: Consumido/Publicado al activarse la suscripción contratada
+      message:
+        $ref: '#/components/messages/SubscriptionActivated'
+    subscribe:
+      operationId: subscribeSubscriptionActivated
+      summary: Suscripción a eventos de tipo subscription.activated
+      message:
+        $ref: '#/components/messages/SubscriptionActivated'
+  events/subscription/suspended:
+    description: Consumido cuando Billing suspende la suscripción
+    publish:
+      operationId: publishSubscriptionSuspended
+      summary: Consumido cuando Billing suspende la suscripción
+      message:
+        $ref: '#/components/messages/SubscriptionSuspended'
+    subscribe:
+      operationId: subscribeSubscriptionSuspended
+      summary: Suscripción a eventos de tipo subscription.suspended
+      message:
+        $ref: '#/components/messages/SubscriptionSuspended'
+  events/subscription/cancelled:
+    description: Consumido cuando se cancela la suscripción comercial
+    publish:
+      operationId: publishSubscriptionCancelled
+      summary: Consumido cuando se cancela la suscripción comercial
+      message:
+        $ref: '#/components/messages/SubscriptionCancelled'
+    subscribe:
+      operationId: subscribeSubscriptionCancelled
+      summary: Suscripción a eventos de tipo subscription.cancelled
+      message:
+        $ref: '#/components/messages/SubscriptionCancelled'
+  events/subscription/plan-changed:
+    description: Consumido cuando la empresa cambia de plan
+    publish:
+      operationId: publishSubscriptionPlanChanged
+      summary: Consumido cuando la empresa cambia de plan
+      message:
+        $ref: '#/components/messages/SubscriptionPlanChanged'
+    subscribe:
+      operationId: subscribeSubscriptionPlanChanged
+      summary: Suscripción a eventos de tipo subscription.plan-changed
+      message:
+        $ref: '#/components/messages/SubscriptionPlanChanged'
+  events/subscription/payment-approved:
+    description: Consumido cuando se aprueba el pago de la suscripción
+    publish:
+      operationId: publishSubscriptionPaymentApproved
+      summary: Consumido cuando se aprueba el pago de la suscripción
+      message:
+        $ref: '#/components/messages/SubscriptionPaymentApproved'
+    subscribe:
+      operationId: subscribeSubscriptionPaymentApproved
+      summary: Suscripción a eventos de tipo subscription.payment-approved
+      message:
+        $ref: '#/components/messages/SubscriptionPaymentApproved'
+  events/subscription/payment-rejected:
+    description: Consumido cuando se rechaza el pago de la suscripción
+    publish:
+      operationId: publishSubscriptionPaymentRejected
+      summary: Consumido cuando se rechaza el pago de la suscripción
+      message:
+        $ref: '#/components/messages/SubscriptionPaymentRejected'
+    subscribe:
+      operationId: subscribeSubscriptionPaymentRejected
+      summary: Suscripción a eventos de tipo subscription.payment-rejected
+      message:
+        $ref: '#/components/messages/SubscriptionPaymentRejected'
+  events/subscription/grace-period-started:
+    description: Consumido al iniciar el periodo de gracia de 7 días
+    publish:
+      operationId: publishSubscriptionGracePeriodStarted
+      summary: Consumido al iniciar el periodo de gracia de 7 días
+      message:
+        $ref: '#/components/messages/SubscriptionGracePeriodStarted'
+    subscribe:
+      operationId: subscribeSubscriptionGracePeriodStarted
+      summary: Suscripción a eventos de tipo subscription.grace-period-started
+      message:
+        $ref: '#/components/messages/SubscriptionGracePeriodStarted'
+  events/subscription/grace-period-ended:
+    description: Consumido al finalizar el periodo de gracia
+    publish:
+      operationId: publishSubscriptionGracePeriodEnded
+      summary: Consumido al finalizar el periodo de gracia
+      message:
+        $ref: '#/components/messages/SubscriptionGracePeriodEnded'
+    subscribe:
+      operationId: subscribeSubscriptionGracePeriodEnded
+      summary: Suscripción a eventos de tipo subscription.grace-period-ended
+      message:
+        $ref: '#/components/messages/SubscriptionGracePeriodEnded'
+  events/branch-addon/created:
+    description: Consumido al adquirir un complemento de sucursal adicional
+    publish:
+      operationId: publishBranchAddonCreated
+      summary: Consumido al adquirir un complemento de sucursal adicional
+      message:
+        $ref: '#/components/messages/BranchAddonCreated'
+    subscribe:
+      operationId: subscribeBranchAddonCreated
+      summary: Suscripción a eventos de tipo branch-addon.created
+      message:
+        $ref: '#/components/messages/BranchAddonCreated'
+  events/branch-addon/cancelled:
+    description: Consumido al cancelar un complemento de sucursal
+    publish:
+      operationId: publishBranchAddonCancelled
+      summary: Consumido al cancelar un complemento de sucursal
+      message:
+        $ref: '#/components/messages/BranchAddonCancelled'
+    subscribe:
+      operationId: subscribeBranchAddonCancelled
+      summary: Suscripción a eventos de tipo branch-addon.cancelled
+      message:
+        $ref: '#/components/messages/BranchAddonCancelled'
+  events/platform-user-limit/changed:
+    description: Consumido al modificarse el límite de usuarios de plataforma
+    publish:
+      operationId: publishPlatformUserLimitChanged
+      summary: Consumido al modificarse el límite de usuarios de plataforma
+      message:
+        $ref: '#/components/messages/PlatformUserLimitChanged'
+    subscribe:
+      operationId: subscribePlatformUserLimitChanged
+      summary: Suscripción a eventos de tipo platform-user-limit.changed
+      message:
+        $ref: '#/components/messages/PlatformUserLimitChanged'
+  events/billing/administrative-correction-applied:
+    description: Consumido tras aplicar una corrección administrativa en Billing
+    publish:
+      operationId: publishBillingAdministrativeCorrectionApplied
+      summary: Consumido tras aplicar una corrección administrativa en Billing
+      message:
+        $ref: '#/components/messages/BillingAdministrativeCorrectionApplied'
+    subscribe:
+      operationId: subscribeBillingAdministrativeCorrectionApplied
+      summary: Suscripción a eventos de tipo billing.administrative-correction-applied
+      message:
+        $ref: '#/components/messages/BillingAdministrativeCorrectionApplied'
+  ws/v1/account/{accountId}:
+    description: Canal WebSocket para notificaciones administrativas de la cuenta
+    subscribe:
+      operationId: wsSubscribeAccount
+      summary: Recibir notificaciones de cuenta en tiempo real
+      message:
+        $ref: '#/components/schemas/EventEnvelope'
+  ws/v1/company/{companyId}:
+    description: Canal WebSocket para eventos de empresa, membresías y capacidades
+    subscribe:
+      operationId: wsSubscribeCompany
+      summary: Recibir cambios de empresa en tiempo real
+      message:
+        $ref: '#/components/schemas/EventEnvelope'
+  ws/v1/company/{companyId}/branch/{branchId}:
+    description: Canal WebSocket para operaciones y estado de una sucursal específica
+    subscribe:
+      operationId: wsSubscribeBranch
+      summary: Recibir eventos de sucursal en tiempo real
+      message:
+        $ref: '#/components/schemas/EventEnvelope'
+  ws/v1/company/{companyId}/operations:
+    description: Canal WebSocket para el seguimiento del progreso y estado de operaciones
+      asíncronas
+    subscribe:
+      operationId: wsSubscribeOperations
+      summary: Recibir notificaciones de progreso de operaciones
+      message:
+        $ref: '#/components/schemas/EventEnvelope'
+  ws/v1/company/{companyId}/notifications:
+    description: Canal WebSocket para notificaciones generales y alertas críticas
+      del Portal
+    subscribe:
+      operationId: wsSubscribeNotifications
+      summary: Recibir alertas y notificaciones del portal JComercy
+      message:
+        $ref: '#/components/schemas/EventEnvelope'
+components:
+  messages:
+    AccountCreated:
+      name: AccountCreated
+      title: AccountCreated
+      summary: Publicado cuando se crea una cuenta administrativa
+      tags:
+      - name: Eventos de Cuentas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    AccountUpdated:
+      name: AccountUpdated
+      title: AccountUpdated
+      summary: Publicado cuando se actualizan datos de preferencia o configuración
+        de la cuenta
+      tags:
+      - name: Eventos de Cuentas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    AccountSuspended:
+      name: AccountSuspended
+      title: AccountSuspended
+      summary: Publicado cuando se suspende la cuenta por falta de pago o acción administrativa
+      tags:
+      - name: Eventos de Cuentas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    AccountReactivated:
+      name: AccountReactivated
+      title: AccountReactivated
+      summary: Publicado cuando se reactiva una cuenta suspendida
+      tags:
+      - name: Eventos de Cuentas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    AccountDeactivated:
+      name: AccountDeactivated
+      title: AccountDeactivated
+      summary: Publicado cuando se completa la baja lógica de la cuenta
+      tags:
+      - name: Eventos de Cuentas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    CompanyCreated:
+      name: CompanyCreated
+      title: CompanyCreated
+      summary: Publicado cuando se registra una empresa en la cuenta
+      tags:
+      - name: Eventos de Empresas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    CompanyUpdated:
+      name: CompanyUpdated
+      title: CompanyUpdated
+      summary: Publicado cuando se actualizan perfil, contacto o preferencias de la
+        empresa
+      tags:
+      - name: Eventos de Empresas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    CompanyConfigurationCompleted:
+      name: CompanyConfigurationCompleted
+      title: CompanyConfigurationCompleted
+      summary: Publicado cuando se completan los datos obligatorios de la empresa
+      tags:
+      - name: Eventos de Empresas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    CompanyActivated:
+      name: CompanyActivated
+      title: CompanyActivated
+      summary: Publicado cuando la empresa queda activada para operar
+      tags:
+      - name: Eventos de Empresas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    CompanySuspended:
+      name: CompanySuspended
+      title: CompanySuspended
+      summary: Publicado cuando la empresa se suspende comercial o administrativamente
+      tags:
+      - name: Eventos de Empresas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    CompanyReactivated:
+      name: CompanyReactivated
+      title: CompanyReactivated
+      summary: Publicado cuando la empresa vuelve a estar activa
+      tags:
+      - name: Eventos de Empresas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    CompanyDeletionRequested:
+      name: CompanyDeletionRequested
+      title: CompanyDeletionRequested
+      summary: Publicado cuando se solicita la baja lógica de la empresa
+      tags:
+      - name: Eventos de Empresas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    CompanyDeleted:
+      name: CompanyDeleted
+      title: CompanyDeleted
+      summary: Publicado cuando se completa el proceso de borrado lógico
+      tags:
+      - name: Eventos de Empresas
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchCreated:
+      name: BranchCreated
+      title: BranchCreated
+      summary: Publicado cuando se registra una sucursal
+      tags:
+      - name: Eventos de Sucursales
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchUpdated:
+      name: BranchUpdated
+      title: BranchUpdated
+      summary: Publicado cuando se actualizan datos o perfil de sucursal
+      tags:
+      - name: Eventos de Sucursales
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchConfigurationCompleted:
+      name: BranchConfigurationCompleted
+      title: BranchConfigurationCompleted
+      summary: Publicado cuando se completa la configuración de la sucursal
+      tags:
+      - name: Eventos de Sucursales
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchActivated:
+      name: BranchActivated
+      title: BranchActivated
+      summary: Publicado cuando la sucursal queda habilitada operacionalmente
+      tags:
+      - name: Eventos de Sucursales
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchSuspended:
+      name: BranchSuspended
+      title: BranchSuspended
+      summary: Publicado cuando la sucursal se suspende
+      tags:
+      - name: Eventos de Sucursales
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchReactivated:
+      name: BranchReactivated
+      title: BranchReactivated
+      summary: Publicado cuando se reactiva una sucursal
+      tags:
+      - name: Eventos de Sucursales
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchCoverageRequired:
+      name: BranchCoverageRequired
+      title: BranchCoverageRequired
+      summary: Publicado cuando una sucursal queda en PENDING_PLAN por falta de cobertura
+        de suscripción
+      tags:
+      - name: Eventos de Sucursales
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchCoverageConfirmed:
+      name: BranchCoverageConfirmed
+      title: BranchCoverageConfirmed
+      summary: Publicado cuando Billing confirma cobertura para la sucursal
+      tags:
+      - name: Eventos de Sucursales
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchHeadOfficeChanged:
+      name: BranchHeadOfficeChanged
+      title: BranchHeadOfficeChanged
+      summary: Publicado cuando se designa una nueva sucursal matriz
+      tags:
+      - name: Eventos de Sucursales
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchDeletionRequested:
+      name: BranchDeletionRequested
+      title: BranchDeletionRequested
+      summary: Publicado cuando se solicita la baja lógica de sucursal
+      tags:
+      - name: Eventos de Sucursales
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchDeleted:
+      name: BranchDeleted
+      title: BranchDeleted
+      summary: Publicado cuando se confirma la baja lógica de sucursal
+      tags:
+      - name: Eventos de Sucursales
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    MembershipInvitationCreated:
+      name: MembershipInvitationCreated
+      title: MembershipInvitationCreated
+      summary: Publicado cuando se emite una invitación a usuario
+      tags:
+      - name: Eventos de Acceso
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    MembershipInvitationAccepted:
+      name: MembershipInvitationAccepted
+      title: MembershipInvitationAccepted
+      summary: Publicado cuando el usuario acepta la invitación de membresía
+      tags:
+      - name: Eventos de Acceso
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    MembershipInvitationRevoked:
+      name: MembershipInvitationRevoked
+      title: MembershipInvitationRevoked
+      summary: Publicado cuando se revoca una invitación pendiente
+      tags:
+      - name: Eventos de Acceso
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    MembershipCreated:
+      name: MembershipCreated
+      title: MembershipCreated
+      summary: Publicado cuando se crea la membresía en la empresa
+      tags:
+      - name: Eventos de Acceso
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    MembershipUpdated:
+      name: MembershipUpdated
+      title: MembershipUpdated
+      summary: Publicado cuando cambian roles o alcance de la membresía
+      tags:
+      - name: Eventos de Acceso
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    MembershipSuspended:
+      name: MembershipSuspended
+      title: MembershipSuspended
+      summary: Publicado cuando se suspende temporalmente el acceso del usuario
+      tags:
+      - name: Eventos de Acceso
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    MembershipReactivated:
+      name: MembershipReactivated
+      title: MembershipReactivated
+      summary: Publicado cuando se reactiva la membresía del usuario
+      tags:
+      - name: Eventos de Acceso
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    MembershipRevoked:
+      name: MembershipRevoked
+      title: MembershipRevoked
+      summary: Publicado cuando se revoca definitivamente el acceso
+      tags:
+      - name: Eventos de Acceso
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchAssignmentCreated:
+      name: BranchAssignmentCreated
+      title: BranchAssignmentCreated
+      summary: Publicado cuando se asigna un usuario a una sucursal de trabajo
+      tags:
+      - name: Eventos de Acceso
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchAssignmentUpdated:
+      name: BranchAssignmentUpdated
+      title: BranchAssignmentUpdated
+      summary: Publicado cuando se modifica el estado de una asignación de sucursal
+      tags:
+      - name: Eventos de Acceso
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchAssignmentRevoked:
+      name: BranchAssignmentRevoked
+      title: BranchAssignmentRevoked
+      summary: Publicado cuando se retira la asignación de sucursal
+      tags:
+      - name: Eventos de Acceso
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    OperationalContextChanged:
+      name: OperationalContextChanged
+      title: OperationalContextChanged
+      summary: Publicado cuando un usuario selecciona o cambia su sucursal activa
+        de trabajo
+      tags:
+      - name: Eventos de Acceso
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    RoleCreated:
+      name: RoleCreated
+      title: RoleCreated
+      summary: Publicado cuando se crea un rol personalizado
+      tags:
+      - name: Eventos de Roles y Permisos
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    RoleUpdated:
+      name: RoleUpdated
+      title: RoleUpdated
+      summary: Publicado cuando se modifican los permisos o nombre de un rol
+      tags:
+      - name: Eventos de Roles y Permisos
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    RoleDeactivated:
+      name: RoleDeactivated
+      title: RoleDeactivated
+      summary: Publicado cuando se desactiva un rol de empresa
+      tags:
+      - name: Eventos de Roles y Permisos
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    RoleDeleted:
+      name: RoleDeleted
+      title: RoleDeleted
+      summary: Publicado cuando se elimina un rol personalizado
+      tags:
+      - name: Eventos de Roles y Permisos
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    RoleAssigned:
+      name: RoleAssigned
+      title: RoleAssigned
+      summary: Publicado cuando se asigna un rol a un miembro
+      tags:
+      - name: Eventos de Roles y Permisos
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    RoleUnassigned:
+      name: RoleUnassigned
+      title: RoleUnassigned
+      summary: Publicado cuando se desasigna un rol
+      tags:
+      - name: Eventos de Roles y Permisos
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    EffectivePermissionsChanged:
+      name: EffectivePermissionsChanged
+      title: EffectivePermissionsChanged
+      summary: Publicado cuando cambian los permisos efectivos derivados de un usuario
+      tags:
+      - name: Eventos de Roles y Permisos
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    OperationCreated:
+      name: OperationCreated
+      title: OperationCreated
+      summary: Publicado al registrar una operación asíncrona
+      tags:
+      - name: Eventos de Operaciones
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    OperationProgressed:
+      name: OperationProgressed
+      title: OperationProgressed
+      summary: Publicado con avances de progreso de una operación
+      tags:
+      - name: Eventos de Operaciones
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    OperationCompleted:
+      name: OperationCompleted
+      title: OperationCompleted
+      summary: Publicado cuando una operación asíncrona finaliza exitosamente
+      tags:
+      - name: Eventos de Operaciones
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    OperationPartiallyCompleted:
+      name: OperationPartiallyCompleted
+      title: OperationPartiallyCompleted
+      summary: Publicado cuando una operación termina con algunos registros fallidos
+      tags:
+      - name: Eventos de Operaciones
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    OperationFailed:
+      name: OperationFailed
+      title: OperationFailed
+      summary: Publicado si la operación asíncrona falla
+      tags:
+      - name: Eventos de Operaciones
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    OperationCancelled:
+      name: OperationCancelled
+      title: OperationCancelled
+      summary: Publicado cuando se cancela una operación en curso
+      tags:
+      - name: Eventos de Operaciones
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    OperationExpired:
+      name: OperationExpired
+      title: OperationExpired
+      summary: Publicado cuando una operación supera el tiempo límite de ejecución
+      tags:
+      - name: Eventos de Operaciones
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    SubscriptionActivated:
+      name: SubscriptionActivated
+      title: SubscriptionActivated
+      summary: Consumido/Publicado al activarse la suscripción contratada
+      tags:
+      - name: Eventos de Billing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    SubscriptionSuspended:
+      name: SubscriptionSuspended
+      title: SubscriptionSuspended
+      summary: Consumido cuando Billing suspende la suscripción
+      tags:
+      - name: Eventos de Billing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    SubscriptionCancelled:
+      name: SubscriptionCancelled
+      title: SubscriptionCancelled
+      summary: Consumido cuando se cancela la suscripción comercial
+      tags:
+      - name: Eventos de Billing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    SubscriptionPlanChanged:
+      name: SubscriptionPlanChanged
+      title: SubscriptionPlanChanged
+      summary: Consumido cuando la empresa cambia de plan
+      tags:
+      - name: Eventos de Billing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    SubscriptionPaymentApproved:
+      name: SubscriptionPaymentApproved
+      title: SubscriptionPaymentApproved
+      summary: Consumido cuando se aprueba el pago de la suscripción
+      tags:
+      - name: Eventos de Billing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    SubscriptionPaymentRejected:
+      name: SubscriptionPaymentRejected
+      title: SubscriptionPaymentRejected
+      summary: Consumido cuando se rechaza el pago de la suscripción
+      tags:
+      - name: Eventos de Billing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    SubscriptionGracePeriodStarted:
+      name: SubscriptionGracePeriodStarted
+      title: SubscriptionGracePeriodStarted
+      summary: Consumido al iniciar el periodo de gracia de 7 días
+      tags:
+      - name: Eventos de Billing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    SubscriptionGracePeriodEnded:
+      name: SubscriptionGracePeriodEnded
+      title: SubscriptionGracePeriodEnded
+      summary: Consumido al finalizar el periodo de gracia
+      tags:
+      - name: Eventos de Billing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchAddonCreated:
+      name: BranchAddonCreated
+      title: BranchAddonCreated
+      summary: Consumido al adquirir un complemento de sucursal adicional
+      tags:
+      - name: Eventos de Billing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BranchAddonCancelled:
+      name: BranchAddonCancelled
+      title: BranchAddonCancelled
+      summary: Consumido al cancelar un complemento de sucursal
+      tags:
+      - name: Eventos de Billing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    PlatformUserLimitChanged:
+      name: PlatformUserLimitChanged
+      title: PlatformUserLimitChanged
+      summary: Consumido al modificarse el límite de usuarios de plataforma
+      tags:
+      - name: Eventos de Billing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    BillingAdministrativeCorrectionApplied:
+      name: BillingAdministrativeCorrectionApplied
+      title: BillingAdministrativeCorrectionApplied
+      summary: Consumido tras aplicar una corrección administrativa en Billing
+      tags:
+      - name: Eventos de Billing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+  schemas:
+    EventEnvelope:
+      type: object
+      required:
+      - eventId
+      - eventType
+      - eventVersion
+      - occurredAt
+      - correlationId
+      - accountId
+      - companyId
+      - data
+      properties:
+        eventId:
+          type: string
+          description: 'Identificador único universal del evento (prefix: evt_)'
+          example: evt_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        eventType:
+          type: string
+          description: Nombre canónico del evento en notación punto
+          example: company.updated
+        eventVersion:
+          type: string
+          description: Versión del esquema de contrato del evento
+          example: '1.0'
+        occurredAt:
+          type: string
+          format: date-time
+          description: Fecha y hora de ocurrencia en UTC, ISO 8601
+          example: '2026-08-26T20:00:00Z'
+        correlationId:
+          type: string
+          description: Identificador de correlación para trazabilidad de la solicitud
+          example: cor_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        causationId:
+          type: string
+          nullable: true
+          description: Identificador del evento u operación causante
+          example: cause_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        accountId:
+          type: string
+          description: Identificador público de la cuenta propietaria
+          example: acc_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        companyId:
+          type: string
+          description: Identificador público de la empresa
+          example: com_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        branchId:
+          type: string
+          nullable: true
+          description: Identificador público de la sucursal (opcional si el evento
+            es a nivel empresa/cuenta)
+          example: brn_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        actorUserId:
+          type: string
+          nullable: true
+          description: Identificador del usuario iniciador (nulo en eventos automáticos
+            del sistema o Billing)
+          example: usr_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        data:
+          type: object
+          description: Payload específico del evento (sin secretos, tokens ni contraseñas)
+          additionalProperties: true
+    WebSocketSubscribeMessage:
+      type: object
+      required:
+      - action
+      - channel
+      properties:
+        action:
+          type: string
+          enum:
+          - SUBSCRIBE
+          - UNSUBSCRIBE
+        channel:
+          type: string
+          example: company.com_01J...notifications
+    WebSocketAckMessage:
+      type: object
+      required:
+      - action
+      - notificationId
+      properties:
+        action:
+          type: string
+          enum:
+          - ACK
+        notificationId:
+          type: string
+          example: not_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+  securitySchemes:
+    userJwt:
+      type: httpApiKey
+      name: Authorization
+      in: header
+      description: JWT de autenticación de usuario 'Bearer {token}'
