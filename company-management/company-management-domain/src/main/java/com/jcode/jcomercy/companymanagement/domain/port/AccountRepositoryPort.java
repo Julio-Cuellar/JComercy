@@ -10,4 +10,7 @@ public interface AccountRepositoryPort {
     Optional<Account> findById(UUID id);
     Optional<Account> findByPublicAccountId(String publicAccountId);
     boolean existsByPublicAccountId(String publicAccountId);
+    boolean existsByOwnerRfc(String rfc);
+    boolean existsByOwnerEmail(String email);
+    Optional<Account> findByOwnerEmail(String email);
 }

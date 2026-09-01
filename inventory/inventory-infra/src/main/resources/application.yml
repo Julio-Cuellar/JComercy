@@ -1,0 +1,67 @@
+spring:
+  application:
+    name: inventory
+  datasource:
+    url: jdbc:h2:mem:inventory_db;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    schemas: inventory
+    default-schema: inventory
+    locations: classpath:db/migration
+  graphql:
+    path: /graphql/v1
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5673}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+
+server:
+  port: ${SERVER_PORT:8081}
+
+security:
+  jwt:
+    secret: ${SECURITY_JWT_SECRET:local-only-change-me-012345678901234567890123456789}
+    issuer: ${SECURITY_JWT_ISSUER:jcomercy}
+
+graphql:
+  security:
+    persisted-only: ${GRAPHQL_PERSISTED_ONLY:false}
+    allowed-operation-hashes: ${GRAPHQL_ALLOWED_OPERATION_HASHES:}
+    max-depth: ${GRAPHQL_MAX_DEPTH:8}
+    max-complexity: ${GRAPHQL_MAX_COMPLEXITY:100}
+    rate-limit-per-minute: ${GRAPHQL_RATE_LIMIT_PER_MINUTE:60}
+    rate-limit-backend: ${GRAPHQL_RATE_LIMIT_BACKEND:memory}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    url: /openapi-inventory-v1.yaml
+    disable-swagger-default-url: true
+  api-docs:
+    enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.jcode.jcomercy.inventory: INFO
+    com.jcode.jcomercy.inventory.infra.web.filter.WarehouseRequestLoggingFilter: INFO
+    com.jcode.jcomercy.inventory.infra.security.JwtAuthenticationFilter: INFO
+
+outbox:
+  publisher:
+    fixed-delay-ms: ${OUTBOX_PUBLISHER_FIXED_DELAY_MS:5000}
+  rabbit:
+    exchange: ${OUTBOX_RABBIT_EXCHANGE:jcomercy.events}
+    inventory-staging-queue: ${OUTBOX_RABBIT_INVENTORY_STAGING_QUEUE:jcomercy.events.inventory.pending}

@@ -36,6 +36,12 @@ public class BranchRepositoryAdapter implements BranchRepositoryPort {
     }
 
     @Override
+    public Optional<Branch> findByPublicCompanyIdAndPublicBranchId(String publicCompanyId, String publicBranchId) {
+        return repository.findByPublicCompanyIdAndPublicBranchId(publicCompanyId, publicBranchId)
+            .map(BranchJpaEntity::toDomain);
+    }
+
+    @Override
     public List<Branch> findByPublicCompanyId(String publicCompanyId) {
         return repository.findByPublicCompanyId(publicCompanyId).stream().map(BranchJpaEntity::toDomain).toList();
     }

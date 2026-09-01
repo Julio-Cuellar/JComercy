@@ -11,4 +11,7 @@ import java.util.UUID;
 public interface AccountSpringDataRepository extends JpaRepository<AccountJpaEntity, UUID> {
     Optional<AccountJpaEntity> findByPublicAccountId(String publicAccountId);
     boolean existsByPublicAccountId(String publicAccountId);
+    boolean existsByOwner_Rfc(String rfc);
+    boolean existsByOwner_Email(String email);
+    Optional<AccountJpaEntity> findByOwner_Email(String email);
 }

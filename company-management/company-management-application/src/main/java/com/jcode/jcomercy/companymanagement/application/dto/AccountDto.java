@@ -8,7 +8,7 @@ public record AccountDto(
     String publicAccountId,
     String name,
     String status,
-    String ownerUserId,
+    OwnerPersonDto owner,
     Instant createdAt,
     Instant updatedAt,
     long version
@@ -18,7 +18,7 @@ public record AccountDto(
             account.getPublicAccountId(),
             account.getName(),
             account.getStatus().name(),
-            account.getOwnerUserId(),
+            OwnerPersonDto.fromDomain(account.getOwner()),
             account.getCreatedAt(),
             account.getUpdatedAt(),
             account.getVersion()

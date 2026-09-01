@@ -11,6 +11,7 @@ import java.util.UUID;
 @Repository
 public interface BranchSpringDataRepository extends JpaRepository<BranchJpaEntity, UUID> {
     Optional<BranchJpaEntity> findByPublicBranchId(String publicBranchId);
+    Optional<BranchJpaEntity> findByPublicCompanyIdAndPublicBranchId(String publicCompanyId, String publicBranchId);
     List<BranchJpaEntity> findByPublicCompanyId(String publicCompanyId);
     Optional<BranchJpaEntity> findByPublicCompanyIdAndIsHeadOfficeTrue(String publicCompanyId);
     boolean existsByPublicCompanyIdAndCode(String publicCompanyId, String code);

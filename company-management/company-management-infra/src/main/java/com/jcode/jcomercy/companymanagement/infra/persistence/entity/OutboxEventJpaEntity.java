@@ -139,4 +139,7 @@ public class OutboxEventJpaEntity {
     public String getPayloadJson() { return payloadJson; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+
+    public void markPublished() { status = "PUBLISHED"; publishedAt = Instant.now(); updatedAt = Instant.now(); errorMessage = null; }
+    public void markFailed(String message) { status = "PENDING"; retryCount++; errorMessage = message; nextRetryAt = Instant.now().plusSeconds(Math.min(300, 5L * retryCount)); updatedAt = Instant.now(); }
 }

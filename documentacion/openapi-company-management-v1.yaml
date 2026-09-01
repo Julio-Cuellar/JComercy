@@ -4,11 +4,14 @@ info:
   version: 1.0.0
   description: Contrato formal inicial del módulo company_management.
 servers:
+- url: http://localhost:8080
+  description: Entorno local H2
 - url: https://api.jcomercy.example.com
   description: Producción (placeholder)
 - url: https://sandbox-api.jcomercy.example.com
   description: Sandbox (placeholder)
 tags:
+- name: Auth
 - name: Accounts
 - name: Companies
 - name: Branches
@@ -20,11 +23,110 @@ tags:
 security:
 - bearerAuth: []
 paths:
+  /api/v1/auth/login:
+    post:
+      tags:
+      - Auth
+      summary: Iniciar sesión con correo electrónico y obtener JWT
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: owner@example.com
+                password:
+                  type: string
+                  format: password
+                  example: OwnerPassword123!
+      responses:
+        '200':
+          description: JWT emitido
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accessToken, refreshToken, tokenType, expiresIn]
+                properties:
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+                    description: Token opaco de renovación; se rota en cada uso.
+                  tokenType:
+                    type: string
+                    example: Bearer
+                  expiresIn:
+                    type: integer
+                    format: int64
+                    example: 3600
+        '401':
+          description: Credenciales inválidas
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Renovar JWT y rotar refresh token
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: JWT renovado }
+        '401': { description: Refresh token inválido, expirado o revocado }
+  /api/v1/auth/password-recovery:
+    post:
+      tags: [Auth]
+      summary: Solicitar recuperación de contraseña
+      operationId: requestPasswordRecovery
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties: { email: { type: string, format: email } }
+      responses:
+        '202': { description: Solicitud aceptada sin revelar si el correo existe }
+  /api/v1/auth/password-recovery/confirm:
+    post:
+      tags: [Auth]
+      summary: Confirmar recuperación de contraseña
+      operationId: confirmPasswordRecovery
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token: { type: string }
+                newPassword: { type: string, format: password, minLength: 8, writeOnly: true }
+      responses:
+        '204': { description: Contraseña actualizada }
+        '401': { description: Token inválido o expirado }
   /api/v1/accounts/registration:
     post:
       tags:
       - Accounts
-      summary: Registrar cuenta, empresa y sucursal matriz
+      summary: Registrar cuenta administrativa
       operationId: registerAccount
       security: []
       parameters:
@@ -38,11 +140,11 @@ paths:
               $ref: '#/components/schemas/AccountRegistrationRequest'
       responses:
         '201':
-          description: Cuenta y contexto empresarial creados
+          description: Cuenta administrativa creada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AccountRegistrationResponse'
+                $ref: '#/components/schemas/Account'
         '400':
           $ref: '#/components/responses/BadRequest'
         '409':
@@ -3884,7 +3986,8 @@ components:
           - EXPIRED
         version:
           type: integer
-          minimum: 1
+          minimum: 0
+          example: 0
     WebhookSubscriptionPage:
       type: object
       properties:
@@ -3967,7 +4070,7 @@ components:
           format: date-time
         version:
           type: integer
-          minimum: 1
+          minimum: 0
     BillingChangeRequest:
       type: object
       required:
@@ -4568,48 +4671,76 @@ components:
     AccountRegistrationRequest:
       type: object
       required:
+      - name
       - owner
-      - account
-      - company
-      - headOffice
-      - terms
       properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: Cuenta OpenAPI Test
         owner:
-          type: object
-          required:
-          - identityReference
-          - displayName
-          properties:
-            identityReference:
-              type: string
-            displayName:
-              type: string
-              minLength: 1
-              maxLength: 160
-        account:
-          type: object
-          required:
-          - name
-          properties:
-            name:
-              type: string
-              minLength: 1
-              maxLength: 160
-        company:
-          $ref: '#/components/schemas/CompanyInput'
-        headOffice:
-          $ref: '#/components/schemas/BranchInput'
-        terms:
-          type: object
-          required:
-          - accepted
-          - version
-          properties:
-            accepted:
-              type: boolean
-              const: true
-            version:
-              type: string
+          $ref: '#/components/schemas/OwnerPerson'
+    OwnerPerson:
+      type: object
+      required:
+      - firstName
+      - lastName
+      - birthDate
+      - rfc
+      - phoneNumber
+      - email
+      - password
+      - state
+      - address
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Julio
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: Pérez López
+        birthDate:
+          type: string
+          format: date
+          example: '1985-04-12'
+        rfc:
+          type: string
+          minLength: 12
+          maxLength: 13
+          example: PELJ850412ABC
+        phoneNumber:
+          type: string
+          minLength: 7
+          maxLength: 30
+          example: '5512345678'
+        email:
+          type: string
+          format: email
+          example: owner@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          writeOnly: true
+        state:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Ciudad de México
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+          example: Av. Reforma 100
     AccountRegistrationResponse:
       type: object
       properties:
@@ -4641,15 +4772,16 @@ components:
           - ACTIVE
           - SUSPENDED
           - DEACTIVATED
-        ownerUserId:
-          type: string
+        owner:
+          $ref: '#/components/schemas/OwnerPerson'
         timeZone:
           type: string
         locale:
           type: string
         version:
           type: integer
-          minimum: 1
+          minimum: 0
+          example: 0
         createdAt:
           type: string
           format: date-time
@@ -4697,7 +4829,12 @@ components:
       type: object
       required:
       - legalName
-      - countryCode
+      - rfc
+      - taxRegime
+      - incorporationDate
+      - phone
+      - email
+      - fiscalAddress
       properties:
         legalName:
           type: string
@@ -4706,17 +4843,58 @@ components:
         tradeName:
           type: string
           maxLength: 240
-        countryCode:
+        rfc:
           type: string
-          minLength: 2
-          maxLength: 2
-          default: MX
-        taxProfile:
-          type: object
-          properties:
-            rfc:
-              type: string
-              maxLength: 13
+          minLength: 12
+          maxLength: 13
+        taxRegime:
+          type: string
+          example: '601'
+        incorporationDate:
+          type: string
+          format: date
+        phone:
+          type: string
+          minLength: 7
+          maxLength: 30
+        email:
+          type: string
+          format: email
+        website:
+          type: string
+          format: uri
+        logoUrl:
+          type: string
+          format: uri
+        fiscalAddress:
+          $ref: '#/components/schemas/FiscalAddress'
+    FiscalAddress:
+      type: object
+      required:
+      - calle
+      - numeroExterior
+      - colonia
+      - codigoPostal
+      - municipioAlcaldia
+      - estado
+      - pais
+      properties:
+        calle:
+          type: string
+        numeroExterior:
+          type: string
+        numeroInterior:
+          type: string
+        colonia:
+          type: string
+        codigoPostal:
+          type: string
+        municipioAlcaldia:
+          type: string
+        estado:
+          type: string
+        pais:
+          type: string
     CompanyReference:
       type: object
       properties:
@@ -4740,26 +4918,31 @@ components:
             type: string
           tradeName:
             type: string
-          countryCode:
+          rfc:
             type: string
-          visibleBranchCount:
-            type: integer
-            minimum: 0
-          userAccess:
+          taxRegime:
+            type: string
+          incorporationDate:
+            type: string
+            format: date
+          phone:
+            type: string
+          email:
+            type: string
+            format: email
+          website:
+            type: string
+          logoUrl:
+            type: string
+          fiscalAddress:
+            $ref: '#/components/schemas/FiscalAddress'
+          preferencesJson:
             type: string
           version:
             type: integer
             minimum: 1
     CreateCompanyRequest:
-      type: object
-      required:
-      - company
-      - headOffice
-      properties:
-        company:
-          $ref: '#/components/schemas/CompanyInput'
-        headOffice:
-          $ref: '#/components/schemas/BranchInput'
+      $ref: '#/components/schemas/CompanyInput'
     CreateCompanyResponse:
       type: object
       properties:
@@ -4800,9 +4983,10 @@ components:
     BranchInput:
       type: object
       required:
+      - code
       - name
-      - countryCode
-      - timeZone
+      - domicilio
+      - phoneNumber
       properties:
         name:
           type: string
@@ -4811,26 +4995,55 @@ components:
         code:
           type: string
           maxLength: 50
-        countryCode:
+        type:
           type: string
-          minLength: 2
-          maxLength: 2
-          default: MX
-        timeZone:
+          enum: [MATRIZ, SUCURSAL, BODEGA, PUNTO_VENTA]
+          description: La primera sucursal de cada empresa debe ser MATRIZ; posteriormente solo se permiten sucursales no matriz.
+          default: SUCURSAL
+        domicilio:
+          $ref: '#/components/schemas/FiscalAddress'
+        phoneNumber:
           type: string
-        address:
-          type: object
-          properties:
-            street:
-              type: string
-            city:
-              type: string
-            state:
-              type: string
-            postalCode:
-              type: string
-            countryCode:
-              type: string
+          minLength: 7
+          maxLength: 30
+        email:
+          type: string
+          format: email
+        rfc:
+          type: string
+          maxLength: 13
+        fiscalName:
+          type: string
+          maxLength: 255
+        fiscalPostalCode:
+          type: string
+          maxLength: 20
+        centroCostoId:
+          type: string
+        almacenId:
+          type: string
+        listaPreciosId:
+          type: string
+        serieFacturacion:
+          type: string
+          maxLength: 32
+        folioActual:
+          type: integer
+          format: int64
+          minimum: 0
+        moneda:
+          type: string
+          minLength: 3
+          maxLength: 3
+          default: MXN
+        responsableId:
+          type: string
+        fechaApertura:
+          type: string
+          format: date
+        fechaCierre:
+          type: string
+          format: date
     Address:
       type: object
       properties:
@@ -4855,8 +5068,8 @@ components:
         code:
           type: string
           maxLength: 50
-        address:
-          $ref: '#/components/schemas/Address'
+        domicilio:
+          $ref: '#/components/schemas/FiscalAddress'
     CreateBranchRequest:
       allOf:
       - $ref: '#/components/schemas/BranchInput'
@@ -4883,8 +5096,9 @@ components:
           - PENDING_PLAN
           - ACTIVE
           - SUSPENDED
-        isHeadOffice:
-          type: boolean
+        type:
+          type: string
+          enum: [MATRIZ, SUCURSAL, BODEGA, PUNTO_VENTA]
     Branch:
       allOf:
       - $ref: '#/components/schemas/BranchReference'
@@ -4906,6 +5120,40 @@ components:
             type: boolean
           timeZone:
             type: string
+          domicilio:
+            $ref: '#/components/schemas/FiscalAddress'
+          phoneNumber:
+            type: string
+          email:
+            type: string
+            format: email
+          rfc:
+            type: string
+          fiscalName:
+            type: string
+          fiscalPostalCode:
+            type: string
+          centroCostoId:
+            type: string
+          almacenId:
+            type: string
+          listaPreciosId:
+            type: string
+          serieFacturacion:
+            type: string
+          folioActual:
+            type: integer
+            format: int64
+          moneda:
+            type: string
+          responsableId:
+            type: string
+          fechaApertura:
+            type: string
+            format: date
+          fechaCierre:
+            type: string
+            format: date
           version:
             type: integer
             minimum: 1

@@ -38,4 +38,19 @@ public class AccountRepositoryAdapter implements AccountRepositoryPort {
     public boolean existsByPublicAccountId(String publicAccountId) {
         return repository.existsByPublicAccountId(publicAccountId);
     }
+
+    @Override
+    public boolean existsByOwnerRfc(String rfc) {
+        return repository.existsByOwner_Rfc(rfc);
+    }
+
+    @Override
+    public boolean existsByOwnerEmail(String email) {
+        return repository.existsByOwner_Email(email);
+    }
+
+    @Override
+    public Optional<Account> findByOwnerEmail(String email) {
+        return repository.findByOwner_Email(email).map(AccountJpaEntity::toDomain);
+    }
 }

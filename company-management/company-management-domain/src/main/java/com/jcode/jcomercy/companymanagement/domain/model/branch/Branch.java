@@ -1,8 +1,10 @@
 package com.jcode.jcomercy.companymanagement.domain.model.branch;
 
 import com.jcode.jcomercy.companymanagement.domain.exception.DomainRuleViolationException;
+import com.jcode.jcomercy.companymanagement.domain.model.company.DomicilioFiscal;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -12,31 +14,79 @@ public class Branch {
     private final String publicCompanyId;
     private String code;
     private String name;
-    private boolean isHeadOffice;
+    private BranchType type;
+    private DomicilioFiscal domicilio;
+    private String phoneNumber;
+    private String email;
+    private String rfc;
+    private String fiscalName;
+    private String fiscalPostalCode;
+    private String centroCostoId;
+    private String almacenId;
+    private String listaPreciosId;
+    private String serieFacturacion;
+    private Long folioActual;
     private BranchStatus status;
     private String timeZone;
+    private String moneda;
+    private String responsableId;
+    private LocalDate fechaApertura;
+    private LocalDate fechaCierre;
     private final Instant createdAt;
     private Instant updatedAt;
     private long version;
 
-    public Branch(UUID id, String publicBranchId, String publicCompanyId, String code, String name, boolean isHeadOffice, BranchStatus status, String timeZone, Instant createdAt, Instant updatedAt, long version) {
+    public Branch(UUID id, String publicBranchId, String publicCompanyId, String code, String name,
+                  BranchType type, DomicilioFiscal domicilio, String phoneNumber, String email,
+                  String rfc, String fiscalName, String fiscalPostalCode,
+                  String centroCostoId, String almacenId, String listaPreciosId, String serieFacturacion,
+                  Long folioActual, BranchStatus status, String timeZone, String moneda, String responsableId,
+                  LocalDate fechaApertura, LocalDate fechaCierre, Instant createdAt, Instant updatedAt, long version) {
         this.id = Objects.requireNonNull(id, "id no puede ser nulo");
         this.publicBranchId = Objects.requireNonNull(publicBranchId, "publicBranchId no puede ser nulo");
         this.publicCompanyId = Objects.requireNonNull(publicCompanyId, "publicCompanyId no puede ser nulo");
         this.code = validateCode(code);
         this.name = validateName(name);
-        this.isHeadOffice = isHeadOffice;
+        this.type = Objects.requireNonNull(type, "type no puede ser nulo");
+        this.domicilio = Objects.requireNonNull(domicilio, "El domicilio no puede ser nulo");
+        this.phoneNumber = required(phoneNumber, "El número de contacto");
+        this.email = optional(email);
+        this.rfc = optional(rfc);
+        this.fiscalName = optional(fiscalName);
+        this.fiscalPostalCode = optional(fiscalPostalCode);
+        this.centroCostoId = optional(centroCostoId);
+        this.almacenId = optional(almacenId);
+        this.listaPreciosId = optional(listaPreciosId);
+        this.serieFacturacion = optional(serieFacturacion);
+        this.folioActual = folioActual != null ? folioActual : 0L;
         this.status = Objects.requireNonNull(status, "status no puede ser nulo");
         this.timeZone = timeZone != null ? timeZone : "America/Mexico_City";
+        this.moneda = moneda != null && !moneda.isBlank() ? moneda.trim().toUpperCase() : "MXN";
+        this.responsableId = optional(responsableId);
+        this.fechaApertura = fechaApertura;
+        this.fechaCierre = fechaCierre;
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt no puede ser nulo");
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt no puede ser nulo");
         this.version = version;
     }
 
-    public static Branch create(String publicCompanyId, String code, String name, boolean isHeadOffice) {
+    public static Branch create(String publicCompanyId, String code, String name, BranchType type,
+                                DomicilioFiscal domicilio, String phoneNumber, String email,
+                                String rfc, String fiscalName, String fiscalPostalCode,
+                                String centroCostoId, String almacenId, String listaPreciosId, String serieFacturacion,
+                                Long folioActual, String moneda, String responsableId,
+                                LocalDate fechaApertura, LocalDate fechaCierre) {
         Instant now = Instant.now();
         String publicId = "brn_" + UUID.randomUUID().toString().replace("-", "");
-        return new Branch(UUID.randomUUID(), publicId, publicCompanyId, code, name, isHeadOffice, BranchStatus.CONFIGURING, "America/Mexico_City", now, now, 0L);
+        return new Branch(UUID.randomUUID(), publicId, publicCompanyId, code, name, type, domicilio, phoneNumber, email,
+            rfc, fiscalName, fiscalPostalCode, centroCostoId, almacenId, listaPreciosId, serieFacturacion, folioActual,
+            BranchStatus.CONFIGURING, "America/Mexico_City", moneda, responsableId, fechaApertura, fechaCierre, now, now, 0L);
+    }
+
+    public static Branch create(String publicCompanyId, String code, String name, boolean isHeadOffice,
+                                DomicilioFiscal domicilio, String phoneNumber) {
+        return create(publicCompanyId, code, name, isHeadOffice ? BranchType.MATRIZ : BranchType.SUCURSAL,
+            domicilio, phoneNumber, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private String validateCode(String code) {
@@ -52,6 +102,15 @@ public class Branch {
         }
         return name.trim();
     }
+
+    private String required(String value, String label) {
+        if (value == null || value.trim().isEmpty()) {
+            throw new DomainRuleViolationException(label + " no puede estar vacío.");
+        }
+        return value.trim();
+    }
+
+    private String optional(String value) { return value == null ? "" : value.trim(); }
 
     public void updateProfile(String name, String timeZone) {
         if (this.status == BranchStatus.DELETED) {
@@ -102,7 +161,7 @@ public class Branch {
     }
 
     public void setHeadOffice(boolean headOffice) {
-        this.isHeadOffice = headOffice;
+        this.type = headOffice ? BranchType.MATRIZ : BranchType.SUCURSAL;
         this.updatedAt = Instant.now();
     }
 
@@ -117,9 +176,25 @@ public class Branch {
     public String getPublicCompanyId() { return publicCompanyId; }
     public String getCode() { return code; }
     public String getName() { return name; }
-    public boolean isHeadOffice() { return isHeadOffice; }
+    public BranchType getType() { return type; }
+    public boolean isHeadOffice() { return type == BranchType.MATRIZ; }
+    public DomicilioFiscal getDomicilio() { return domicilio; }
+    public String getPhoneNumber() { return phoneNumber; }
+    public String getEmail() { return email; }
+    public String getRfc() { return rfc; }
+    public String getFiscalName() { return fiscalName; }
+    public String getFiscalPostalCode() { return fiscalPostalCode; }
+    public String getCentroCostoId() { return centroCostoId; }
+    public String getAlmacenId() { return almacenId; }
+    public String getListaPreciosId() { return listaPreciosId; }
+    public String getSerieFacturacion() { return serieFacturacion; }
+    public Long getFolioActual() { return folioActual; }
     public BranchStatus getStatus() { return status; }
     public String getTimeZone() { return timeZone; }
+    public String getMoneda() { return moneda; }
+    public String getResponsableId() { return responsableId; }
+    public LocalDate getFechaApertura() { return fechaApertura; }
+    public LocalDate getFechaCierre() { return fechaCierre; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public long getVersion() { return version; }

@@ -36,6 +36,11 @@ public class CompanyRepositoryAdapter implements CompanyRepositoryPort {
     }
 
     @Override
+    public Optional<Company> findByPublicCompanyIdForUpdate(String publicCompanyId) {
+        return repository.findForUpdateByPublicCompanyId(publicCompanyId).map(CompanyJpaEntity::toDomain);
+    }
+
+    @Override
     public List<Company> findByPublicAccountId(String publicAccountId) {
         return repository.findByPublicAccountId(publicAccountId).stream().map(CompanyJpaEntity::toDomain).toList();
     }

@@ -10,6 +10,7 @@ public interface BranchRepositoryPort {
     Branch save(Branch branch);
     Optional<Branch> findById(UUID id);
     Optional<Branch> findByPublicBranchId(String publicBranchId);
+    Optional<Branch> findByPublicCompanyIdAndPublicBranchId(String publicCompanyId, String publicBranchId);
     List<Branch> findByPublicCompanyId(String publicCompanyId);
     Optional<Branch> findHeadOfficeByPublicCompanyId(String publicCompanyId);
     boolean existsByPublicCompanyIdAndCode(String publicCompanyId, String code);

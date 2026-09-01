@@ -11,26 +11,26 @@ public class Account {
     private final String publicAccountId;
     private String name;
     private AccountStatus status;
-    private final String ownerUserId;
+    private final OwnerPerson owner;
     private final Instant createdAt;
     private Instant updatedAt;
     private long version;
 
-    public Account(UUID id, String publicAccountId, String name, AccountStatus status, String ownerUserId, Instant createdAt, Instant updatedAt, long version) {
+    public Account(UUID id, String publicAccountId, String name, AccountStatus status, OwnerPerson owner, Instant createdAt, Instant updatedAt, long version) {
         this.id = Objects.requireNonNull(id, "id no puede ser nulo");
         this.publicAccountId = Objects.requireNonNull(publicAccountId, "publicAccountId no puede ser nulo");
         this.name = validateName(name);
         this.status = Objects.requireNonNull(status, "status no puede ser nulo");
-        this.ownerUserId = Objects.requireNonNull(ownerUserId, "ownerUserId no puede ser nulo");
+        this.owner = Objects.requireNonNull(owner, "owner no puede ser nulo");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt no puede ser nulo");
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt no puede ser nulo");
         this.version = version;
     }
 
-    public static Account create(String name, String ownerUserId) {
+    public static Account create(String name, OwnerPerson owner) {
         Instant now = Instant.now();
         String publicId = "acc_" + UUID.randomUUID().toString().replace("-", "");
-        return new Account(UUID.randomUUID(), publicId, name, AccountStatus.ACTIVE, ownerUserId, now, now, 0L);
+        return new Account(UUID.randomUUID(), publicId, name, AccountStatus.ACTIVE, owner, now, now, 0L);
     }
 
     private String validateName(String name) {
@@ -74,7 +74,7 @@ public class Account {
     public String getPublicAccountId() { return publicAccountId; }
     public String getName() { return name; }
     public AccountStatus getStatus() { return status; }
-    public String getOwnerUserId() { return ownerUserId; }
+    public OwnerPerson getOwner() { return owner; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public long getVersion() { return version; }

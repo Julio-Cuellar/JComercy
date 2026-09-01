@@ -6,6 +6,7 @@ import jakarta.persistence.*;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.time.LocalDate;
 
 @Entity
 @Table(name = "account", schema = "company_management")
@@ -23,8 +24,9 @@ public class AccountJpaEntity {
     @Enumerated(EnumType.STRING)
     private AccountStatus status;
 
-    @Column(name = "owner_user_id", nullable = false, length = 64)
-    private String ownerUserId;
+    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true, optional = false)
+    @JoinColumn(name = "owner_person_id", nullable = false, unique = true)
+    private OwnerPersonJpaEntity owner;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -44,7 +46,7 @@ public class AccountJpaEntity {
         entity.publicAccountId = domain.getPublicAccountId();
         entity.name = domain.getName();
         entity.status = domain.getStatus();
-        entity.ownerUserId = domain.getOwnerUserId();
+        entity.owner = OwnerPersonJpaEntity.fromDomain(domain.getOwner());
         entity.createdAt = domain.getCreatedAt();
         entity.updatedAt = domain.getUpdatedAt();
         entity.version = domain.getVersion();
@@ -52,7 +54,7 @@ public class AccountJpaEntity {
     }
 
     public Account toDomain() {
-        return new Account(id, publicAccountId, name, status, ownerUserId, createdAt, updatedAt, version);
+        return new Account(id, publicAccountId, name, status, owner.toDomain(), createdAt, updatedAt, version);
     }
 
     // Getters & Setters
@@ -60,7 +62,7 @@ public class AccountJpaEntity {
     public String getPublicAccountId() { return publicAccountId; }
     public String getName() { return name; }
     public AccountStatus getStatus() { return status; }
-    public String getOwnerUserId() { return ownerUserId; }
+    public OwnerPersonJpaEntity getOwner() { return owner; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public long getVersion() { return version; }
