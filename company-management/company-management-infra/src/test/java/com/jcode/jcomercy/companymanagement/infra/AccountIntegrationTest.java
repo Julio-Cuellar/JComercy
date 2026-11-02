@@ -68,10 +68,14 @@ class AccountIntegrationTest {
             .andReturn().getResponse().getContentAsString();
 
         // Check Outbox Event table in Database
+        // La base H2 es compartida entre pruebas: se filtra por la cuenta recién registrada
+        // para no depender del orden de ejecución (ver ERR-001 en documentacion/bitacora.md).
+        String publicAccountId = com.jayway.jsonpath.JsonPath.read(responseJson, "$.publicAccountId");
         List<OutboxEventJpaEntity> events = outboxRepository.findAll();
         assertThat(events).isNotEmpty();
         OutboxEventJpaEntity createdEvent = events.stream()
             .filter(e -> "account.created".equals(e.getEventType()))
+            .filter(e -> e.getPayloadJson().contains(publicAccountId))
             .findFirst()
             .orElseThrow();
 
