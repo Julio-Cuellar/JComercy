@@ -118,7 +118,7 @@ public class StockApplicationService {
 
     private StockOperationResult post(StockCommand command, MovementType type) {
         var warehouse = warehouses.findById(command.warehouseId())
-                .orElseThrow(() -> new InventoryApplicationException("warehouse not found"));
+                .orElseThrow(() -> InventoryApplicationException.notFound("warehouse not found"));
         if (!warehouse.companyId().equals(command.companyId())) throw new InventoryApplicationException("warehouse does not belong to company");
         if (!warehouse.acceptsMovements()) throw new InventoryApplicationException("warehouse is not active");
         if (warehouse.scope() == WarehouseScope.BRANCH_OWNED && !command.branchId().equals(warehouse.branchId())) {
@@ -129,10 +129,10 @@ public class StockApplicationService {
             throw new InventoryApplicationException("branch does not have access to this shared warehouse");
         }
         var location = locations.findById(command.locationId())
-                .orElseThrow(() -> new InventoryApplicationException("warehouse location not found"));
+                .orElseThrow(() -> InventoryApplicationException.notFound("warehouse location not found"));
         if (!location.warehouseId().equals(warehouse.id())) throw new InventoryApplicationException("location does not belong to warehouse");
         if (!location.acceptsStock()) throw new InventoryApplicationException("warehouse location does not accept stock");
-        var product = products.findById(command.productId()).orElseThrow(() -> new InventoryApplicationException("product not found"));
+        var product = products.findById(command.productId()).orElseThrow(() -> InventoryApplicationException.notFound("product not found"));
         if (!product.companyId().equals(command.companyId()) || product.status() != ProductStatus.ACTIVE) {
             throw new InventoryApplicationException("product is not active for company");
         }
@@ -159,7 +159,7 @@ public class StockApplicationService {
                             command.inventoryStatus(), command.quantity(), BigDecimal.ZERO, command.unitCost(), "DEFAULT", 0));
             return persist(updated, movement(command, type, tracking));
         }
-        var balance = existing.orElseThrow(() -> new InventoryApplicationException("stock balance not found"));
+        var balance = existing.orElseThrow(() -> InventoryApplicationException.notFound("stock balance not found"));
         var updated = balance.issue(command.quantity(), product.allowNegativeStock());
         return persist(updated, movement(command, type, tracking));
     }

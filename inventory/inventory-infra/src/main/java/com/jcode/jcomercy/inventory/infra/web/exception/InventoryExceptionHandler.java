@@ -22,7 +22,7 @@ public class InventoryExceptionHandler {
     @ExceptionHandler(InventoryApplicationException.class)
     public ResponseEntity<Map<String, String>> handleApplication(InventoryApplicationException exception) {
         log.warn("Operación de inventario rechazada: {}", exception.getMessage());
-        var status = exception.getMessage().contains("not found") ? HttpStatus.NOT_FOUND : HttpStatus.CONFLICT;
+        var status = exception.kind() == InventoryApplicationException.Kind.NOT_FOUND ? HttpStatus.NOT_FOUND : HttpStatus.CONFLICT;
         return ResponseEntity.status(status).body(Map.of("code", "INVENTORY_OPERATION_REJECTED", "message", exception.getMessage()));
     }
 

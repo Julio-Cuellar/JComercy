@@ -72,7 +72,7 @@ public class ProductApplicationService {
 
     @Transactional(readOnly = true)
     public Product get(UUID productId) {
-        return products.findById(productId).orElseThrow(() -> new InventoryApplicationException("product not found"));
+        return products.findById(productId).orElseThrow(() -> InventoryApplicationException.notFound("product not found"));
     }
 
     @Transactional(readOnly = true)
@@ -110,7 +110,7 @@ public class ProductApplicationService {
     @Transactional
     public ProductUnitConversion addConversion(String companyId, UUID productId, AddConversionCommand command) {
         var product = get(productId);
-        if (!product.companyId().equals(companyId)) throw new InventoryApplicationException("product not found");
+        if (!product.companyId().equals(companyId)) throw InventoryApplicationException.notFound("product not found");
         var from = resolveUnit(companyId, command.fromUnitCode(), "fromUnitCode");
         var to = resolveUnit(companyId, command.toUnitCode(), "toUnitCode");
         if (from.dimension() != to.dimension()) {
@@ -130,7 +130,7 @@ public class ProductApplicationService {
     @Transactional(readOnly = true)
     public List<ProductUnitConversion> listConversions(String companyId, UUID productId) {
         var product = get(productId);
-        if (!product.companyId().equals(companyId)) throw new InventoryApplicationException("product not found");
+        if (!product.companyId().equals(companyId)) throw InventoryApplicationException.notFound("product not found");
         var result = conversions.findByProductId(productId);
         log.info("Conversiones de producto consultadas productId={} total={}", productId, result.size());
         return result;

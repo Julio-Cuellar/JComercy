@@ -59,7 +59,7 @@ public class WarehouseController {
         var warehouse = service.createWarehouse(new WarehouseApplicationService.CreateWarehouseCommand(
                 companyId, request.scope(), request.branchId(), request.code(), request.name(), request.type(),
                 request.defaultWarehouse(), request.address(), request.phone(), request.email(), request.managerId(),
-                request.timezone(), request.currency()));
+                request.timezone(), request.currency(), actor(authentication)));
         log.info("Almacén creado warehouseId={} companyId={}", warehouse.publicWarehouseId(), companyId);
         return ResponseEntity.created(URI.create("/api/v1/warehouses/" + warehouse.publicWarehouseId())).body(warehouse);
     }
@@ -81,7 +81,7 @@ public class WarehouseController {
         var warehouse = service.createBranchWarehouse(companyId, branchId,
                 new WarehouseApplicationService.CreateBranchWarehouseCommand(request.code(), request.name(),
                         request.type(), request.defaultWarehouse(), request.address(), request.phone(), request.email(),
-                        request.managerId(), request.timezone(), request.currency()));
+                        request.managerId(), request.timezone(), request.currency(), actor(authentication)));
         log.info("Almacén de sucursal creado warehouseId={} companyId={} branchId={}", warehouse.publicWarehouseId(),
                 companyId, branchId);
         return ResponseEntity.created(URI.create("/api/v1/warehouses/" + warehouse.publicWarehouseId())).body(warehouse);
@@ -134,7 +134,7 @@ public class WarehouseController {
             log.warn("Activar almacén rechazado warehouseId={} actor={}", warehouseId, actor(authentication));
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
-        return ResponseEntity.ok(service.activate(warehouseId));
+        return ResponseEntity.ok(service.activate(warehouseId, actor(authentication)));
     }
 
     @PostMapping("/warehouses/{warehouseId}/branches")

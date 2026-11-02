@@ -82,7 +82,7 @@ public class WarehouseApplicationService {
         log.info("Almacén persistido id={} publicWarehouseId={} companyId={} branchId={}", saved.id(),
                 saved.publicWarehouseId(), saved.companyId(), saved.branchId());
         if (outboxPort != null) {
-            outboxPort.publish("warehouse.created", saved.companyId(), saved.branchId(), "SYSTEM", null,
+            outboxPort.publish("warehouse.created", saved.companyId(), saved.branchId(), command.actorUserId(), null,
                     java.util.Map.of("warehouseId", saved.id().toString(), "publicWarehouseId", saved.publicWarehouseId(), "code", saved.code(), "name", saved.name()));
         }
         return saved;
@@ -92,7 +92,8 @@ public class WarehouseApplicationService {
     public Warehouse createBranchWarehouse(String companyId, String branchId, CreateBranchWarehouseCommand command) {
         return createWarehouse(new CreateWarehouseCommand(companyId, WarehouseScope.BRANCH_OWNED, branchId,
                 command.code(), command.name(), command.type(), command.defaultWarehouse(), command.address(),
-                command.phone(), command.email(), command.managerId(), command.timezone(), command.currency()));
+                command.phone(), command.email(), command.managerId(), command.timezone(), command.currency(),
+                command.actorUserId()));
     }
 
     @Transactional(readOnly = true)
@@ -114,9 +115,9 @@ public class WarehouseApplicationService {
     }
 
     @Transactional
-    public Warehouse activate(UUID warehouseId) {
+    public Warehouse activate(UUID warehouseId, String actorUserId) {
         var warehouse = warehouseRepository.findById(warehouseId)
-                .orElseThrow(() -> new InventoryApplicationException("warehouse not found"));
+                .orElseThrow(() -> InventoryApplicationException.notFound("warehouse not found"));
         if (warehouse.scope() == WarehouseScope.COMPANY_SHARED) {
             if (!accessRepository.existsActiveByWarehouseId(warehouseId)) {
                 throw new InventoryApplicationException("company-shared warehouse must have at least one authorized branch before activation");
@@ -125,7 +126,7 @@ public class WarehouseApplicationService {
         var activated = warehouseRepository.save(warehouse.activate());
         log.info("Almacén activado warehouseId={} companyId={}", activated.id(), activated.companyId());
         if (outboxPort != null) {
-            outboxPort.publish("warehouse.activated", activated.companyId(), activated.branchId(), "SYSTEM", null,
+            outboxPort.publish("warehouse.activated", activated.companyId(), activated.branchId(), actorUserId, null,
                     java.util.Map.of("warehouseId", activated.id().toString(), "publicWarehouseId", activated.publicWarehouseId(), "status", activated.status().name()));
         }
         return activated;
@@ -137,7 +138,7 @@ public class WarehouseApplicationService {
         var warehouse = warehouseRepository.findById(command.warehouseId())
                 .orElseThrow(() -> {
                     log.warn("Acceso rechazado: almacén no encontrado warehouseId={}", command.warehouseId());
-                    return new InventoryApplicationException("warehouse not found");
+                    return InventoryApplicationException.notFound("warehouse not found");
                 });
         if (warehouse.scope() != WarehouseScope.COMPANY_SHARED) {
             log.warn("Acceso rechazado: almacén no compartido warehouseId={} scope={}", command.warehouseId(), warehouse.scope());
@@ -159,7 +160,7 @@ public class WarehouseApplicationService {
         var warehouse = warehouseRepository.findById(command.warehouseId())
                 .orElseThrow(() -> {
                     log.warn("Creación de ubicación rechazada: almacén no encontrado warehouseId={}", command.warehouseId());
-                    return new InventoryApplicationException("warehouse not found");
+                    return InventoryApplicationException.notFound("warehouse not found");
                 });
         if (warehouse.status() == WarehouseStatus.INACTIVE || warehouse.status() == WarehouseStatus.BLOCKED) {
             log.warn("Creación de ubicación rechazada por estado warehouseId={} status={}", command.warehouseId(), warehouse.status());
@@ -196,12 +197,12 @@ public class WarehouseApplicationService {
     public record CreateWarehouseCommand(String companyId, WarehouseScope scope, String branchId, String code,
                                          String name, WarehouseType type, boolean defaultWarehouse, String address,
                                          String phone, String email, String managerId, String timezone,
-                                         String currency) {
+                                         String currency, String actorUserId) {
     }
 
     public record CreateBranchWarehouseCommand(String code, String name, WarehouseType type,
                                                boolean defaultWarehouse, String address, String phone, String email,
-                                               String managerId, String timezone, String currency) {
+                                               String managerId, String timezone, String currency, String actorUserId) {
     }
 
     public record GrantBranchAccessCommand(UUID warehouseId, String branchId, String assignedBy) {
