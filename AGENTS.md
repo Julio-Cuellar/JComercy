@@ -1411,3 +1411,28 @@ A UI task is complete when:
 JComercy's goal is not to look like software made for administrators.
 
 It should feel like a tool made for people running a real business.
+
+---
+
+# 39. Development Log (applies to all work, not only UI)
+
+Every change to this repository must be recorded in `documentacion/bitacora.md`, **without being asked**.
+
+For each piece of work, add an entry (`BIT-NNN`) with:
+
+- **Qué se hizo:** the change, in one or two lines.
+- **Cómo se hizo:** approach and files touched; for code, the RED and GREEN test evidence.
+- **Afectaciones:** what else changes or could change (contracts, data, events, tests, other modules).
+
+For each error found, add or update an entry (`ERR-NNN`) with:
+
+- **De qué trata:** what the problem is.
+- **Cuándo se manifiesta:** the exact conditions in which it appears.
+- **Cómo mitigarlo:** what to do while it is unresolved.
+- **Estado:** `ABIERTO` or `RESUELTO`; when resolved, **cómo se resolvió**.
+
+Rules:
+
+- Update the log in the same work session as the change, never later.
+- Report only what was actually run; do not record a test as passing if it was not executed.
+- Keep the index of errors at the top of the log in sync with the entries below it.

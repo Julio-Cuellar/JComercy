@@ -16,6 +16,7 @@ La documentación aprobada se encuentra en [`documentacion/`](documentacion/), i
 - Contratos síncronos y asíncronos.
 - Plan de migraciones Flyway.
 - Estrategia de separación entre JComercy y Clinerya.
+- [Bitácora de desarrollo](documentacion/bitacora.md): qué se hizo, cómo, qué afectó y el catálogo de errores con su solución.
 
 ## Regla de separación
 
