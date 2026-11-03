@@ -29,7 +29,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-002 | Prueba de reintentos del Outbox falla de forma intermitente por competir con el despachador real | RESUELTO (BIT-006) |
 | ERR-003 | Rutas inexistentes y métodos no permitidos responden 500 en vez de 404/405 | RESUELTO (BIT-012 inventario, BIT-013 company-management) |
 | ERR-004 | La prueba de concurrencia de reservas falla al repetirse por usar referencias fijas | RESUELTO (BIT-009) |
-| ERR-005 | El 500 de company-management devuelve el mensaje interno de la excepción y no la registra | ABIERTO |
+| ERR-005 | El 500 de company-management devuelve el mensaje interno de la excepción y no la registra | RESUELTO (BIT-014) |
 
 ---
 
@@ -204,7 +204,22 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Afectaciones:**
   - **API:** esas respuestas cambian de 500 a 404/405 con el cuerpo `ProblemDetails`. Ningún flujo conocido dependía del 500.
   - **Mensajes:** el 404/405 usa un mensaje fijo en español; no depende del texto de la excepción.
-  - **Sin cambios:** el manejador general de `Exception` sigue igual (ver ERR-005).
+  - **Sin cambios en este paso:** el manejador general de `Exception` seguía igual; se corrigió después en BIT-014 (ERR-005).
+
+### BIT-014 · El 500 de company-management ya no muestra el mensaje interno y deja registro (resuelve ERR-005)
+
+- **Qué se hizo:** `GlobalExceptionHandler.handleGeneral` de `company-management` responde ahora un mensaje fijo ("No pudimos completar la operación por un problema nuestro. Intenta de nuevo en unos minutos.") y registra la excepción completa con `log.error`, incluyendo la ruta pedida.
+- **Cómo se hizo:**
+  - Prueba nueva: [GlobalExceptionHandlerTest.java](../company-management/company-management-infra/src/test/java/com/jcode/jcomercy/companymanagement/infra/web/exception/GlobalExceptionHandlerTest.java), unitaria (sin Spring). Pasa una excepción con un texto que simula un fallo de base de datos y comprueba (1) que el `detail` de la respuesta no contiene ese texto y (2) que queda un evento `ERROR` con la ruta y la traza de la excepción, capturado con un `ListAppender` de logback.
+  - **RED:** `mvn -B -pl company-management/company-management-infra -am test -Dtest=GlobalExceptionHandlerTest` → las 2 fallan: `expected: "No pudimos completar…" but was: "could not execute statement [insert into account_credential …]"` y `Expected size: 1 but was: 0` (cero eventos de log). Con esto los dos defectos de ERR-005 quedan **reproducidos**, no solo leídos en el código.
+  - Código: en [GlobalExceptionHandler.java](../company-management/company-management-infra/src/main/java/com/jcode/jcomercy/companymanagement/infra/web/exception/GlobalExceptionHandler.java), `handleGeneral` llama a `log.error(…, ex)` y usa un texto fijo en `detail`. El mensaje dice qué pasó y qué hacer, sin pedir disculpas (AGENTS.md §23).
+  - **GREEN:** las 2 pruebas nuevas pasan; `mvn -B test` en la raíz → `BUILD SUCCESS`, **108 pruebas** (company-management infra pasa de 17 a 19).
+- **Afectaciones:**
+  - **API:** solo cambia el campo `detail` del 500; `type`, `title`, `status` y `code` siguen igual. Ningún flujo conocido leía ese texto.
+  - **Registros:** cada excepción inesperada de `company-management` deja ahora un `ERROR` con traza, algo que antes no pasaba en este manejador. Es lo buscado, pero sube el ruido si hay peticiones que hoy caen aquí sin deber (ver siguiente punto).
+  - **Posible ruido (no verificado):** las peticiones con JSON mal formado o que fallan la validación de campos probablemente también llegan a este manejador general y responden 500 (inventario las trata aparte con 400). Si es así, ahora además dejarán un `ERROR`. No se probó; conviene revisarlo.
+  - **Mensajes distintos entre módulos:** inventario sigue respondiendo "Error interno del servidor"; no se unificó.
+  - **Sin cambios:** los demás manejadores de `company-management` siguen devolviendo el mensaje de su excepción, porque son reglas de negocio pensadas para mostrarse.
 
 ---
 
@@ -249,8 +264,8 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 
 ### ERR-005 · El 500 de company-management devuelve el mensaje interno de la excepción y no la registra
 
-- **Estado:** ABIERTO (detectado el 2026-11-02 al atender ERR-003). **Confirmado leyendo el código; no reproducido con una prueba.**
+- **Estado:** RESUELTO el 2026-11-02 (BIT-014). Detectado el mismo día al atender ERR-003; primero confirmado leyendo el código y luego reproducido con `GlobalExceptionHandlerTest`.
 - **De qué trata:** `GlobalExceptionHandler.handleGeneral` de `company-management` pone `ex.getMessage()` en el campo `detail` de la respuesta 500, y el manejador no tiene ningún `Logger`: no registra la excepción. Dos consecuencias: (1) una excepción inesperada (SQL, puntero nulo, etc.) puede mostrar al cliente texto interno como nombres de tablas o valores; (2) ese error queda sin traza en los registros, salvo que otro componente la escriba, cosa que no se verificó. Inventario sí responde un mensaje fijo ("Error interno del servidor") y registra el error con su traza.
 - **Cuándo se manifiesta:** ante cualquier excepción no prevista en `company-management`, por ejemplo un fallo de base de datos durante un registro de cuenta.
 - **Cómo mitigarlo:** mientras no se corrija, no exponer ese módulo directamente a internet sin un intermediario que reescriba los 500, y no depender de los registros del módulo para diagnosticar errores inesperados.
-- **Cómo se resolvería:** responder un mensaje fijo en el 500, registrar la excepción con `log.error` (como hace `InventoryExceptionHandler`) y agregar una prueba que provoque una excepción inesperada y compruebe que el mensaje interno no sale en el cuerpo. No se hizo ahora porque cambia el comportamiento de errores que no pidió ERR-003.
+- **Cómo se resolvió:** `handleGeneral` responde un mensaje fijo y registra la excepción con `log.error` (como hace `InventoryExceptionHandler`). Prueba: `GlobalExceptionHandlerTest` (2 pruebas, ambas fallaban antes del cambio).

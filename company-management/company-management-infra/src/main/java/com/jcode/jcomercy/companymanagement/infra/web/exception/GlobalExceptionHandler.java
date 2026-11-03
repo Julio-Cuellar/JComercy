@@ -5,6 +5,8 @@ import com.jcode.jcomercy.companymanagement.domain.exception.DuplicateResourceEx
 import com.jcode.jcomercy.companymanagement.domain.exception.EntityNotFoundException;
 import com.jcode.jcomercy.companymanagement.domain.exception.UnauthorizedAccessException;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -14,6 +16,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(EntityNotFoundException.class)
     public ResponseEntity<ProblemDetails> handleNotFound(EntityNotFoundException ex, HttpServletRequest request) {
@@ -96,11 +99,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetails> handleGeneral(Exception ex, HttpServletRequest request) {
+        log.error("Error inesperado en company-management uri={}", request.getRequestURI(), ex);
         ProblemDetails problem = ProblemDetails.of(
             "https://jcomercy.com/errors/internal-server-error",
             "Error Interno del Servidor",
             HttpStatus.INTERNAL_SERVER_ERROR.value(),
-            ex.getMessage(),
+            "No pudimos completar la operación por un problema nuestro. Intenta de nuevo en unos minutos.",
             request.getRequestURI(),
             "INTERNAL_SERVER_ERROR"
         );
