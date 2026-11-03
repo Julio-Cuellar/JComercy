@@ -34,7 +34,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-007 | Repetir una `Idempotency-Key` ya reclamada por el almacén (proceso nuevo) lanza una excepción sin manejar, que termina en 500, en company-management | RESUELTO (BIT-017 reproducción, BIT-018 solución) |
 | ERR-008 | Los endpoints REST de company-management solo exigen un JWT válido: no comprueban que la cuenta o empresa del token sea la que se consulta o modifica | RESUELTO (BIT-022) |
 | ERR-009 | GraphQL ejecutaba cualquier consulta aunque `persisted-only` estuviera activo, y la introspección del esquema estaba abierta | RESUELTO (BIT-020) |
-| ERR-010 | Los permisos del contrato no se exigen en ninguna ruta REST de company-management, y a todo usuario se le conceden cinco permisos fijos | ABIERTO (leído en el código, no reproducido) |
+| ERR-010 | Los permisos no se exigen en ninguna ruta REST de company-management, el token de un inicio de sesión real no trae los permisos que inventario exige, y los comodines de los roles no los interpreta ningún módulo | ABIERTO (reproducido en BIT-023; en corrección) |
 
 ---
 
@@ -367,6 +367,20 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Sin verificar:** el comportamiento con Postgres (las pruebas usan H2) y el caso de un miembro con acceso a una sola sucursal.
   - **Pendiente:** ERR-010.
 
+### BIT-023 · ERR-010 reproducido y comodines de permisos en el núcleo y en inventario (fases 1 y 2)
+
+- **Qué se hizo:** (1) se reprodujo ERR-010 con pruebas por HTTP y se descubrió que es más amplio de lo que decía la entrada; (2) `jcomercy-core` tiene ahora `Permissions`, la regla única para decidir si un permiso concedido cubre el que pide una operación (`*`, `familia.*` y exacto), e inventario la usa en `hasPermission`. Esto último es la base del resto de la corrección; ERR-010 sigue ABIERTO.
+- **Cómo se hizo:**
+  - **Fase 1, reproducción.** `PermissionEnforcementIntegrationTest` (nueva, company-management, 8 pruebas): registra cuentas reales, crea empresa y sucursal, mete membresías por SQL (no hay API que las cree) e inicia sesión de verdad. **RED (ejecución):** 7 de 8 fallan y 1 pasa (la del administrador de empresa, que protege lo que debe seguir permitido). Con un rol que no lo permite: el rol `STAFF` leyó la empresa (200 en vez de 403); `BRANCH_MANAGER` creó una sucursal (201, sin tener `branches.create`); una membresía suspendida siguió leyendo con el mismo token (200); un rol con el mismo nombre de otra empresa y `["*"]` dio acceso (200). Del token: el del dueño no llevaba `*`, y el de una cuenta sin empresas ni membresías llevaba los cinco permisos fijos (`accounts.read`, `companies.create`, `companies.activate`, `branches.create`, `branches.activate`).
+  - **Fase 2, núcleo.** `PermissionsTest` (nueva, 10 pruebas). **RED:** error de compilación, `cannot find symbol: variable Permissions`. **GREEN:** 10 de 10 con `Permissions` (nueva): `*` concede todo, `familia.*` concede lo que cuelga de esa familia (no otras familias, no el nombre pelado, no un prefijo parecido como `inventoryx.read`), y el comodín solo cuenta al final (`inventory.*.read` y `*.read` no son comodines).
+  - **Fase 2, inventario.** `JwtAuthorizationServiceTest` (nueva, 8 pruebas). **RED (ejecución):** 3 de 6 fallan, las de `*`, `inventory.*` y `inventory.stock.*`; pasaban las de permiso exacto, heredados y sin permisos. Se añadieron después 2 pruebas (forma `PERM_INVENTORY_STOCK_WRITE` y autoridad sin prefijo `PERM_`). **GREEN:** 8 de 8 con `JwtAuthorizationService.hasPermission`, que ahora quita el prefijo `PERM_` de cada autoridad y la compara con `Permissions.matches`, manteniendo la forma normalizada y la rama de compatibilidad con `INVENTORY_WRITE` e `INVENTORY_READ`. `inventory-infra/pom.xml` declara ahora la dependencia de `jcomercy-core`, que ya llegaba por transitividad.
+  - **Mutaciones temporales, revertidas:** (A) quitar la forma normalizada → cae `theNormalizedFormStillWorks`; (B) quitar el filtro del prefijo `PERM_` → cae `anAuthorityWithoutThePermissionPrefixGrantsNothing` (como error de índice). El archivo quedó idéntico a antes de mutar.
+  - **GREEN de los módulos tocados:** `mvn -B -pl inventory/inventory-infra -am test` → `BUILD SUCCESS`: núcleo 13 (3 + 10), inventory dominio 27, inventory infraestructura 72 (64 + 8). La suite de company-management no se ejecutó en esta fase (solo se añadió la prueba roja, sin commitear).
+- **Afectaciones:**
+  - **Inventario:** un token con `PERM_*` o `PERM_inventory.*` ahora pasa los chequeos de permiso de unas 25 rutas REST y de GraphQL. Hasta que el login los emita (fase 5) ninguna cuenta real lo trae, así que en la práctica no cambia el acceso.
+  - **Dependencias:** `inventory-infra` declara `jcomercy-core`. `company-management-infra` la declarará en la fase 3.
+  - **Prueba roja pendiente:** `PermissionEnforcementIntegrationTest` queda sin commitear con 7 pruebas en rojo hasta que se completen las fases 3 a 5.
+
 ---
 
 ## Errores
@@ -452,8 +466,9 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 
 ### ERR-010 · Los permisos del contrato no se exigen en ninguna ruta REST de company-management
 
-- **Estado:** ABIERTO. Visto leyendo el código el 2026-11-03 al corregir ERR-008 (BIT-022). **No reproducido** con una prueba.
+- **Estado:** ABIERTO, en corrección. Visto leyendo el código el 2026-11-03 al corregir ERR-008 (BIT-022) y **reproducido** ese mismo día con `PermissionEnforcementIntegrationTest` (BIT-023).
+- **Alcance ampliado (leído en el código al planear la corrección):** además de lo anterior, (1) ningún código crea membresías: hoy solo existen dueños, y el rol `ACCOUNT_OWNER` (`["*"]`) está sembrado pero no se asigna a nadie; (2) el token de un inicio de sesión real no trae ningún permiso `inventory.*`, así que no abre inventario por REST ni por GraphQL (las pruebas de inventario fabrican tokens con el permiso heredado `INVENTORY_WRITE`); (3) los cinco permisos fijos no incluyen `companies.read`, `branches.read` ni `accounts.companies.read`; (4) los roles sembrados traen comodines (`*`, `companies.*`) que se copian como texto y ningún módulo interpreta; (5) el claim `permissions` es global, la unión de todas las membresías, y no por empresa como pide `modelo-autorizacion-jcomercy.md`.
 - **De qué trata:** `PermissionResolver.resolve` concede a todo usuario cinco permisos fijos (`accounts.read`, `companies.create`, `companies.activate`, `branches.create` y `branches.activate`), además de los de su rol, y ningún controlador ni interceptor exige las autoridades `PERM_…` que construye el filtro JWT. Los `x-required-permission` del contrato (por ejemplo `companies.create`) no se aplican, y permisos como `accounts.suspend` ni siquiera existen en el seed V009. Desde BIT-022 se comprueba la pertenencia a la cuenta o empresa, pero no el permiso: dentro de lo suyo, quien tenga un token válido puede hacer cualquier operación REST.
-- **Cuándo se manifiesta:** **inferido del código, no probado:** un miembro de una empresa con un rol de solo lectura podría, con el claim de esa empresa, crear o activar sucursales por REST.
+- **Cuándo se manifiesta:** **reproducido (BIT-023):** un miembro con el rol `STAFF` lee la empresa (200); uno con `BRANCH_MANAGER` crea una sucursal (201) sin tener `branches.create`; una membresía suspendida sigue funcionando con el mismo token; y el token de un inicio de sesión real no lleva `*` para el dueño ni permisos de inventario para nadie.
 - **Cómo mitigarlo:** hasta que se exijan permisos, dar acceso por REST solo a dueños y personas de confianza.
 - **Para resolverlo:** definir qué permiso exige cada ruta, sembrar los que falten, hacer que `PermissionResolver` conceda solo los del rol y exigirlos con una prueba por ruta. Es una orden de trabajo propia, porque toca el modelo de roles.

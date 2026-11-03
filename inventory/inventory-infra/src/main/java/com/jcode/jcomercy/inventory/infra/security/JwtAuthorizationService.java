@@ -1,5 +1,6 @@
 package com.jcode.jcomercy.inventory.infra.security;
 
+import com.jcode.jcomercy.core.authorization.Permissions;
 import com.jcode.jcomercy.inventory.domain.model.warehouse.Warehouse;
 import com.jcode.jcomercy.inventory.domain.port.WarehouseBranchAccessRepositoryPort;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +9,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class JwtAuthorizationService {
+    private static final String PERMISSION_PREFIX = "PERM_";
+
     private final WarehouseBranchAccessRepositoryPort accessRepository;
 
     public JwtAuthorizationService() {
@@ -31,8 +34,10 @@ public class JwtAuthorizationService {
         if (authentication == null || permission == null) return false;
         String normalized = permission.toUpperCase().replace('.', '_');
         boolean direct = authentication.getAuthorities().stream()
-                .anyMatch(authority -> authority.getAuthority().equals("PERM_" + permission)
-                        || authority.getAuthority().equals("PERM_" + normalized));
+                .map(authority -> authority.getAuthority())
+                .filter(authority -> authority.startsWith(PERMISSION_PREFIX))
+                .map(authority -> authority.substring(PERMISSION_PREFIX.length()))
+                .anyMatch(granted -> Permissions.matches(granted, permission) || granted.equals(normalized));
         if (direct) return true;
 
         // Compatibilidad temporal con los permisos heredados del primer JWT local.
