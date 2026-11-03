@@ -79,6 +79,18 @@ class CompanyMalformedRequestsIntegrationTest {
     }
 
     @Test
+    @DisplayName("Si la Idempotency-Key viene vacía responde 400 y no 500 (ERR-006)")
+    void blankIdempotencyKeyRespondsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/v1/accounts/registration").contentType(MediaType.APPLICATION_JSON)
+                .header("Idempotency-Key", "").content("{\"name\":\"Abarrotes Lupita\",\"owner\":{\"firstName\":\"Lupita\"}}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.status").value(400))
+            .andExpect(jsonPath("$.code").value("MISSING_HEADER"))
+            .andExpect(jsonPath("$.detail").value(
+                "El encabezado Idempotency-Key está vacío. Envía un valor único para cada operación e intenta de nuevo."));
+    }
+
+    @Test
     @DisplayName("Una contraseña de menos de 8 caracteres responde 422 con la regla en palabras del negocio")
     void shortPasswordRespondsUnprocessableEntity() throws Exception {
         String body = """

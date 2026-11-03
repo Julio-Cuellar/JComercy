@@ -1,5 +1,6 @@
 package com.jcode.jcomercy.companymanagement.infra.web.exception;
 
+import com.jcode.jcomercy.companymanagement.application.service.IdempotencyKeyRequiredException;
 import com.jcode.jcomercy.companymanagement.domain.exception.DomainRuleViolationException;
 import com.jcode.jcomercy.companymanagement.domain.exception.DuplicateResourceException;
 import com.jcode.jcomercy.companymanagement.domain.exception.EntityNotFoundException;
@@ -128,6 +129,20 @@ public class GlobalExceptionHandler {
             "Falta un Encabezado",
             HttpStatus.BAD_REQUEST.value(),
             "Falta el encabezado " + ex.getHeaderName() + ". Agrégalo a la solicitud e intenta de nuevo.",
+            request.getRequestURI(),
+            "MISSING_HEADER"
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    @ExceptionHandler(IdempotencyKeyRequiredException.class)
+    public ResponseEntity<ProblemDetails> handleBlankIdempotencyKey(HttpServletRequest request) {
+        log.warn("Idempotency-Key vacía uri={}", request.getRequestURI());
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/missing-header",
+            "Falta un Encabezado",
+            HttpStatus.BAD_REQUEST.value(),
+            "El encabezado Idempotency-Key está vacío. Envía un valor único para cada operación e intenta de nuevo.",
             request.getRequestURI(),
             "MISSING_HEADER"
         );

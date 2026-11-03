@@ -30,7 +30,8 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-003 | Rutas inexistentes y métodos no permitidos responden 500 en vez de 404/405 | RESUELTO (BIT-012 inventario, BIT-013 company-management) |
 | ERR-004 | La prueba de concurrencia de reservas falla al repetirse por usar referencias fijas | RESUELTO (BIT-009) |
 | ERR-005 | El 500 de company-management devuelve el mensaje interno de la excepción y no la registra | RESUELTO (BIT-014) |
-| ERR-006 | Una `Idempotency-Key` vacía responde 500 en company-management | ABIERTO |
+| ERR-006 | Una `Idempotency-Key` vacía responde 500 en company-management | RESUELTO (BIT-016) |
+| ERR-007 | Repetir una `Idempotency-Key` ya reclamada podría responder 500 en company-management (sin reproducir) | ABIERTO |
 
 ---
 
@@ -231,7 +232,7 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - Ajustes a las pruebas entre RED y GREEN (no a la lógica): (1) el prefijo del mensaje de validación quedó neutro ("Revisa estos datos de la solicitud: …") porque el manejador también servirá para errores de formato, no solo para faltantes; (2) la prueba del encabezado ausente mandaba además un cuerpo sin `owner`, es decir dos defectos a la vez, y Spring resuelve los parámetros en orden y reportó primero el cuerpo (`VALIDATION_ERROR`); se le dio un `owner` para que el encabezado sea lo único que falta.
   - Código: en [GlobalExceptionHandler.java](../company-management/company-management-infra/src/main/java/com/jcode/jcomercy/companymanagement/infra/web/exception/GlobalExceptionHandler.java) cuatro manejadores nuevos (`HttpMessageNotReadableException`, `MissingRequestHeaderException`, `MethodArgumentNotValidException`, `HttpMediaTypeNotSupportedException`); en [AccountController.java](../company-management/company-management-infra/src/main/java/com/jcode/jcomercy/companymanagement/infra/web/controller/AccountController.java) `@Valid` en el cuerpo del registro y `@NotNull` en `owner` (la dependencia `spring-boot-starter-validation` ya estaba en el módulo); en [AccountApplicationService.java](../company-management/company-management-application/src/main/java/com/jcode/jcomercy/companymanagement/application/service/AccountApplicationService.java) la regla de la contraseña lanza `DomainRuleViolationException` (que ya se traducía a 422) en lugar de `IllegalArgumentException`, con el mismo mensaje.
   - **GREEN:** las 7 pruebas pasan; `mvn -B test` en la raíz → `BUILD SUCCESS`, **115 pruebas** (company-management infra pasa de 19 a 26).
-  - Sondeo con una prueba temporal (ya eliminada, no queda en el código): un registro con `name` ausente respondió 422 con "El nombre de la cuenta no puede estar vacío." (esa ruta no se tocó; no se probó antes del cambio); `{}` respondió 400; `"owner": {}` seguía en 500 por la regla de la contraseña (el motivo de agregar la séptima prueba); una `Idempotency-Key` vacía responde 500 → ERR-006, **no corregido**.
+  - Sondeo con una prueba temporal (ya eliminada, no queda en el código): un registro con `name` ausente respondió 422 con "El nombre de la cuenta no puede estar vacío." (esa ruta no se tocó; no se probó antes del cambio); `{}` respondió 400; `"owner": {}` seguía en 500 por la regla de la contraseña (el motivo de agregar la séptima prueba); una `Idempotency-Key` vacía respondía 500 → ERR-006, **no corregido en este paso** (resuelto en BIT-016).
 - **Afectaciones:**
   - **API:** esas respuestas pasan de 500 a 400/415/422. Ningún flujo conocido dependía del 500.
   - **Registros:** estos casos quedan en nivel `WARN` con la ruta, no como `ERROR` con traza. Para el cuerpo ilegible se registra solo la clase de la excepción, **no su mensaje**: el lector de JSON puede citar fragmentos de lo enviado y estas rutas reciben contraseñas.
@@ -241,6 +242,25 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Orden de los errores:** si una solicitud trae un cuerpo inválido y además le falta un encabezado, se reporta primero el cuerpo.
   - **Excepción por tipo:** una búsqueda en `company-management` no encontró código de producción que capture `IllegalArgumentException` por tipo; la única prueba que la menciona es `IdempotencyRegistryTest`, que no cambió.
   - **Inventario:** no se tocó; sus manejadores de 400 ya existían (ver ERR-003 sobre lo que sigue sin verificar allí).
+
+## 2026-11-03
+
+### BIT-016 · La `Idempotency-Key` vacía responde 400 y no 500 (resuelve ERR-006)
+
+- **Qué se hizo:** en `company-management`, un encabezado `Idempotency-Key` presente pero vacío o en blanco responde 400 `MISSING_HEADER` con "El encabezado Idempotency-Key está vacío. Envía un valor único para cada operación e intenta de nuevo.", en vez de 500.
+- **Cómo se hizo:**
+  - Pruebas: `IdempotencyRegistryTest` cambia `rejectsBlankKeys` por `rejectsMissingEmptyAndBlankKeysWithTheirOwnException` (ahora cubre `null`, `""` y `" "`, y exige el tipo de excepción propio); `CompanyMalformedRequestsIntegrationTest` suma `blankIdempotencyKeyRespondsBadRequest` (`POST /api/v1/accounts/registration` con el encabezado vacío).
+  - **RED (compilación):** `mvn -B -pl company-management/company-management-application -am test -Dtest=IdempotencyRegistryTest` → `cannot find symbol … class IdempotencyKeyRequiredException`.
+  - **RED (ejecución):** se creó la clase sin conectarla al registro y se corrieron ambas pruebas: la del registro falla con `Expecting actual throwable to be an instance of` (con la clave `null`, la primera del arreglo) y la de integración con `Status expected:<400> but was:<500>`, con `IllegalArgumentException: Idempotency-Key es obligatorio` en el log.
+  - Código: [IdempotencyKeyRequiredException.java](../company-management/company-management-application/src/main/java/com/jcode/jcomercy/companymanagement/application/service/IdempotencyKeyRequiredException.java) (nueva, extiende `IllegalArgumentException` con el mismo mensaje); [IdempotencyRegistry.java](../company-management/company-management-application/src/main/java/com/jcode/jcomercy/companymanagement/application/service/IdempotencyRegistry.java) la lanza; [GlobalExceptionHandler.java](../company-management/company-management-infra/src/main/java/com/jcode/jcomercy/companymanagement/infra/web/exception/GlobalExceptionHandler.java) suma `handleBlankIdempotencyKey`.
+  - **GREEN:** `mvn -B test` en la raíz → `BUILD SUCCESS`, **116 pruebas** (company-management infra pasa de 26 a 27; `IdempotencyRegistryTest` sigue en 3).
+- **Afectaciones:**
+  - **API:** esa respuesta pasa de 500 a 400. Reutiliza el código `MISSING_HEADER` del encabezado ausente (BIT-015) porque la recuperación es la misma: mandar la clave con un valor.
+  - **Alcance:** la excepción sale del registro, así que cubre todas las operaciones que lo usan (registro de cuenta, compañías, sucursales). Solo se probó por HTTP el registro de cuenta; el resto se apoya en que comparten el registro y el manejador.
+  - **Compatibilidad:** la excepción nueva es subclase de `IllegalArgumentException` con el mismo mensaje; una búsqueda previa (BIT-015) no encontró código que capture ese tipo.
+  - **Registros:** queda en `WARN` con la ruta, sin traza.
+  - **Contrato:** `openapi-company-management-v1.yaml` sigue sin declarar estas respuestas 400 por operación.
+  - **Sin cambios:** la repetición de una clave ya reclamada (ERR-007) no se tocó.
 
 ---
 
@@ -293,9 +313,17 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 
 ### ERR-006 · Una `Idempotency-Key` vacía responde 500 en company-management
 
-- **Estado:** ABIERTO. Detectado el 2026-11-02 con una prueba temporal mientras se atendía BIT-015; no se corrigió porque pide una decisión de código (ver abajo).
+- **Estado:** RESUELTO el 2026-11-03 (BIT-016). Detectado el 2026-11-02 con una prueba temporal mientras se atendía BIT-015.
 - **De qué trata:** `IdempotencyRegistry.execute` lanza `IllegalArgumentException("Idempotency-Key es obligatorio")` cuando la clave es nula o está en blanco. Spring acepta un encabezado presente con valor vacío (solo rechaza el ausente, que ya responde 400 desde BIT-015), así que la excepción llega al manejador general: el cliente recibe un 500 "problema nuestro" y el registro guarda un `ERROR` con traza, aunque el error es de quien llama.
 - **Cuándo se manifiesta:** `POST /api/v1/accounts/registration` con el encabezado `Idempotency-Key` presente pero vacío. Reproducido con `MockMvc`: 500 y `IllegalArgumentException: Idempotency-Key es obligatorio` en el log. Las demás operaciones idempotentes (compañías, sucursales, suspensión de cuenta) usan el mismo registro, pero no se probaron.
 - **Cómo mitigarlo:** los clientes deben generar siempre una clave no vacía (por ejemplo un UUID por operación). Un 500 en estas rutas con ese encabezado vacío no indica un fallo del servidor.
-- **Para resolverlo:** decidir la respuesta (un 400 parece lo correcto, como el encabezado ausente) y mapearla. `IdempotencyRegistryTest` (línea 43) fija hoy `IllegalArgumentException` para este caso, así que esa prueba habría que ajustarla junto con el cambio.
-- **Relacionado, leído en el código y sin reproducir:** si el almacén durable ya reclamó la clave y la memoria del proceso no guarda el resultado, `IdempotencyRegistry` lanza `IllegalStateException("La solicitud con Idempotency-Key ya fue procesada")`, que también terminaría en 500. Una repetición legítima de la solicitud debería devolver el resultado anterior o, al menos, un 409. Probablemente ocurra después de reiniciar el proceso, pero es una inferencia: no se probó.
+- **Cómo se resolvió:** el registro lanza `IdempotencyKeyRequiredException` (subclase de `IllegalArgumentException`, mismo mensaje) cuando la clave es nula, vacía o en blanco, y `GlobalExceptionHandler` la traduce a 400 `MISSING_HEADER`: "El encabezado Idempotency-Key está vacío. Envía un valor único para cada operación e intenta de nuevo." Como la excepción sale del registro, el arreglo cubre todas las operaciones que lo usan, no solo el registro de cuenta. Pruebas: `IdempotencyRegistryTest` y `CompanyMalformedRequestsIntegrationTest#blankIdempotencyKeyRespondsBadRequest`.
+- **Lo que sigue abierto de este tema:** ver ERR-007.
+
+### ERR-007 · Repetir una `Idempotency-Key` ya reclamada podría responder 500 en company-management
+
+- **Estado:** ABIERTO. Visto leyendo el código el 2026-11-02 al atender ERR-006. **No reproducido con una prueba.**
+- **De qué trata:** `IdempotencyRegistry.execute` recuerda los resultados en un mapa en memoria del proceso y, además, reclama la clave en el almacén durable (`store.claim`). Si el almacén ya tiene reclamada la pareja operación-clave pero el mapa en memoria no tiene el resultado, lanza `IllegalStateException("La solicitud con Idempotency-Key ya fue procesada")`. Esa excepción no tiene manejador propio, así que llegaría al manejador general: 500 "problema nuestro" y un `ERROR` con traza. El registro solo usa `claim` y `release` del almacén; el resultado no se guarda ahí.
+- **Cuándo se manifiesta (inferido, no probado):** al repetir una solicitud con una clave ya procesada cuando el proceso no la recuerda en memoria, por ejemplo después de reiniciarlo o si hubiera más de una instancia.
+- **Cómo mitigarlo:** antes de reintentar tras un reinicio, consultar si el recurso ya se creó; reintentar con la misma clave podría dar un 500 aunque la operación original sí se haya completado.
+- **Para resolverlo:** decidir el comportamiento esperado de una repetición legítima: devolver el resultado anterior (hay que guardarlo en el almacén durable) o responder 409 con un mensaje claro. Empezar con una prueba del registro con un almacén falso cuyo `claim` devuelva `false`, que reproduce la excepción sin HTTP.

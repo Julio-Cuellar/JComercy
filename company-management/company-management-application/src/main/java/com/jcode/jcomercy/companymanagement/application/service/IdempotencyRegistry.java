@@ -15,7 +15,7 @@ public class IdempotencyRegistry {
     @SuppressWarnings("unchecked")
     public synchronized <T> T execute(String operation, String key, Supplier<T> action) {
         if (key == null || key.isBlank()) {
-            throw new IllegalArgumentException("Idempotency-Key es obligatorio");
+            throw new IdempotencyKeyRequiredException();
         }
         String registryKey = operation + ":" + key;
         Object previous = completed.get(registryKey);

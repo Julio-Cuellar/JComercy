@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 class IdempotencyRegistryTest {
 
@@ -39,8 +39,11 @@ class IdempotencyRegistryTest {
     }
 
     @Test
-    void rejectsBlankKeys() {
-        assertThatIllegalArgumentException()
-            .isThrownBy(() -> new IdempotencyRegistry().execute("company.create", " ", () -> "x"));
+    void rejectsMissingEmptyAndBlankKeysWithTheirOwnException() {
+        for (String key : new String[] {null, "", " "}) {
+            assertThatExceptionOfType(IdempotencyKeyRequiredException.class)
+                .as("clave: [%s]", key)
+                .isThrownBy(() -> new IdempotencyRegistry().execute("company.create", key, () -> "x"));
+        }
     }
 }
