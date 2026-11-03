@@ -32,12 +32,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 Claims claims = tokenService.parse(authorization.substring(7));
                 String subject = claims.getSubject();
-                if (subject != null && !subject.isBlank()) {
+                // `ctx` solo lo lleva el token de una empresa; si viene con otra forma, el token no se acepta.
+                Object companyContext = claims.get("ctx");
+                boolean validContext = companyContext == null || (companyContext instanceof String value && !value.isBlank());
+                if (subject != null && !subject.isBlank() && validContext) {
                     UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(subject, null, authorities(claims));
-                    authentication.setDetails(new JwtContext(subject,
-                        JwtContext.claimValues(claims.get("companyIds")),
-                        JwtContext.claimValues(claims.get("branchIds"))));
+                    authentication.setDetails(new JwtContext(subject, (String) companyContext));
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
             } catch (RuntimeException ignored) {

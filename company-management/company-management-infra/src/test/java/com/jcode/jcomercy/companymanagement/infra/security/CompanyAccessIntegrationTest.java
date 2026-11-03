@@ -70,18 +70,21 @@ class CompanyAccessIntegrationTest {
         bobLogin = world.login(bob.email());
         String carlosLogin = world.login(carlos.email());
 
+        // Dentro de una empresa se trabaja con el token de esa empresa: cada dueña entra primero a la suya.
         companyA = world.createCompany(alice.accountId(), aliceLogin);
-        branchA = world.createBranch(companyA, aliceLogin, "MATRIZ");
-        world.activateCompany(companyA, aliceLogin);
-        world.activateBranch(companyA, branchA, aliceLogin);
+        String aliceInA = world.enter(alice.accountId(), companyA, aliceLogin);
+        branchA = world.createBranch(companyA, aliceInA, "MATRIZ");
+        world.activateCompany(companyA, aliceInA);
+        world.activateBranch(companyA, branchA, aliceInA);
 
         companyB = world.createCompany(bob.accountId(), bobLogin);
-        branchB1 = world.createBranch(companyB, bobLogin, "MATRIZ");
-        world.activateCompany(companyB, bobLogin);
-        world.activateBranch(companyB, branchB1, bobLogin);
+        String bobInB = world.enter(bob.accountId(), companyB, bobLogin);
+        branchB1 = world.createBranch(companyB, bobInB, "MATRIZ");
+        world.activateCompany(companyB, bobInB);
+        world.activateBranch(companyB, branchB1, bobInB);
         // La segunda sucursal también está activa: así, que Alice no la reciba se debe a que no la tiene asignada.
-        branchB2 = world.createBranch(companyB, bobLogin, "SUCURSAL");
-        world.activateBranch(companyB, branchB2, bobLogin);
+        branchB2 = world.createBranch(companyB, bobInB, "SUCURSAL");
+        world.activateBranch(companyB, branchB2, bobInB);
         world.addMember(companyB, alice.accountId(), "ACTIVE", "[\"STAFF\"]");
 
         companyC = world.createCompany(carlos.accountId(), carlosLogin);

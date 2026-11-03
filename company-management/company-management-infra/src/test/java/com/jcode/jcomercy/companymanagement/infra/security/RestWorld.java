@@ -64,6 +64,18 @@ final class RestWorld {
         return "Bearer " + objectMapper.readTree(response).get("accessToken").asText();
     }
 
+    /**
+     * Entra a una empresa con el token de la cuenta y devuelve el token de esa empresa, con el prefijo "Bearer ". Es lo
+     * que hace una persona real antes de trabajar dentro de una empresa.
+     */
+    String enter(String accountId, String companyId, String accountBearer) throws Exception {
+        String response = mockMvc.perform(post("/api/v1/accounts/{id}/company-accesses/{target}/session", accountId, companyId)
+                .header("Authorization", accountBearer))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        return "Bearer " + objectMapper.readTree(response).get("accessToken").asText();
+    }
+
     String createCompany(String accountId, String bearer) throws Exception {
         int n = next();
         String body = """

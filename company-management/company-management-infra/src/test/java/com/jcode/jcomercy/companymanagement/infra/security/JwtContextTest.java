@@ -11,25 +11,44 @@ class JwtContextTest {
     private final JwtAuthorizationService authorization = new JwtAuthorizationService();
 
     @Test
-    void allowsCompanyInTokenContext() {
-        assertThat(authorization.canAccessCompany(authentication(List.of("company-1")), "company-1")).isTrue();
+    void anAccountTokenIsNotTiedToAnyCompany() {
+        var authentication = authentication(null);
+
+        assertThat(authorization.isAccountSession(authentication)).isTrue();
+        assertThat(authorization.isSessionOfCompany(authentication, "company-1")).isFalse();
     }
 
     @Test
-    void rejectsCompanyOutsideTokenContext() {
-        assertThat(authorization.canAccessCompany(authentication(List.of("company-1")), "company-2")).isFalse();
+    void aCompanyTokenOnlyWorksForItsOwnCompany() {
+        var authentication = authentication("company-1");
+
+        assertThat(authorization.isSessionOfCompany(authentication, "company-1")).isTrue();
+        assertThat(authorization.isSessionOfCompany(authentication, "company-2")).isFalse();
+        assertThat(authorization.isSessionOfCompany(authentication, null)).isFalse();
+    }
+
+    @Test
+    void aCompanyTokenIsNotAnAccountToken() {
+        assertThat(authorization.isAccountSession(authentication("company-1"))).isFalse();
+    }
+
+    @Test
+    void withoutASessionNothingIsAnAccountOrACompanyToken() {
+        assertThat(authorization.isAccountSession(null)).isFalse();
+        assertThat(authorization.isSessionOfCompany(null, "company-1")).isFalse();
+        assertThat(authorization.isAccountSession(new UsernamePasswordAuthenticationToken("account-1", null, List.of()))).isFalse();
     }
 
     @Test
     void onlyAllowsAuthenticatedAccountOwnerContext() {
-        var authentication = authentication(List.of("company-1"));
+        var authentication = authentication(null);
         assertThat(authorization.canAccessAccount(authentication, "account-1")).isTrue();
         assertThat(authorization.canAccessAccount(authentication, "account-2")).isFalse();
     }
 
-    private static UsernamePasswordAuthenticationToken authentication(List<String> companyIds) {
+    private static UsernamePasswordAuthenticationToken authentication(String companyContext) {
         var authentication = new UsernamePasswordAuthenticationToken("account-1", null, List.of());
-        authentication.setDetails(new JwtContext("account-1", companyIds, List.of()));
+        authentication.setDetails(new JwtContext("account-1", companyContext));
         return authentication;
     }
 }

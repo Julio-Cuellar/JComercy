@@ -9,6 +9,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 
@@ -131,14 +132,14 @@ class CompanyIntegrationTest {
         // 3. Activate Company
         mockMvc.perform(post("/api/v1/companies/" + publicCompanyId + "/activation")
                 .header("Idempotency-Key", "idem_activate_company_001")
-                .header("Authorization", "Bearer " + token(account.publicAccountId())))
+                .header("Authorization", "Bearer " + companyToken(account.publicAccountId(), publicCompanyId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("ACTIVE"));
 
         // 4. Create Branch with mandatory contact and location data
         mockMvc.perform(post("/api/v1/companies/" + publicCompanyId + "/branches")
                 .header("Idempotency-Key", "idem_branch_company_test_001")
-                .header("Authorization", "Bearer " + token(account.publicAccountId()))
+                .header("Authorization", "Bearer " + companyToken(account.publicAccountId(), publicCompanyId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -202,6 +203,15 @@ class CompanyIntegrationTest {
     }
 
     private static String token(String subject) {
+        return builder(subject).compact();
+    }
+
+    /** El token que se entrega al entrar a una empresa: el claim `ctx` la nombra. */
+    private static String companyToken(String subject, String companyId) {
+        return builder(subject).claim("ctx", companyId).compact();
+    }
+
+    private static JwtBuilder builder(String subject) {
         SecretKey key = Keys.hmacShaKeyFor("local-only-change-me-012345678901234567890123456789".getBytes(StandardCharsets.UTF_8));
         Date now = new Date();
         return Jwts.builder()
@@ -209,7 +219,6 @@ class CompanyIntegrationTest {
             .issuer("jcomercy")
             .issuedAt(now)
             .expiration(new Date(now.getTime() + 300_000))
-            .signWith(key)
-            .compact();
+            .signWith(key);
     }
 }

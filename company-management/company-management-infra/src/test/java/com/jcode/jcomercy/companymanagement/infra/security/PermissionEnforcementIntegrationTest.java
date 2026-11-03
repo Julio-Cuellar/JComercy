@@ -49,15 +49,18 @@ class PermissionEnforcementIntegrationTest {
     private JdbcTemplate jdbc;
 
     private Registered owner;
+    private String loginOfOwner;
     private String tokenOfOwner;
     private String companyId;
     private String branchId;
 
+    /** La dueña crea su empresa con el token de la cuenta y entra a ella: dentro se trabaja con el token de la empresa. */
     @BeforeEach
     void world() throws Exception {
         owner = register();
-        tokenOfOwner = login(owner.email());
-        companyId = createCompany(owner.accountId(), tokenOfOwner);
+        loginOfOwner = login(owner.email());
+        companyId = createCompany(owner.accountId(), loginOfOwner);
+        tokenOfOwner = enter(owner.accountId(), companyId, loginOfOwner);
         branchId = createBranch(companyId, tokenOfOwner);
     }
 
@@ -125,7 +128,7 @@ class PermissionEnforcementIntegrationTest {
     void suspendedMembershipLosesAccessAtOnce() throws Exception {
         Registered member = register();
         addMember(member.accountId(), "ACTIVE", "[\"BRANCH_MANAGER\"]");
-        String token = login(member.email());
+        String token = enter(member.accountId(), companyId, login(member.email()));
 
         mockMvc.perform(get("/api/v1/companies/{id}/branches", companyId).header("Authorization", token))
             .andExpect(status().isOk());
@@ -180,7 +183,8 @@ class PermissionEnforcementIntegrationTest {
         graphql(tokenOfOwner, "Company", Map.of("publicCompanyId", companyId))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.company.publicCompanyId").value(companyId));
-        graphql(tokenOfOwner, "CompaniesByAccount", Map.of("publicAccountId", owner.accountId()))
+        // La lista de las empresas de la cuenta es de la cuenta: se pide con el token del inicio de sesión.
+        graphql(loginOfOwner, "CompaniesByAccount", Map.of("publicAccountId", owner.accountId()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.companiesByAccount.length()").value(1));
     }
@@ -225,11 +229,20 @@ class PermissionEnforcementIntegrationTest {
         return objectMapper.readTree(body).get("status").asText();
     }
 
-    /** Registra otra cuenta, la hace miembro de la empresa del dueño con esos roles y devuelve su token de inicio de sesión. */
+    /** Registra otra cuenta, la hace miembro de la empresa del dueño con esos roles y devuelve su token de esa empresa. */
     private String memberToken(String rolesJson) throws Exception {
         Registered member = register();
         addMember(member.accountId(), "ACTIVE", rolesJson);
-        return login(member.email());
+        return enter(member.accountId(), companyId, login(member.email()));
+    }
+
+    /** Entra a la empresa con el token de la cuenta y devuelve el token de esa empresa. */
+    private String enter(String accountId, String company, String loginBearer) throws Exception {
+        String response = mockMvc.perform(post("/api/v1/accounts/{id}/company-accesses/{target}/session", accountId, company)
+                .header("Authorization", loginBearer))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        return "Bearer " + objectMapper.readTree(response).get("accessToken").asText();
     }
 
     private void addMember(String userId, String status, String rolesJson) {

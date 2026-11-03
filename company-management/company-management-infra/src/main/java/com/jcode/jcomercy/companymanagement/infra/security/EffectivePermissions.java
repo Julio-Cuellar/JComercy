@@ -98,12 +98,16 @@ public class EffectivePermissions {
         return active != null && active > 0;
     }
 
+    /** GraphQL: lo de la cuenta es solo para quien trae el token de la cuenta, igual que en REST. */
     public boolean canInAccount(Authentication authentication, String accountId, String permission) {
-        return Permissions.grants(inAccount(nameOf(authentication), accountId), permission);
+        return JwtContext.from(authentication).isAccountToken()
+            && Permissions.grants(inAccount(nameOf(authentication), accountId), permission);
     }
 
+    /** GraphQL: lo de una empresa es solo para quien trae el token que se entregó al entrar a esa empresa. */
     public boolean canInCompany(Authentication authentication, String companyId, String permission) {
-        return Permissions.grants(inCompany(nameOf(authentication), companyId), permission);
+        return JwtContext.from(authentication).isTokenOfCompany(companyId)
+            && Permissions.grants(inCompany(nameOf(authentication), companyId), permission);
     }
 
     private Set<String> permissionsOfTheActiveMembership(String actorId, String companyId) {
