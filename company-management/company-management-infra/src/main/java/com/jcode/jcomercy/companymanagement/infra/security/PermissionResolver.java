@@ -1,29 +1,26 @@
 package com.jcode.jcomercy.companymanagement.infra.security;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Component;
-import java.util.ArrayList; import java.util.List;
+import java.util.ArrayList; import java.util.List; import java.util.Set; import java.util.TreeSet;
 
 @Component
 public class PermissionResolver {
-    private final JdbcTemplate jdbc; private final ObjectMapper mapper;
-    public PermissionResolver(JdbcTemplate jdbc,ObjectMapper mapper){this.jdbc=jdbc;this.mapper=mapper;}
+    private final JdbcTemplate jdbc; private final EffectivePermissions effectivePermissions;
+    public PermissionResolver(JdbcTemplate jdbc, EffectivePermissions effectivePermissions){this.jdbc=jdbc;this.effectivePermissions=effectivePermissions;}
+    /**
+     * Los permisos que lleva el token: la unión de lo que la persona puede hacer en cada una de sus empresas. Quien es
+     * dueña de alguna lleva "*"; quien entra por una membresía, los permisos de su rol. Company-management no lee esto
+     * del token (calcula los permisos por empresa en cada petición); lo leen otros módulos, como inventario, que no
+     * tienen acceso a estos datos.
+     */
     public List<String> resolve(String userId) {
-        List<String> result = new ArrayList<>();
-        result.addAll(List.of("accounts.read", "companies.create", "companies.activate", "branches.create", "branches.activate"));
-        try {
-            jdbc.query("SELECT roles_json FROM company_management.company_membership WHERE user_id=? AND status='ACTIVE'", rs -> {
-                try { for (String role : mapper.readValue(rs.getString(1), new TypeReference<List<String>>(){})) {
-                    jdbc.query("SELECT permissions_json FROM company_management.role WHERE name=? AND status='ACTIVE'", new Object[]{role}, r -> {
-                        try { result.addAll(mapper.readValue(r.getString(1), new TypeReference<List<String>>(){})); } catch (Exception ignored) { }
-                    });
-                }} catch (Exception ignored) { }
-            }, userId);
-        } catch (RuntimeException ignored) { }
-        return result.stream().distinct().toList();
+        Set<String> result = new TreeSet<>();
+        for (String companyId : resolveCompanyIds(userId)) {
+            result.addAll(effectivePermissions.inCompany(userId, companyId));
+        }
+        return List.copyOf(result);
     }
 
     public List<String> resolveCompanyIds(String accountId) {

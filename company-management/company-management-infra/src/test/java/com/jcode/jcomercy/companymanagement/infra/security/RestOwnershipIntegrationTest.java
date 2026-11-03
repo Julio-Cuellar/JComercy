@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -44,6 +45,9 @@ class RestOwnershipIntegrationTest {
 
     @Autowired
     private JwtTokenService tokenService;
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     private String accountA;
     private String accountB;
@@ -186,9 +190,16 @@ class RestOwnershipIntegrationTest {
     }
 
     @Test
-    @DisplayName("Un miembro con el claim de la empresa la lee, pero no entra a la cuenta del dueño")
+    @DisplayName("Un miembro con el claim de la empresa y un rol que lo permite la lee, pero no entra a la cuenta del dueño")
     void memberWithTheCompanyClaimReadsTheCompanyButNotTheAccount() throws Exception {
-        String member = bearer("usr_member_" + SEQ.incrementAndGet(), List.of(companyOfA));
+        String memberId = "usr_member_" + SEQ.incrementAndGet();
+        // El claim abre la puerta de la empresa; leerla además exige que el rol de la membresía lo permita (ERR-010).
+        jdbc.update("""
+            INSERT INTO company_management.company_membership
+              (id, public_membership_id, public_company_id, user_id, status, roles_json, created_at, updated_at, version)
+            VALUES (?, ?, ?, ?, 'ACTIVE', '["COMPANY_ADMIN"]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+            """, UUID.randomUUID(), "mem_" + UUID.randomUUID(), companyOfA, memberId);
+        String member = bearer(memberId, List.of(companyOfA));
 
         mockMvc.perform(get("/api/v1/companies/{id}", companyOfA).header("Authorization", member))
             .andExpect(status().isOk());

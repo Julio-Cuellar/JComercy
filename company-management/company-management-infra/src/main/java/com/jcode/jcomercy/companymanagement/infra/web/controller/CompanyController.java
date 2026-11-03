@@ -3,6 +3,7 @@ package com.jcode.jcomercy.companymanagement.infra.web.controller;
 import com.jcode.jcomercy.companymanagement.application.dto.CompanyDto;
 import com.jcode.jcomercy.companymanagement.application.service.CompanyApplicationService;
 import com.jcode.jcomercy.companymanagement.domain.exception.UnauthorizedAccessException;
+import com.jcode.jcomercy.companymanagement.infra.security.RequiresPermission;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,6 +32,7 @@ public class CompanyController {
                                        String codigoPostal, String municipioAlcaldia, String estado, String pais) {}
 
     @PostMapping("/accounts/{publicAccountId}/companies")
+    @RequiresPermission(value = "companies.create", action = "crear empresas")
     public ResponseEntity<CompanyDto> createCompany(
         @PathVariable String publicAccountId,
         @RequestBody CreateCompanyRequest request,
@@ -51,6 +53,7 @@ public class CompanyController {
     }
 
     @GetMapping("/companies/{publicCompanyId}")
+    @RequiresPermission(value = "companies.read", action = "consultar la empresa")
     public ResponseEntity<CompanyDto> getCompany(@PathVariable String publicCompanyId) {
         CompanyDto company = companyApplicationService.getCompanyByPublicId(publicCompanyId);
         return ResponseEntity
@@ -60,12 +63,14 @@ public class CompanyController {
     }
 
     @GetMapping("/accounts/{publicAccountId}/companies")
+    @RequiresPermission(value = "accounts.companies.read", action = "consultar las empresas de la cuenta")
     public ResponseEntity<List<CompanyDto>> listCompaniesByAccount(@PathVariable String publicAccountId) {
         List<CompanyDto> companies = companyApplicationService.listCompaniesByAccount(publicAccountId);
         return ResponseEntity.ok(companies);
     }
 
     @PostMapping("/companies/{publicCompanyId}/activation")
+    @RequiresPermission(value = "companies.activate", action = "activar la empresa")
     public ResponseEntity<CompanyDto> activateCompany(
         @PathVariable String publicCompanyId,
         Principal principal,

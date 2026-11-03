@@ -4,6 +4,7 @@ import com.jcode.jcomercy.companymanagement.application.dto.BranchDto;
 import com.jcode.jcomercy.companymanagement.application.service.BranchApplicationService;
 import com.jcode.jcomercy.companymanagement.domain.model.branch.BranchType;
 import com.jcode.jcomercy.companymanagement.domain.exception.UnauthorizedAccessException;
+import com.jcode.jcomercy.companymanagement.infra.security.RequiresPermission;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -35,6 +36,7 @@ public class BranchController {
                                    String codigoPostal, String municipioAlcaldia, String estado, String pais) {}
 
     @PostMapping
+    @RequiresPermission(value = "branches.create", action = "crear sucursales")
     public ResponseEntity<BranchDto> createBranch(
         @PathVariable String publicCompanyId,
         @RequestBody CreateBranchRequest request,
@@ -57,12 +59,14 @@ public class BranchController {
     }
 
     @GetMapping
+    @RequiresPermission(value = "branches.read", action = "consultar sucursales")
     public ResponseEntity<List<BranchDto>> listBranches(@PathVariable String publicCompanyId) {
         List<BranchDto> branches = branchApplicationService.listBranchesByCompany(publicCompanyId);
         return ResponseEntity.ok(branches);
     }
 
     @GetMapping("/{publicBranchId}")
+    @RequiresPermission(value = "branches.read", action = "consultar sucursales")
     public ResponseEntity<BranchDto> getBranch(@PathVariable String publicCompanyId, @PathVariable String publicBranchId) {
         BranchDto branch = branchApplicationService.getBranchByPublicId(publicCompanyId, publicBranchId);
         return ResponseEntity
@@ -72,6 +76,7 @@ public class BranchController {
     }
 
     @PostMapping("/{publicBranchId}/activation")
+    @RequiresPermission(value = "branches.activate", action = "activar sucursales")
     public ResponseEntity<BranchDto> activateBranch(
         @PathVariable String publicCompanyId,
         @PathVariable String publicBranchId,

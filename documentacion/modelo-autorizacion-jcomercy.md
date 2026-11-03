@@ -201,3 +201,14 @@ Las consultas cruzadas de inventario y los movimientos entre sucursales requiere
 - Todas las sucursales de la empresa dependen del estado de la suscripción empresarial.
 - Una suscripción suspendida no debe permitir nuevas operaciones, aunque los datos históricos deben permanecer disponibles para usuarios autorizados.
 - La consulta administrativa de suscripciones no otorga acceso a los datos operativos de las sucursales.
+
+## 11. Cómo se aplica hoy
+
+Estado de la implementación del MVP. Lo que el modelo anterior pide y aún no existe se lista al final.
+
+- **Permisos con comodín.** Un permiso es un texto `módulo.acción`. `*` concede todo y `familia.*` concede todo lo que cuelga de esa familia (`inventory.*` cubre `inventory.stock.write`). El comodín solo cuenta al final. La regla vive en `Permissions`, en `jcomercy-core`, y la usan ambos módulos.
+- **El dueño no es un rol asignado.** Quien es dueña de la cuenta tiene `*` en esa cuenta y en todas sus empresas.
+- **Los miembros reciben los permisos de su rol en esa empresa.** Cuenta la membresía activa, y valen los roles del sistema y los roles propios de esa empresa, nunca los de otra. Los permisos de inventario de los roles del sistema se sembraron en la migración V022.
+- **Company-management decide en cada petición, desde la base de datos.** Primero comprueba a quién pertenece lo que se pide y luego el permiso. Cada ruta declara el suyo con `@RequiresPermission`, que debe coincidir con el `x-required-permission` del contrato (lo verifica `RequiredPermissionsContractTest`). Una ruta sin declarar se rechaza. Una membresía suspendida o un rol cambiado surten efecto en la siguiente petición.
+- **El token lleva los permisos para los demás módulos.** El claim `permissions` es la unión de lo que la persona puede hacer en cada una de sus empresas, porque inventario no tiene acceso a estos datos y solo lee el token. **Límite conocido (ERR-011):** esa unión no distingue empresa, así que quien es dueña de una empresa y miembro de otra lleva `*` también para la ajena. No hay forma de crear membresías por API todavía; debe resolverse antes de construir las rutas de membresías.
+- **Todavía sin implementar:** los roles `OPERATOR`, `ACCOUNTANT`, `AUDITOR` y `CROSS_BRANCH_VIEWER` (el seed tiene `ACCOUNT_OWNER`, `COMPANY_ADMIN`, `BRANCH_MANAGER` y `STAFF`), el alcance por sucursal asignada en company-management, y un rol de administración de la plataforma (suspender una cuenta ajena).

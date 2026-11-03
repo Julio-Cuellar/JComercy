@@ -3,6 +3,7 @@ package com.jcode.jcomercy.companymanagement.infra.web.controller;
 import com.jcode.jcomercy.companymanagement.application.dto.AccountDto;
 import com.jcode.jcomercy.companymanagement.application.service.AccountApplicationService;
 import com.jcode.jcomercy.companymanagement.domain.exception.UnauthorizedAccessException;
+import com.jcode.jcomercy.companymanagement.infra.security.RequiresPermission;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.ResponseEntity;
@@ -48,6 +49,7 @@ public class AccountController {
     }
 
     @GetMapping("/{publicAccountId}")
+    @RequiresPermission(value = "accounts.read", action = "consultar la cuenta")
     public ResponseEntity<AccountDto> getAccount(@PathVariable String publicAccountId) {
         AccountDto account = accountApplicationService.getAccountByPublicId(publicAccountId);
         return ResponseEntity
@@ -57,6 +59,7 @@ public class AccountController {
     }
 
     @PostMapping("/{publicAccountId}/suspension")
+    @RequiresPermission(value = "accounts.suspend", action = "suspender la cuenta")
     public ResponseEntity<AccountDto> suspendAccount(
         @PathVariable String publicAccountId,
         @RequestBody SuspendAccountRequest request,

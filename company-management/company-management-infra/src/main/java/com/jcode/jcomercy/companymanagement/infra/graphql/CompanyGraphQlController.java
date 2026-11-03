@@ -6,7 +6,7 @@ import org.springframework.graphql.data.method.annotation.Argument;
 import org.springframework.graphql.data.method.annotation.QueryMapping;
 import org.springframework.stereotype.Controller;
 import org.springframework.security.core.Authentication;
-import com.jcode.jcomercy.companymanagement.infra.security.JwtAuthorizationService;
+import com.jcode.jcomercy.companymanagement.infra.security.EffectivePermissions;
 
 import java.util.List;
 
@@ -14,23 +14,23 @@ import java.util.List;
 public class CompanyGraphQlController {
 
     private final CompanyApplicationService service;
-    private final JwtAuthorizationService authorization;
+    private final EffectivePermissions permissions;
 
-    public CompanyGraphQlController(CompanyApplicationService service, JwtAuthorizationService authorization) {
+    public CompanyGraphQlController(CompanyApplicationService service, EffectivePermissions permissions) {
 
         this.service = service;
-        this.authorization = authorization;
+        this.permissions = permissions;
     }
 
     @QueryMapping
     public CompanyDto company(@Argument String publicCompanyId, Authentication authentication) {
-        return authorization.canAccessCompany(authentication, publicCompanyId)
+        return permissions.canInCompany(authentication, publicCompanyId, "companies.read")
                 ? service.getCompanyByPublicId(publicCompanyId) : null;
     }
 
     @QueryMapping
     public List<CompanyDto> companiesByAccount(@Argument String publicAccountId, Authentication authentication) {
-        return authorization.canAccessAccount(authentication, publicAccountId)
+        return permissions.canInAccount(authentication, publicAccountId, "accounts.companies.read")
                 ? service.listCompaniesByAccount(publicAccountId) : List.of();
     }
 }
