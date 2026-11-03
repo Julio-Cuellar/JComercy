@@ -1,7 +1,6 @@
 package com.jcode.jcomercy.companymanagement.infra.security;
 
 import com.jcode.jcomercy.companymanagement.domain.exception.UnauthorizedAccessException;
-import com.jcode.jcomercy.companymanagement.domain.port.CompanyRepositoryPort;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -23,11 +22,11 @@ public class RestOwnershipInterceptor implements HandlerInterceptor {
     private static final Logger log = LoggerFactory.getLogger(RestOwnershipInterceptor.class);
 
     private final JwtAuthorizationService authorization;
-    private final CompanyRepositoryPort companies;
+    private final EffectivePermissions effectivePermissions;
 
-    public RestOwnershipInterceptor(JwtAuthorizationService authorization, CompanyRepositoryPort companies) {
+    public RestOwnershipInterceptor(JwtAuthorizationService authorization, EffectivePermissions effectivePermissions) {
         this.authorization = authorization;
-        this.companies = companies;
+        this.effectivePermissions = effectivePermissions;
     }
 
     @Override
@@ -53,17 +52,13 @@ public class RestOwnershipInterceptor implements HandlerInterceptor {
     }
 
     /**
-     * El claim del token da acceso a las empresas que ya existían al iniciar sesión. Las creadas después no están en
-     * el claim, así que la cuenta dueña de la empresa también entra. Una empresa que no existe no da acceso a nadie.
+     * Entra a la empresa quien es dueña de su cuenta o tiene en ella una membresía activa, según la base de datos. El
+     * token no nombra empresas (ERR-011), y así una membresía suspendida o una empresa recién creada se reflejan en
+     * la siguiente petición. Una empresa que no existe no da acceso a nadie.
      */
     private boolean canWorkWithCompany(Authentication authentication, String companyId) {
-        if (authorization.canAccessCompany(authentication, companyId)) {
-            return true;
-        }
         String subject = authentication == null ? null : authentication.getName();
-        return subject != null && companies.findByPublicCompanyId(companyId)
-            .map(company -> subject.equals(company.getPublicAccountId()))
-            .orElse(false);
+        return effectivePermissions.belongsToCompany(subject, companyId);
     }
 
     private static void deny(Authentication authentication, HttpServletRequest request) {

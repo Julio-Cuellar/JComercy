@@ -1,7 +1,6 @@
 package com.jcode.jcomercy.companymanagement.infra.web.controller;
 
 import com.jcode.jcomercy.companymanagement.infra.security.JwtTokenService;
-import com.jcode.jcomercy.companymanagement.infra.security.PermissionResolver;
 import com.jcode.jcomercy.companymanagement.domain.model.account.Account;
 import com.jcode.jcomercy.companymanagement.domain.port.AccountRepositoryPort;
 import com.jcode.jcomercy.companymanagement.domain.port.PasswordHasher;
@@ -16,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.time.Instant;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -34,7 +32,6 @@ public class AuthController {
     private final PasswordHasher passwordHasher;
     private final RefreshTokenSpringDataRepository refreshTokens;
     private final PasswordResetTokenSpringDataRepository resetTokens;
-    private final PermissionResolver permissionResolver;
     private final long expirationMilliseconds;
 
     public AuthController(
@@ -43,7 +40,6 @@ public class AuthController {
         PasswordHasher passwordHasher,
         RefreshTokenSpringDataRepository refreshTokens,
         PasswordResetTokenSpringDataRepository resetTokens,
-        PermissionResolver permissionResolver,
         @org.springframework.beans.factory.annotation.Value("${security.jwt.expiration-ms:3600000}") long expirationMilliseconds
     ) {
         this.tokenService = tokenService;
@@ -51,7 +47,6 @@ public class AuthController {
         this.passwordHasher = passwordHasher;
         this.refreshTokens = refreshTokens;
         this.resetTokens = resetTokens;
-        this.permissionResolver = permissionResolver;
         this.expirationMilliseconds = expirationMilliseconds;
     }
 
@@ -70,15 +65,13 @@ public class AuthController {
             log.warn("Login rechazado para email={}", request.email());
             return ResponseEntity.status(401).build();
         }
-        List<String> permissions = permissionResolver.resolve(account.getPublicAccountId());
-        List<String> companyIds = permissionResolver.resolveCompanyIds(account.getPublicAccountId());
-        List<String> branchIds = permissionResolver.resolveBranchIds(account.getPublicAccountId());
         String refreshToken = randomToken();
         refreshTokens.save(RefreshTokenJpaEntity.create(hash(refreshToken), account.getPublicAccountId(),
             Instant.now().plusSeconds(60L * 60 * 24 * 30)));
-        log.info("Login exitoso accountId={} companies={} branches={}", account.getPublicAccountId(), companyIds.size(), branchIds.size());
+        log.info("Login exitoso accountId={}", account.getPublicAccountId());
+        // El login solo dice quién eres. Las empresas y sus permisos llegan al elegir una empresa (ERR-011).
         return ResponseEntity.ok(new LoginResponse(
-            tokenService.issue(account.getPublicAccountId(), permissions, companyIds, branchIds),
+            tokenService.issueAccountToken(account.getPublicAccountId()),
             refreshToken, "Bearer", expirationMilliseconds / 1000));
     }
 
@@ -100,10 +93,7 @@ public class AuthController {
         refreshTokens.save(RefreshTokenJpaEntity.create(hash(next), account.getPublicAccountId(), Instant.now().plusSeconds(60L * 60 * 24 * 30)));
         String accountId = account.getPublicAccountId();
         log.info("Refresh token rotado accountId={}", accountId);
-        return ResponseEntity.ok(new LoginResponse(tokenService.issue(accountId,
-            permissionResolver.resolve(accountId),
-            permissionResolver.resolveCompanyIds(accountId),
-            permissionResolver.resolveBranchIds(accountId)), next, "Bearer", expirationMilliseconds / 1000));
+        return ResponseEntity.ok(new LoginResponse(tokenService.issueAccountToken(accountId), next, "Bearer", expirationMilliseconds / 1000));
     }
 
     @PostMapping("/password-recovery") @Transactional

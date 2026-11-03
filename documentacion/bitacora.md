@@ -409,6 +409,31 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Sin verificar:** el comportamiento con Postgres (las pruebas usan H2 y V022 es un `UPDATE` simple); un recorrido real entre las dos aplicaciones (en pruebas, la mitad de company-management y la mitad de inventario se encuentran en el claim `permissions`, no en una llamada de punta a punta); y los miembros se crearon por SQL, porque ninguna ruta crea membresías.
   - **Pendiente:** ERR-011.
 
+### BIT-025 · Workflow de GitHub Actions que corre las pruebas en cada PR (parte A del plan)
+
+- **Qué se hizo:** `.github/workflows/ci.yml` corre `mvn -B -ntp test` en cada PR hacia `main` y en cada push a `main`. Java 21 (Temurin) con caché de Maven, permisos de solo lectura, límite de 15 minutos, cancelación de la corrida anterior del mismo PR, y subida de los reportes de pruebas si algo falla.
+- **Cómo se hizo:**
+  - **Versiones.** `actions/checkout@v7`, `actions/setup-java@v6` y `actions/upload-artifact@v7`, las últimas mayores según la API de GitHub (v7.0.1, v6.1.0 y v7.0.2). Se leyó el `action.yml` de cada una y existen las entradas que se usan (`distribution`, `java-version`, `cache`, `name`, `path`, `if-no-files-found`). Las tres corren sobre Node 24. El borrador que se mostró en el artefacto decía v4; se cambió por estas.
+  - **Medición.** `mvn -B -q test` en local con las dependencias en caché: 1 min 5 s. Por eso el límite de 15 minutos, que deja margen para una descarga completa.
+  - **Validación local.** PyYAML cargó el archivo y se comprobaron 9 puntos: disparadores, permisos mínimos, cancelación de corridas viejas, límite de tiempo, Java 21 con caché, el comando de pruebas, la subida solo si falla, y que no hay secretos. No hay `actionlint` instalado. **Un workflow no se puede ejecutar en local, así que no hay un rojo previo.**
+  - **Incidente.** El plan decía que la primera corrida sería la del PR #1, pero ese PR se fusionó (`4ff598b`, 2026-11-03 20:00:38 UTC) con la cabeza `bae22a3`, antes de que subiera el commit `fdcef9a` del workflow. `main` no lo tiene, y `gh run list` está vacío: **nunca corrió**. Se abrió el PR #2, de `contracts-v1` hacia `main`, que contiene solo `ci.yml` (45 líneas), para que sea su primera ejecución real.
+- **Afectaciones:** cada PR y cada push a `main` muestran verde o rojo, una vez que el workflow esté en `main`. No cambia ningún código ni contrato.
+- **Sin verificar:** la corrida real en GitHub (pendiente del PR #2), la versión de Maven del runner, el tiempo en frío, y que el camino rojo funcione (subir los reportes). Exigir el chequeo antes de fusionar es un ajuste de protección de ramas en GitHub, que no se tocó.
+
+### BIT-026 · El login entrega un token de cuenta y la pertenencia a la empresa sale de la base de datos (parte B, fase B1 de ERR-011)
+
+- **Qué se hizo:** `POST /auth/login` y `/auth/refresh` entregan un token de cuenta, que lleva solo la identidad: sin empresas, sucursales ni permisos. `JwtTokenService` sabe emitir también un token de empresa (`issueCompanyToken`), con el claim nuevo `ctx`, que aún no usa ninguna ruta. El control de pertenencia a una empresa deja de leer el claim `companyIds` del token y consulta la base de datos: dueña de la cuenta o membresía activa.
+- **Cómo se hizo:**
+  - **RED (ejecución).** `PermissionEnforcementIntegrationTest` y `RestOwnershipIntegrationTest`, 3 de 25 fallan: el token del login aún nombraba empresas y permisos; una membresía suspendida se rechazaba por el control de permisos y no por el de pertenencia; y un miembro sin claim recibía 403. **RED (compilación):** `JwtTokenServiceTest` (nueva, 3 pruebas), porque faltaban `issueAccountToken` e `issueCompanyToken`.
+  - **GREEN.** Infraestructura de company-management: 76 de 76 (eran 75: se reemplazaron 3 pruebas del token del login por 1, y se añadieron 3 de `JwtTokenServiceTest`). `BUILD SUCCESS` de los módulos de company-management. Un error de compilación de mi prueba (`containsExactly` sobre `List<?>`) se corrigió con un `List<String>` explícito.
+  - **Código.** `JwtTokenService`: `issueAccountToken`, `issueCompanyToken` y un método privado común. `AuthController`: login y renovación emiten el token de cuenta y el controlador ya no depende de `PermissionResolver`. `EffectivePermissions.belongsToCompany` (nuevo): dueña o membresía activa, desde la base. `RestOwnershipInterceptor` lo usa en lugar del claim y ya no depende de `CompanyRepositoryPort`.
+  - **Pruebas cambiadas.** Las 3 pruebas del token de login por una (`loginTokenIsAnAccountTokenWithoutCompaniesOrPermissions`); las equivalentes del token de empresa llegan en B2. El miembro de ERR-008 ya no lleva claim. La membresía suspendida ahora espera el mensaje de pertenencia, "No tienes acceso a esta empresa…", que es más correcto: una persona suspendida ya no pertenece.
+- **Afectaciones:**
+  - **API:** el `accessToken` del login ya no nombra empresas ni permisos. Las rutas de empresa siguen aceptando el token de cuenta hasta B3.
+  - **Regresión temporal:** entre B1 y B2, un token de login real **no abre inventario**, porque ya no nombra empresas. Hoy no hay clientes. Se recupera en B2, con el token de empresa.
+  - **Código que queda sin uso:** `PermissionResolver` (lo retoma B2) y `JwtAuthorizationService.canAccessCompany` con el claim de `JwtContext` (solo lo ejercita `JwtContextTest`); se limpian en B3.
+  - **Sin verificar:** no se ejecutó la suite de inventario en esta fase, porque no cambió; se ejecuta completa en B6.
+
 ---
 
 ## Errores

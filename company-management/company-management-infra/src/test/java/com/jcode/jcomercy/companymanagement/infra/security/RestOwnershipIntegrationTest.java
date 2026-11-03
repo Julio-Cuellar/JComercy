@@ -190,16 +190,16 @@ class RestOwnershipIntegrationTest {
     }
 
     @Test
-    @DisplayName("Un miembro con el claim de la empresa y un rol que lo permite la lee, pero no entra a la cuenta del dueño")
-    void memberWithTheCompanyClaimReadsTheCompanyButNotTheAccount() throws Exception {
+    @DisplayName("Un miembro con membresía activa y un rol que lo permite lee la empresa, pero no entra a la cuenta del dueño")
+    void memberWithAnActiveMembershipReadsTheCompanyButNotTheAccount() throws Exception {
         String memberId = "usr_member_" + SEQ.incrementAndGet();
-        // El claim abre la puerta de la empresa; leerla además exige que el rol de la membresía lo permita (ERR-010).
+        // La pertenencia sale de la base de datos y no del token: el token no nombra ninguna empresa (ERR-011).
         jdbc.update("""
             INSERT INTO company_management.company_membership
               (id, public_membership_id, public_company_id, user_id, status, roles_json, created_at, updated_at, version)
             VALUES (?, ?, ?, ?, 'ACTIVE', '["COMPANY_ADMIN"]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
             """, UUID.randomUUID(), "mem_" + UUID.randomUUID(), companyOfA, memberId);
-        String member = bearer(memberId, List.of(companyOfA));
+        String member = bearer(memberId, List.of());
 
         mockMvc.perform(get("/api/v1/companies/{id}", companyOfA).header("Authorization", member))
             .andExpect(status().isOk());

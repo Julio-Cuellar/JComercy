@@ -46,10 +46,33 @@ public class EffectivePermissions {
         if (isBlank(actorId) || isBlank(companyId)) {
             return Set.of();
         }
-        boolean ownsTheCompany = companies.findByPublicCompanyId(companyId)
+        return ownsTheCompany(actorId, companyId) ? Set.of(Permissions.ALL) : permissionsOfTheActiveMembership(actorId, companyId);
+    }
+
+    /**
+     * Si la persona pertenece a la empresa: es dueña de su cuenta o tiene en ella una membresía activa. De esto depende
+     * que pueda entrar; lo que puede hacer dentro lo decide su rol ({@link #inCompany}). Sale de la base de datos y no
+     * del token, así una membresía suspendida o una empresa creada después del login se reflejan en la siguiente petición.
+     */
+    public boolean belongsToCompany(String actorId, String companyId) {
+        if (isBlank(actorId) || isBlank(companyId)) {
+            return false;
+        }
+        return ownsTheCompany(actorId, companyId) || hasAnActiveMembership(actorId, companyId);
+    }
+
+    private boolean ownsTheCompany(String actorId, String companyId) {
+        return companies.findByPublicCompanyId(companyId)
             .map(company -> actorId.equals(company.getPublicAccountId()))
             .orElse(false);
-        return ownsTheCompany ? Set.of(Permissions.ALL) : permissionsOfTheActiveMembership(actorId, companyId);
+    }
+
+    private boolean hasAnActiveMembership(String actorId, String companyId) {
+        Integer active = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM company_management.company_membership
+            WHERE public_company_id=? AND user_id=? AND status='ACTIVE'
+            """, Integer.class, companyId, actorId);
+        return active != null && active > 0;
     }
 
     public boolean canInAccount(Authentication authentication, String accountId, String permission) {
