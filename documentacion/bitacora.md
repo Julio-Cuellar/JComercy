@@ -36,6 +36,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-009 | GraphQL ejecutaba cualquier consulta aunque `persisted-only` estuviera activo, y la introspección del esquema estaba abierta | RESUELTO (BIT-020) |
 | ERR-010 | Los permisos no se exigen en ninguna ruta REST de company-management, el token de un inicio de sesión real no trae los permisos que inventario exige, y los comodines de los roles no los interpreta ningún módulo | RESUELTO (BIT-023 reproducción, BIT-024 solución) |
 | ERR-011 | El token lleva juntos los permisos de todas las empresas de la persona: quien es dueña de una y miembro de otra lleva `*` también para la ajena | ABIERTO (reproducido en el token, BIT-024) |
+| ERR-012 | El repositorio git quedó con archivos de objeto vacíos y la rama `feat/token-por-empresa` apuntando a un commit ilegible; se perdió el commit de BIT-027, no su trabajo | RESUELTO (2026-11-03) |
 
 ---
 
@@ -550,3 +551,13 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cuándo se manifiesta:** **reproducido en el token:** quien es dueña de su propia empresa y además miembro `STAFF` de otra recibe `permissions = [inventory.stock.read, operational_context.select, *]` con los ids de las dos empresas. **Inferido del código, no ejecutado contra inventario:** ese token da en inventario todos los permisos también en la empresa donde solo es `STAFF`. Hoy no es alcanzable por la API, porque ninguna ruta crea membresías; solo por inserción directa en la base.
 - **Cómo mitigarlo:** no crear membresías, ni por SQL, para personas que sean dueñas de otra empresa, hasta resolverlo. Hasta entonces el riesgo se limita a los datos de inventario de la empresa ajena.
 - **Para resolverlo:** que el token lleve los permisos por empresa y que inventario evalúe `hasPermission` con la empresa de la ruta; o que inventario los consulte a company-management. Debe resolverse antes de construir las rutas de membresías (`memberships.invite` y las demás). Toca el contrato del token entre módulos y unas 25 comprobaciones en inventario.
+
+### ERR-012 · El repositorio git quedó con archivos de objeto vacíos y la rama apuntando a un commit ilegible
+
+- **Estado:** RESUELTO el 2026-11-03. Visto al retomar el trabajo después de cerrar BIT-027. No tiene entrada BIT: no cambió código ni contratos.
+- **De qué trata:** 32 archivos de objeto sueltos en `.git/objects` medían 0 bytes, todos con la misma hora (14:42 del 2026-11-03, la del cierre de BIT-027). La rama `feat/token-por-empresa` apuntaba a uno de ellos (`5f1e5b3…`), el índice tenía preparados 8 archivos de BIT-027 cuya copia en `.git` estaba vacía (`git fsck`: «invalid sha1 pointer in cache-tree»), y `git status` y `git log` fallaban con «bad object HEAD». El reflog de `HEAD` no registra ese commit: su última entrada es el de BIT-026 (`fa8c434`).
+- **Cuándo se manifiesta:** cualquier comando de git que lea `HEAD`. **Causa no determinada.** Había espacio en disco (144 GB libres) y solo se afectó lo escrito en ese minuto: los objetos de `fa8c434` y los 3189 que alcanza estaban sanos. La rama no estaba en `origin`, así que no había copia remota del commit perdido.
+- **Cómo mitigarlo:** si reaparece, no borrar `.git` ni volver a clonar. Primero copiar `.git`, listar los objetos vacíos con `find .git/objects -type f -size 0` y comprobar que el árbol de trabajo está completo; mientras tanto no hacer commit.
+- **Cómo se resolvió:** con una copia previa de `.git` (7,8 MB), (1) la rama volvió a `fa8c434` con `git update-ref`, (2) se borraron los 32 archivos vacíos (lista guardada antes), (3) se rehízo el índice desde `HEAD` con `git reset -q` y se volvieron a preparar desde el árbol de trabajo los 9 caminos de BIT-027 (8 archivos y el borrado de `PermissionResolver`); los hashes de los archivos no cambiaron. `git fsck --full` terminó sin errores y `git status` volvió a funcionar.
+  - **GREEN tras la reparación:** `mvn -B -ntp test` en la raíz → `BUILD SUCCESS`, **216 pruebas** (13 + 8 + 8 + 85 + 27 + 75; +10 respecto a BIT-024: 1 de BIT-026 y 9 de BIT-027), con `CompanyAccessIntegrationTest` 9 de 9.
+- **Lo que no se verificó:** la causa; el contenido exacto del commit perdido, que se vuelve a crear con otro hash; y que las 7 mutaciones de BIT-027 se repitan, porque no se volvieron a ejecutar.
