@@ -87,6 +87,15 @@ public record StockBalance(
         return withQuantities(onHand, reserved.subtract(quantity), unitCost);
     }
 
+    /** Ships reserved stock: it leaves both the physical count and the reserved count. */
+    public StockBalance commitReservation(BigDecimal quantity) {
+        positive(quantity, "quantity");
+        if (reserved.compareTo(quantity) < 0) {
+            throw new InventoryDomainException("commit quantity exceeds reserved stock");
+        }
+        return withQuantities(onHand.subtract(quantity), reserved.subtract(quantity), unitCost);
+    }
+
     private StockBalance withQuantities(BigDecimal newOnHand, BigDecimal newReserved, BigDecimal newUnitCost) {
         return new StockBalance(id, companyId, branchId, warehouseId, locationId, productId, lotId,
                 serialNumber, expirationDate, inventoryStatus, newOnHand, newReserved, newUnitCost,

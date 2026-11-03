@@ -46,6 +46,40 @@ class StockBalanceTest {
     }
 
     @Test
+    void releasingAReservationReturnsStockToAvailable() {
+        var released = balance("10", "4").releaseReservation(new BigDecimal("3"));
+
+        assertThat(released.onHand()).isEqualByComparingTo("10");
+        assertThat(released.reserved()).isEqualByComparingTo("1");
+        assertThat(released.available()).isEqualByComparingTo("9");
+        assertThat(released.version()).isEqualTo(1);
+    }
+
+    @Test
+    void cannotReleaseMoreThanWhatIsReserved() {
+        assertThatThrownBy(() -> balance("10", "2").releaseReservation(new BigDecimal("3")))
+                .isInstanceOf(InventoryDomainException.class)
+                .hasMessage("release quantity exceeds reserved stock");
+    }
+
+    @Test
+    void committingAReservationConsumesOnHandAndReservedTogether() {
+        var committed = balance("10", "4").commitReservation(new BigDecimal("3"));
+
+        assertThat(committed.onHand()).isEqualByComparingTo("7");
+        assertThat(committed.reserved()).isEqualByComparingTo("1");
+        assertThat(committed.available()).isEqualByComparingTo("6");
+        assertThat(committed.version()).isEqualTo(1);
+    }
+
+    @Test
+    void cannotCommitMoreThanWhatIsReserved() {
+        assertThatThrownBy(() -> balance("10", "2").commitReservation(new BigDecimal("3")))
+                .isInstanceOf(InventoryDomainException.class)
+                .hasMessage("commit quantity exceeds reserved stock");
+    }
+
+    @Test
     void serializedBalanceCanContainOnlyOneUnit() {
         assertThatThrownBy(() -> new StockBalance(UUID.randomUUID(), "company-1", "branch-1", UUID.randomUUID(),
                 UUID.randomUUID(), UUID.randomUUID(), null, "SER-1", null, InventoryStatus.AVAILABLE,
