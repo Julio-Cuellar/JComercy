@@ -2,7 +2,19 @@ openapi: 3.1.0
 info:
   title: JComercy Company Management API
   version: 1.0.0
-  description: Contrato formal inicial del módulo company_management.
+  description: |-
+    Contrato formal inicial del módulo company_management. Describe las rutas que el módulo ya expone y otras anticipadas que todavía no existen en el código.
+
+    ## Cómo se autentica
+
+    Hay dos clases de token, y cada ruta exige la suya:
+
+    - **Token de cuenta.** Lo entregan el inicio de sesión (`/auth/login`) y su renovación (`/auth/refresh`). Dice quién eres y nada más: no nombra empresas, sucursales ni permisos. Sirve para las rutas bajo `/accounts/{publicAccountId}`, entre ellas «Tus empresas» y la entrada a una empresa.
+    - **Token de empresa.** Lo entrega `enterCompany` al entrar a una empresa. Nombra solo esa empresa, con las sucursales y los permisos que la persona tiene en ella, y nunca los de otra. Dura una hora y renovar la sesión no lo renueva: hay que volver a entrar. Sirve para las rutas bajo `/companies/{publicCompanyId}` de **esa** empresa.
+
+    Una ruta de cuenta rechaza el token de una empresa, y una ruta de empresa rechaza el token de cuenta y el de otra empresa. Todos esos rechazos son `403` con `code` `INSUFFICIENT_PERMISSIONS`, y el mensaje dice qué hacer. Si la persona le puso contraseña a su acceso a una empresa, `enterCompany` la pide.
+
+    Que la persona siga perteneciendo a la empresa y lo que su rol le permite se comprueban en cada petición contra la base de datos, no contra el token.
 servers:
 - url: http://localhost:8080
   description: Entorno local H2
@@ -28,6 +40,9 @@ paths:
       tags:
       - Auth
       summary: Iniciar sesión con correo electrónico y obtener JWT
+      description: >-
+        Entrega el **token de cuenta**: dice quién eres, sin empresas, sucursales ni permisos. Para trabajar dentro de
+        una empresa hay que entrar a ella con `enterCompany`.
       operationId: login
       security: []
       requestBody:
@@ -48,7 +63,7 @@ paths:
                   example: OwnerPassword123!
       responses:
         '200':
-          description: JWT emitido
+          description: Token de cuenta emitido
           content:
             application/json:
               schema:
@@ -57,6 +72,7 @@ paths:
                 properties:
                   accessToken:
                     type: string
+                    description: Token de cuenta (JWT). No nombra empresas ni permisos.
                   refreshToken:
                     type: string
                     description: Token opaco de renovación; se rota en cada uso.
@@ -77,6 +93,9 @@ paths:
     post:
       tags: [Auth]
       summary: Renovar JWT y rotar refresh token
+      description: >-
+        Entrega un nuevo token de cuenta y rota el token de renovación. No renueva el token de una empresa: hay que
+        volver a entrar a ella con `enterCompany`.
       operationId: refreshToken
       security: []
       requestBody:
@@ -89,7 +108,7 @@ paths:
               properties:
                 refreshToken: { type: string }
       responses:
-        '200': { description: JWT renovado }
+        '200': { description: Token de cuenta renovado }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { description: Refresh token inválido, expirado o revocado }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
@@ -3943,6 +3962,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: >-
+        Token de cuenta o token de empresa, según la ruta. Las rutas bajo `/accounts/{publicAccountId}` piden el de la
+        cuenta; las rutas bajo `/companies/{publicCompanyId}`, el de esa empresa. Ver «Cómo se autentica» en la
+        descripción del contrato.
     serviceAuth:
       type: http
       scheme: bearer
@@ -5519,9 +5542,10 @@ components:
             $ref: '#/components/schemas/Problem'
     Forbidden:
       description: >-
-        El token es válido pero no da acceso: es de otra cuenta, no tiene acceso a esa empresa o faltan permisos.
-        `code` es `INSUFFICIENT_PERMISSIONS` y no se modifica nada. Una empresa que no existe responde igual a quien
-        no es miembro, para no revelar si existe.
+        El token es válido pero no da acceso: es de otra cuenta, no tiene acceso a esa empresa, es de la clase
+        equivocada para la ruta (el de una empresa en una ruta de cuenta, o el de cuenta o el de otra empresa en una
+        ruta de empresa) o faltan permisos. `code` es `INSUFFICIENT_PERMISSIONS`, no se modifica nada y el mensaje dice
+        qué hacer. Una empresa que no existe responde igual a quien no es miembro, para no revelar si existe.
       content:
         application/problem+json:
           schema:

@@ -11,7 +11,7 @@ El módulo es propietario de cuentas administrativas, empresas, sucursales, memb
 - Base REST: `/api/v1`.
 - Rutas técnicas en inglés.
 - Identificadores públicos en las rutas; no se exponen identificadores internos.
-- `Authorization: Bearer {accessToken}`.
+- `Authorization: Bearer {accessToken}`. Las rutas bajo `/accounts/{publicAccountId}` piden el token de la cuenta; las rutas bajo `/companies/{publicCompanyId}`, el token de esa empresa, que se obtiene al entrar a ella (sección 3.3).
 - `X-Correlation-Id` para correlación de solicitudes.
 - `Idempotency-Key` obligatorio en creaciones y comandos críticos.
 - `ETag` e `If-Match` para modificaciones con concurrencia optimista.
@@ -54,6 +54,19 @@ La desactivación requiere propietario, confirmación reforzada y validación de
 | `POST` | `/accounts/{publicAccountId}/companies` | síncrono | Crear una empresa |
 
 La primera empresa podrá crearse durante el registro junto con su sucursal matriz. La empresa permanecerá en `CONFIGURING` hasta completar la información obligatoria.
+
+### 3.3 Tus empresas y entrada a una empresa
+
+Estas rutas son de cuenta: se llaman con el token de la cuenta, el que entrega el inicio de sesión. Entrar a una empresa entrega el token de esa empresa, con el que se llaman las rutas de `/companies/{publicCompanyId}`.
+
+| Método | Ruta | Tipo | Propósito |
+|---|---|---|---|
+| `GET` | `/accounts/{publicAccountId}/company-accesses` | síncrono | Listar las empresas a las que la cuenta puede entrar, con la marca `passwordProtected` |
+| `POST` | `/accounts/{publicAccountId}/company-accesses/{targetCompanyId}/session` | síncrono | Entrar a una empresa y recibir el token de esa empresa; pide la contraseña si el acceso la tiene |
+| `PUT` | `/accounts/{publicAccountId}/company-accesses/{targetCompanyId}/password` | síncrono | Poner o cambiar la contraseña del acceso a una empresa; cambiarla exige la actual |
+| `DELETE` | `/accounts/{publicAccountId}/company-accesses/{targetCompanyId}/password` | síncrono | Quitar la contraseña del acceso; exige la contraseña de la cuenta |
+
+La contraseña de empresa es opcional y propia de cada persona. Cinco intentos fallidos bloquean ese acceso quince minutos (`429` con `Retry-After`). Ver [modelo-autorizacion-jcomercy.md](modelo-autorizacion-jcomercy.md), sección 11.
 
 ## 4. Empresas
 
