@@ -27,7 +27,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 |---|---|---|
 | ERR-001 | `AccountIntegrationTest` depende del orden de ejecución de las pruebas | RESUELTO (BIT-002) |
 | ERR-002 | Prueba de reintentos del Outbox falla de forma intermitente por competir con el despachador real | RESUELTO (BIT-006) |
-| ERR-003 | Una ruta inexistente de inventario responde 500 en vez de 404 | ABIERTO |
+| ERR-003 | Rutas inexistentes y métodos no permitidos responden 500 en vez de 404/405 | RESUELTO en inventario (BIT-012); ABIERTO en company-management |
 | ERR-004 | La prueba de concurrencia de reservas falla al repetirse por usar referencias fijas | RESUELTO (BIT-009) |
 
 ---
@@ -173,8 +173,23 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - No hay `inventory.reservation.failed`: por REST el rechazo es síncrono (422). Hará falta cuando el canal de venta reserve de forma asíncrona.
   - Solo se puede liberar o confirmar una referencia completa, no parcialmente.
   - Los saldos con lote o serie se reparten sin criterio de caducidad (no hay FEFO).
-- **Pendiente:** contrato OpenAPI y GraphQL, ERR-003, y los pendientes de la fase 0 (datos logísticos del producto, reglas de OT-INV-002, colección Postman).
-- **Sin commit:** los cambios de la fase 1 están en el árbol de trabajo.
+- **Pendiente:** contrato OpenAPI y GraphQL, y los pendientes de la fase 0 (datos logísticos del producto, reglas de OT-INV-002, colección Postman). ERR-003 se atendió en BIT-012.
+- **Commits (sin push):** `787dd67` dominio, `1de6118` persistencia (V008), `05d0694` servicio, REST y trabajo de expiración, `ef19401` esta bitácora.
+
+### BIT-012 · Rutas inexistentes y métodos no permitidos dejan de responder 500 (resuelve ERR-003 en inventario)
+
+- **Qué se hizo:** en inventario, una URL que no existe responde ahora `404 NOT_FOUND` y un método HTTP no permitido responde `405 METHOD_NOT_ALLOWED`, en lugar de `500 INTERNAL_SERVER_ERROR`.
+- **Cómo se hizo:**
+  - Prueba nueva: [InventoryRoutingErrorsIntegrationTest.java](../inventory/inventory-infra/src/test/java/com/jcode/jcomercy/inventory/infra/web/exception/InventoryRoutingErrorsIntegrationTest.java), con un JWT válido: `GET …/stock/reservaciones` (no existe) → 404 y `DELETE …/stock/availability` (solo existe como GET) → 405.
+  - **RED:** `mvn -B -pl inventory/inventory-infra -am test -Dtest=InventoryRoutingErrorsIntegrationTest` → fallan `Status expected:<404> but was:<500>` y `Status expected:<405> but was:<500>`.
+  - **Una prueba descartada:** la tercera que escribí (consultar disponibilidad sin `productId` → 400) dio 200, no 500. El parámetro es opcional a propósito (sin él devuelve todos los productos); mi suposición estaba mal, no el código. Se eliminó en lugar de forzar un comportamiento que no corresponde.
+  - Código: dos manejadores en [InventoryExceptionHandler.java](../inventory/inventory-infra/src/main/java/com/jcode/jcomercy/inventory/infra/web/exception/InventoryExceptionHandler.java), para `NoResourceFoundException` y `HttpRequestMethodNotSupportedException`. El 405 conserva la cabecera `Allow` que indica qué métodos sí acepta la ruta. Los mensajes dicen qué hacer ("Revisa que esté bien escrita").
+  - **GREEN:** las 2 pruebas nuevas y `InventoryExceptionHandlerTest` (2) pasan; `mvn -B test` en la raíz → `BUILD SUCCESS`, **104 pruebas** (inventory infra pasa de 42 a 44).
+- **Afectaciones:**
+  - **API:** esas respuestas cambian de 500 a 404/405 con el mismo formato `{code, message}`. Ningún flujo conocido dependía del 500.
+  - **Registros:** una URL mal escrita ahora deja un `WARN` de una línea y no un `ERROR` con traza completa. Cualquier alerta basada en nivel `ERROR` ya no se dispara por un tecleo.
+  - **Clientes con reintentos:** un 404/405 es definitivo; un cliente bien hecho ya no reintentará como lo haría ante un 500.
+  - **`company-management` sigue igual** (ver ERR-003).
 
 ---
 
@@ -198,14 +213,15 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cómo se resolvió:** el despachador se activa con `outbox.publisher.enabled` (por defecto `true`) y los recursos de prueba lo ponen en `false`. Se reprodujo de forma determinista acelerando el despachador a 20 ms (falla 3 de 3, `retryCount` entre 18 y 21) y, con el interruptor apagado, esa misma reproducción pasa 3 de 3.
 - **Lección:** una prueba que invoca a mano un componente que también corre en segundo plano debe apagar el segundo; un tick de 5 s es lo bastante raro como para pasar desapercibido varias corridas seguidas.
 
-### ERR-003 · Una ruta inexistente de inventario responde 500 en vez de 404
+### ERR-003 · Rutas inexistentes y métodos no permitidos responden 500 en vez de 404/405
 
-- **Estado:** ABIERTO (detectado el 2026-11-02)
-- **De qué trata:** `InventoryExceptionHandler.handleUnexpected` captura `Exception`, y eso incluye `NoResourceFoundException` (la que Spring lanza cuando ninguna ruta coincide). Resultado: una URL que no existe responde `500 INTERNAL_SERVER_ERROR` con "Error interno del servidor" y registra un `ERROR` con traza completa.
+- **Estado:** RESUELTO en inventario el 2026-11-02 (BIT-012). **ABIERTO en `company-management`.**
+- **De qué trata:** `InventoryExceptionHandler.handleUnexpected` captura `Exception`, y eso incluye `NoResourceFoundException` (la que Spring lanza cuando ninguna ruta coincide) y `HttpRequestMethodNotSupportedException` (método no permitido). Resultado: una URL que no existe responde `500 INTERNAL_SERVER_ERROR` con "Error interno del servidor" y registra un `ERROR` con traza completa.
 - **Cuándo se manifiesta:** con cualquier petición a una ruta inexistente de la aplicación de inventario, por ejemplo un error de tecleo en la URL. Se vio al correr las pruebas de reservas *antes* de que existieran sus endpoints: `Status expected:<201> but was:<500>`, con `No static resource api/v1/companies/.../stock/reservations` en el log.
 - **Cómo mitigarlo:** no interpretar un 500 en una ruta recién escrita como un fallo del servidor: revisar primero que la URL exista. Un cliente con reintentos automáticos (como el futuro canal de venta) no debe reintentar indefinidamente ante un 500 sin revisar la ruta.
-- **Cómo se resolvería:** agregar un `@ExceptionHandler(NoResourceFoundException.class)` que responda 404, con su prueba en `InventoryExceptionHandlerTest`. No se hizo en esta fase para no ampliar el alcance.
-- **Alcance:** solo se revisó inventario; `company-management` podría tener el mismo comportamiento.
+- **Cómo se resolvió (inventario):** se agregaron manejadores específicos para `NoResourceFoundException` (404, código `NOT_FOUND`) y `HttpRequestMethodNotSupportedException` (405, código `METHOD_NOT_ALLOWED`, con la cabecera `Allow`). Spring elige el manejador más específico, así que el de `Exception` queda para lo realmente inesperado. Prueba: `InventoryRoutingErrorsIntegrationTest`.
+- **Pendiente en `company-management`:** [GlobalExceptionHandler.java](../company-management/company-management-infra/src/main/java/com/jcode/jcomercy/companymanagement/infra/web/exception/GlobalExceptionHandler.java) tiene el mismo `@ExceptionHandler(Exception.class)` y ningún manejador de enrutamiento. **Confirmado leyendo el código, no reproducido con una prueba.** Además, ese 500 devuelve `ex.getMessage()` en el detalle, lo que puede exponer texto interno al cliente.
+- **Otros errores del framework (no verificado):** `HttpMediaTypeNotSupportedException` (415) y `MissingServletRequestParameterException` (400) no tienen manejador propio en ninguno de los dos módulos, así que es esperable que también terminen en 500. No se probaron.
 
 ### ERR-004 · La prueba de concurrencia de reservas falla al repetirse
 

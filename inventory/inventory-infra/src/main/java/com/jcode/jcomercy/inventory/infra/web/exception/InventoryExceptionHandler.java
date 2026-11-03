@@ -8,8 +8,10 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.Map;
 import org.slf4j.Logger;
@@ -31,6 +33,21 @@ public class InventoryExceptionHandler {
         log.warn("Regla de dominio de inventario incumplida: {}", exception.getMessage());
         return ResponseEntity.unprocessableEntity()
                 .body(Map.of("code", "INVENTORY_DOMAIN_RULE_VIOLATION", "message", exception.getMessage()));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, String>> handleUnknownRoute(NoResourceFoundException exception) {
+        log.warn("Ruta de inventario inexistente: {}", exception.getResourcePath());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("code", "NOT_FOUND",
+                "message", "La dirección solicitada no existe. Revisa que esté bien escrita."));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Map<String, String>> handleUnsupportedMethod(HttpRequestMethodNotSupportedException exception) {
+        log.warn("Método no permitido en inventario: {}", exception.getMethod());
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).headers(exception.getHeaders())
+                .body(Map.of("code", "METHOD_NOT_ALLOWED",
+                        "message", "Esa dirección no admite este método. Revisa la documentación del contrato."));
     }
 
     @ExceptionHandler(Exception.class)
