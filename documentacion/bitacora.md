@@ -331,6 +331,21 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Lo que no cambia:** profundidad máxima 8, complejidad 100, 60 peticiones por minuto por dirección y la autorización de cada resolver.
   - **Sin verificar:** solo se ejecutó por HTTP `UnitsOfMeasure` (inventario) y `CompaniesByAccount` (company-management); las demás operaciones se validaron contra el esquema pero no se corrieron. No existe todavía un cliente real que las use.
 
+### BIT-021 · Consulta GraphQL de disponibilidad en inventario (fase 3)
+
+- **Qué se hizo:** inventario suma la consulta GraphQL `stockAvailability(companyId, productId)`, que devuelve por almacén y producto la existencia (`onHand`), lo reservado (`reserved`) y lo disponible (`available`). Reservar, liberar y confirmar siguen solo en REST, porque el diseño deja los comandos críticos en REST.
+- **Cómo se hizo:**
+  - **Prueba:** `GraphQlAvailabilityIntegrationTest` (nueva, 3 pruebas). Crea por REST un almacén, una ubicación y un producto, recibe 10 y reserva 4; consulta por GraphQL con JWT, en modo cerrado y leyendo la operación de `StockAvailability.graphql`. Comprueba `onHand 10.0`, `reserved 4.0` y `available 6.0`; otra empresa, y quien no tiene el permiso de lectura de stock, reciben una lista vacía.
+  - **RED (ejecución):** (1) sin el archivo de operación, 3 de 3 con `FileNotFoundException`; (2) con el archivo y sin la consulta en el esquema, 3 de 3 con `Validation error (FieldUndefined@[stockAvailability])`, y `GraphQlOperationsConsistencyTest#everyRegisteredOperationIsValidAgainstTheSchema` cayó con el mismo error.
+  - **Código:** [inventory.graphqls](../inventory/inventory-infra/src/main/resources/graphql/inventory.graphqls) (consulta y tipo `Availability`), `InventoryGraphQlController#stockAvailability` (el mismo control que el REST, `canAccessCompany` y `inventory.stock.read`, con lista vacía si no cumple; delega en `ReservationApplicationService.availability`) y `StockAvailability.graphql`.
+  - **GREEN:** esas tres pruebas más la de consistencia y la de modo cerrado → 10 de 10 al primer intento; `mvn -B test` en la raíz → `BUILD SUCCESS`, **156 pruebas** (3 + 8 + 8 + 46 + 27 + 64; infra de inventario +3).
+  - **Mutación (temporal):** reemplazar en `stockAvailability` la condición `canAccessCompany && hasPermission` por `true` hizo caer exactamente `anotherCompanyGetsAnEmptyList` y `withoutReadPermissionGetsAnEmptyList`, y la de datos siguió pasando. Se restauró y se comprobó que no quedó ningún `return true`.
+- **Afectaciones:**
+  - **API:** el GraphQL de inventario pasa de 9 a 10 consultas. El contrato OpenAPI no cambia: la ruta REST equivalente ya se documentó en BIT-019.
+  - **Alcance:** solo lectura. Las mutaciones de reservas por GraphQL quedan fuera.
+  - **Datos expuestos:** los mismos cinco campos que el REST de disponibilidad, sin identificadores de reserva.
+  - **Sin verificar:** el comportamiento con muchos almacenes o productos; la prueba usa un almacén y un producto.
+
 ---
 
 ## Errores

@@ -8,6 +8,7 @@ type Query {
   stockBalances(companyId: ID!, productId: ID): [StockBalance!]!
   inventoryMovements(companyId: ID!, productId: ID): [InventoryMovement!]!
   companyUnits(companyId: ID!): [UnitOfMeasure!]!
+  stockAvailability(companyId: ID!, productId: ID): [Availability!]!
 }
 
 type Warehouse {
@@ -98,6 +99,14 @@ type StockBalance {
   unitCost: Float
   costingMethod: String
   version: Int!
+}
+
+type Availability {
+  warehouseId: ID!
+  productId: ID!
+  onHand: Float!
+  reserved: Float!
+  available: Float!
 }
 
 type InventoryMovement {

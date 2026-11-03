@@ -1,0 +1,9 @@
+query StockAvailability($companyId: ID!, $productId: ID) {
+  stockAvailability(companyId: $companyId, productId: $productId) {
+    warehouseId
+    productId
+    onHand
+    reserved
+    available
+  }
+}

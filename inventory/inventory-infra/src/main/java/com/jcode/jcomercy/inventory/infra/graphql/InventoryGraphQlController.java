@@ -33,6 +33,7 @@ public class InventoryGraphQlController {
     private final ProductUnitConversionRepositoryPort conversionRepository;
     private final com.jcode.jcomercy.inventory.application.service.StockApplicationService stockApplicationService;
     private final com.jcode.jcomercy.inventory.domain.port.CompanyUnitOfMeasureRepositoryPort companyUnitRepository;
+    private final com.jcode.jcomercy.inventory.application.service.ReservationApplicationService reservationApplicationService;
 
     public InventoryGraphQlController(WarehouseRepositoryPort warehouseRepository,
                                        WarehouseLocationRepositoryPort locationRepository,
@@ -41,7 +42,8 @@ public class InventoryGraphQlController {
                                        UnitOfMeasureRepositoryPort unitRepository,
                                        ProductUnitConversionRepositoryPort conversionRepository,
                                        com.jcode.jcomercy.inventory.application.service.StockApplicationService stockApplicationService,
-                                       com.jcode.jcomercy.inventory.domain.port.CompanyUnitOfMeasureRepositoryPort companyUnitRepository) {
+                                       com.jcode.jcomercy.inventory.domain.port.CompanyUnitOfMeasureRepositoryPort companyUnitRepository,
+                                       com.jcode.jcomercy.inventory.application.service.ReservationApplicationService reservationApplicationService) {
         this.warehouseRepository = warehouseRepository;
         this.locationRepository = locationRepository;
         this.authorization = authorization;
@@ -50,6 +52,7 @@ public class InventoryGraphQlController {
         this.conversionRepository = conversionRepository;
         this.stockApplicationService = stockApplicationService;
         this.companyUnitRepository = companyUnitRepository;
+        this.reservationApplicationService = reservationApplicationService;
     }
 
     @QueryMapping
@@ -124,6 +127,14 @@ public class InventoryGraphQlController {
                 .map(cu -> new UnitOfMeasure(cu.code(), cu.name(), cu.symbol(), cu.dimension(),
                         cu.baseUnitCode(), cu.conversionFactor(), cu.decimals()))
                 .collect(Collectors.toList());
+    }
+
+    @QueryMapping
+    public List<com.jcode.jcomercy.inventory.application.service.ReservationApplicationService.Availability> stockAvailability(
+            @Argument String companyId, @Argument UUID productId, Authentication authentication) {
+        return authorization.canAccessCompany(authentication, companyId)
+                && authorization.hasPermission(authentication, "inventory.stock.read")
+                ? reservationApplicationService.availability(companyId, productId) : List.of();
     }
 
     @BatchMapping(typeName = "Warehouse", field = "locations")
