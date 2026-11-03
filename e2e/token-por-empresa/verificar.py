@@ -160,10 +160,51 @@ def create_warehouse(company, branch, token, tag, default=True):
         "timezone": "America/Mexico_City", "currency": "MXN"})[0]
 
 
-def adjust(company, branch, token):
+def adjust(company, branch, token, ids=None):
+    """Un ajuste de stock. Sin ids reales usa unos inventados: el control de permisos corre antes de buscarlos."""
+    warehouse, location, product = ids or (str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()))
     return call("POST", f"{INV}/api/v1/companies/{company}/branches/{branch}/stock/adjustments", token, idempotent=True, body={
-        "warehouseId": str(uuid.uuid4()), "locationId": str(uuid.uuid4()), "productId": str(uuid.uuid4()),
+        "warehouseId": warehouse, "locationId": location, "productId": product,
         "quantity": 1, "unitCode": "PZA", "reason": "Prueba de punta a punta", "direction": "OUT"})[0]
+
+
+def prepare_stock(company, branch, owner_token):
+    """Un almacén activo con una ubicación y un producto, que es lo que inventario pide para recibir mercancía."""
+    status, warehouse = call("POST", f"{INV}/api/v1/companies/{company}/branches/{branch}/warehouses", owner_token,
+                             idempotent=True, body={"code": f"ALM-{RUN}-recepcion", "name": "Almacén de recepción",
+                                                    "type": "GENERAL", "defaultWarehouse": False,
+                                                    "timezone": "America/Mexico_City", "currency": "MXN"})
+    assert status == 201, (status, warehouse)
+    status, body = call("POST", f"{INV}/api/v1/warehouses/{warehouse['id']}/activate", owner_token, idempotent=True)
+    assert status == 200, (status, body)
+    status, location = call("POST", f"{INV}/api/v1/warehouses/{warehouse['id']}/locations", owner_token, idempotent=True,
+                            body={"code": "PASILLO-A1", "name": "Pasillo A Estante 1", "type": "INTERNAL"})
+    assert status == 201, (status, location)
+    status, product = call("POST", f"{INV}/api/v1/companies/{company}/products", owner_token, idempotent=True, body={
+        "sku": f"PROD-{RUN}", "name": "Producto de prueba", "stockUnitCode": "PZA", "trackingMode": "NONE",
+        "allowNegativeStock": False})
+    assert status == 201, (status, product)
+    return warehouse["id"], location["id"], product["id"]
+
+
+def receive(company, branch, token, ids):
+    warehouse, location, product = ids
+    return call("POST", f"{INV}/api/v1/companies/{company}/branches/{branch}/stock/receipts", token, idempotent=True, body={
+        "warehouseId": warehouse, "locationId": location, "productId": product, "quantity": 10.0, "unitCode": "PZA",
+        "unitCost": 15.5, "inventoryStatus": "AVAILABLE", "referenceType": "PURCHASE_ORDER",
+        "referenceId": f"PO-{RUN}"})[0]
+
+
+def add_member(company, branch, person, role, tag):
+    """Hace a la persona miembro de la empresa con ese rol y con su sucursal asignada (ninguna ruta lo hace todavía)."""
+    membership = f"mem_e2e_{tag}_{RUN}"
+    h2(f"INSERT INTO company_management.company_membership (id, public_membership_id, public_company_id, user_id, status, "
+       f"roles_json, created_at, updated_at, version) VALUES (RANDOM_UUID(), '{membership}', '{company}', '{person}', "
+       f"'ACTIVE', '[\"{role}\"]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)")
+    h2(f"INSERT INTO company_management.branch_assignment (id, public_assignment_id, public_membership_id, public_branch_id, "
+       f"status, created_at, updated_at, version) VALUES (RANDOM_UUID(), 'asg_e2e_{tag}_{RUN}', '{membership}', '{branch}', "
+       f"'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)")
+    return membership
 
 
 print("== Montaje en company-management ==")
@@ -212,6 +253,22 @@ print(" Control: el dueño de B sí puede, así que los 403 anteriores son por e
 check("crear un almacén en B con el token de Bob (dueño: *)", 201, create_warehouse(company_b, branch_b, bob_in_b, "b-dueno"))
 check("ajustar stock en B con el token de Bob pasa el control de permisos (no es 403)", lambda s: s != 403,
       adjust(company_b, branch_b, bob_in_b), "(falla después por ser datos inventados)")
+
+print("\n== Parte C: el encargado de sucursal recibe mercancía, pero no ajusta el stock ==")
+carla, carla_login = register("carla", 5)
+add_member(company_b, branch_b, carla, "BRANCH_MANAGER", "encargado")
+carla_in_b = enter(carla, company_b, carla_login)
+carla_claims = claims(carla_in_b)
+print(f"  token de Carla (encargada) en B: permissions={carla_claims['permissions']!r}")
+stock_ids = prepare_stock(company_b, branch_b, bob_in_b)
+granted = carla_claims["permissions"].split()
+check("el token del encargado trae lectura y escritura de stock", lambda g: {"inventory.stock.read", "inventory.stock.write"} <= set(g), granted)
+check("el token del encargado no trae ajustar, stock negativo ni comodines de stock",
+      lambda g: not ({"*", "inventory.*", "inventory.stock.*", "inventory.stock.adjust", "inventory.stock.negative.enable"} & set(g)), granted)
+check("consultar el stock de B con el token del encargado", 200, stock(company_b, carla_in_b))
+check("recibir mercancía en B con el token del encargado", 201, receive(company_b, branch_b, carla_in_b, stock_ids))
+check("ajustar el stock de B con el token del encargado", 403, adjust(company_b, branch_b, carla_in_b, stock_ids))
+check("control: el dueño de B sí ajusta el stock de lo que se recibió", 201, adjust(company_b, branch_b, bob_in_b, stock_ids))
 
 print("\n== Contraste: el token que se emitía antes de ERR-011 ==")
 print(" Ya no lo emite company-management; se fabrica aquí solo para ver qué hacía inventario con él.")

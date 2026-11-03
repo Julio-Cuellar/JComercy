@@ -524,6 +524,27 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Sin verificar:** Postgres (todo corre con H2); RabbitMQ (las aplicaciones corrieron sin él, así que el Outbox no se ejercitó); y que el script no está en el CI de GitHub Actions: un cambio que rompa el acuerdo de claims entre módulos solo se detecta si alguien lo ejecuta.
 - **Pendiente:** la parte C (acotar `BRANCH_MANAGER`, migración `V024`).
 
+### BIT-032 · El encargado de sucursal recibe y consulta mercancía, pero no ajusta el stock (parte C)
+
+- **Qué se hizo:** la migración `V024` deja al rol `BRANCH_MANAGER` con `inventory.stock.read` e `inventory.stock.write` y le quita `inventory.stock.adjust` e `inventory.stock.negative.enable`. El resto de su rol y los demás roles del sistema no cambian. Cierra la decisión (2) que BIT-024 dejó «por confirmar con el negocio» y que se aprobó como decisión 4 del plan.
+- **Cómo se hizo:**
+  - **Origen.** V022 le dio al encargado `inventory.stock.*`, que cubre los cuatro permisos de stock que inventario exige: `read`, `write`, `adjust` y `negative.enable`.
+  - **Migración nueva y no edición de V022**, porque V022 ya pudo aplicarse en otras bases. Es un `UPDATE` por `public_role_id = 'rol_sys_branch_manager'`, del mismo estilo que V022. Conserva `branches.read`, `branches.update`, `operations.*`, `inventory.warehouses.read` e `inventory.products.read`. **Sobrescribe el rol entero**: un cambio hecho a mano a ese rol del sistema se perdería.
+  - **RED (ejecución).** `BranchManagerDefaultPermissionsIntegrationTest` (nueva, 3 pruebas): 2 de 3 fallan, porque el token del encargado traía `inventory.stock.*` y `negative.enable` daba `true`. La tercera, «los otros roles conservan lo suyo», ya pasaba y queda de guarda.
+  - **GREEN.** 3 de 3; `company-management-infra`, 114 de 114 (eran 111). Ninguna prueba existente se rompió.
+  - **Hueco encontrado antes de mutar:** la prueba no comprobaba que el encargado conserva `operations.*`, y la migración promete no tocar el resto de su rol. Se añadió; la mutación M6 lo confirma.
+  - **Mutaciones temporales sobre la migración (script, 7), todas detectadas y revertidas; la huella coincide con la de antes (`bec3297…`):** M1 sin `WHERE`, actualiza todos los roles → caen 3; M2 conserva `adjust` → cae 1; M3 conserva el stock negativo → caen 2; M4 vuelve a `inventory.stock.*` → caen 2; M5 pierde `inventory.stock.write` → caen 2; M6 pierde `operations.*` → cae 1; M7 actualiza otro rol → caen 3.
+  - **De punta a punta.** `e2e/token-por-empresa` pasa de 18 a **24 verificaciones**: Carla, `BRANCH_MANAGER` de la empresa B con su sucursal asignada, recibe un token con `inventory.stock.read` e `inventory.stock.write` y sin `adjust`, `negative.enable` ni comodines de stock. En inventario real consulta el stock (200), **recibe mercancía (201)** y **recibe 403 al ajustarlo**; el dueño de B sí ajusta lo recibido (201). Para eso el script ahora crea un almacén activo, una ubicación y un producto.
+  - **Mutación real de punta a punta.** Con la migración puesta de nuevo en `inventory.stock.*`, se reconstruyó y se corrió el recorrido: **cayeron 3 de 24** y inventario respondió **201 al ajuste del encargado**, que es el daño que esta fase evita. Restaurado el archivo (misma huella) y reconstruido, vuelve a 24 de 24.
+  - **GREEN final:** `mvn -B -ntp test` en la raíz → `BUILD SUCCESS`, **245 pruebas** (13 + 8 + 8 + 114 + 27 + 75; +3).
+- **Afectaciones:**
+  - **Comportamiento:** quien ya era encargado y ajustaba stock deja de poder hacerlo cuando recibe un token nuevo. Hoy no hay clientes. Los tokens ya emitidos con `inventory.stock.*` siguen valiendo hasta que expiren (una hora).
+  - **Datos:** `V024` modifica una fila de `company_management.role`.
+  - **Documentación:** la sección 11 de `modelo-autorizacion-jcomercy.md` dice ahora qué recibe cada rol del sistema en inventario.
+  - **Límite importante:** «cada empresa podrá concedérselo con un rol propio» **todavía no se puede hacer por la API**. Las rutas para crear roles y membresías están en el contrato pero no existen; la prueba lo demuestra insertando el rol directamente en la base. Hasta que existan, nadie puede devolverle el permiso de ajustar a un encargado sin tocar la base.
+  - **Sin verificar:** Postgres (todo corre con H2); el stock negativo de punta a punta (se prueba que el permiso no llega, pero no se ejercitó en inventario una salida que deje el saldo en negativo); y el script sigue sin correr en el CI.
+- **Pendiente:** las rutas de roles y de membresías, que son un plan propio.
+
 ---
 
 ## Errores
