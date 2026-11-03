@@ -36,6 +36,8 @@ class RestOwnershipIntegrationTest {
     private static final AtomicInteger SEQ = new AtomicInteger(500_000);
     private static final String ACCOUNT_DENIED = "No tienes acceso a esta cuenta. Inicia sesión con la cuenta que corresponde.";
     private static final String COMPANY_DENIED = "No tienes acceso a esta empresa. Pide acceso a quien administra la cuenta.";
+    private static final String COMPANY_NOT_CHOSEN =
+        "Elige primero la empresa con la que vas a trabajar. Entra a una desde «Tus empresas» e intenta de nuevo.";
 
     @Autowired
     private MockMvc mockMvc;
@@ -54,6 +56,8 @@ class RestOwnershipIntegrationTest {
     private String emailOfB;
     private String tokenA;
     private String tokenB;
+    private String tokenAInCompany;
+    private String tokenBNamingCompanyOfA;
     private String companyOfA;
     private String branchOfA;
 
@@ -66,9 +70,13 @@ class RestOwnershipIntegrationTest {
         emailOfB = ownerB.email();
         tokenA = bearer(accountA, List.of());
         tokenB = bearer(accountB, List.of());
-        // El token se emitió antes de crear la empresa: el dueño debe poder operarla sin renovarlo.
+        // El token de la cuenta se emitió antes de crear la empresa: el dueño entra a ella sin renovarlo.
         companyOfA = createCompany(accountA, tokenA);
-        branchOfA = createBranch(companyOfA, tokenA);
+        tokenAInCompany = enter(accountA, companyOfA, tokenA);
+        branchOfA = createBranch(companyOfA, tokenAInCompany);
+        // Un token que nombra la empresa de A pero es de B no se puede obtener por la API. Se fabrica para comprobar
+        // que, aun así, la pertenencia la decide la base de datos y no lo que el token dice.
+        tokenBNamingCompanyOfA = companyBearer(accountB, companyOfA);
     }
 
     // ---- Rutas de cuenta ----
@@ -112,18 +120,18 @@ class RestOwnershipIntegrationTest {
     @Test
     @DisplayName("GET /companies/{id}: quien no tiene acceso a la empresa recibe 403")
     void readingAnotherCompanyIsForbidden() throws Exception {
-        forbidden(mockMvc.perform(get("/api/v1/companies/{id}", companyOfA).header("Authorization", tokenB)), COMPANY_DENIED);
+        forbidden(mockMvc.perform(get("/api/v1/companies/{id}", companyOfA).header("Authorization", tokenBNamingCompanyOfA)), COMPANY_DENIED);
     }
 
     @Test
     @DisplayName("POST /companies/{id}/activation: quien no tiene acceso recibe 403 y la empresa no se activa")
     void activatingAnotherCompanyIsForbiddenAndChangesNothing() throws Exception {
-        String before = statusOf("/api/v1/companies/" + companyOfA, tokenA);
+        String before = statusOf("/api/v1/companies/" + companyOfA, tokenAInCompany);
 
         forbidden(mockMvc.perform(post("/api/v1/companies/{id}/activation", companyOfA)
-            .header("Authorization", tokenB).header("Idempotency-Key", UUID.randomUUID().toString())), COMPANY_DENIED);
+            .header("Authorization", tokenBNamingCompanyOfA).header("Idempotency-Key", UUID.randomUUID().toString())), COMPANY_DENIED);
 
-        assertThat(statusOf("/api/v1/companies/" + companyOfA, tokenA)).isEqualTo(before);
+        assertThat(statusOf("/api/v1/companies/" + companyOfA, tokenAInCompany)).isEqualTo(before);
     }
 
     // ---- Rutas de sucursal ----
@@ -131,17 +139,17 @@ class RestOwnershipIntegrationTest {
     @Test
     @DisplayName("GET /companies/{id}/branches: quien no tiene acceso a la empresa recibe 403")
     void listingBranchesOfAnotherCompanyIsForbidden() throws Exception {
-        forbidden(mockMvc.perform(get("/api/v1/companies/{id}/branches", companyOfA).header("Authorization", tokenB)), COMPANY_DENIED);
+        forbidden(mockMvc.perform(get("/api/v1/companies/{id}/branches", companyOfA).header("Authorization", tokenBNamingCompanyOfA)), COMPANY_DENIED);
     }
 
     @Test
     @DisplayName("POST /companies/{id}/branches: quien no tiene acceso recibe 403 y no se crea la sucursal")
     void creatingABranchInAnotherCompanyIsForbiddenAndChangesNothing() throws Exception {
         forbidden(mockMvc.perform(post("/api/v1/companies/{id}/branches", companyOfA)
-            .header("Authorization", tokenB).header("Idempotency-Key", UUID.randomUUID().toString())
+            .header("Authorization", tokenBNamingCompanyOfA).header("Idempotency-Key", UUID.randomUUID().toString())
             .contentType(MediaType.APPLICATION_JSON).content(branchJson(SEQ.incrementAndGet(), "SUCURSAL"))), COMPANY_DENIED);
 
-        mockMvc.perform(get("/api/v1/companies/{id}/branches", companyOfA).header("Authorization", tokenA))
+        mockMvc.perform(get("/api/v1/companies/{id}/branches", companyOfA).header("Authorization", tokenAInCompany))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(1)));
     }
@@ -150,18 +158,18 @@ class RestOwnershipIntegrationTest {
     @DisplayName("GET /companies/{id}/branches/{branchId}: quien no tiene acceso recibe 403")
     void readingABranchOfAnotherCompanyIsForbidden() throws Exception {
         forbidden(mockMvc.perform(get("/api/v1/companies/{id}/branches/{branchId}", companyOfA, branchOfA)
-            .header("Authorization", tokenB)), COMPANY_DENIED);
+            .header("Authorization", tokenBNamingCompanyOfA)), COMPANY_DENIED);
     }
 
     @Test
     @DisplayName("POST /companies/{id}/branches/{branchId}/activation: quien no tiene acceso recibe 403 y la sucursal no cambia")
     void activatingABranchOfAnotherCompanyIsForbiddenAndChangesNothing() throws Exception {
-        String before = statusOf("/api/v1/companies/" + companyOfA + "/branches/" + branchOfA, tokenA);
+        String before = statusOf("/api/v1/companies/" + companyOfA + "/branches/" + branchOfA, tokenAInCompany);
 
         forbidden(mockMvc.perform(post("/api/v1/companies/{id}/branches/{branchId}/activation", companyOfA, branchOfA)
-            .header("Authorization", tokenB).header("Idempotency-Key", UUID.randomUUID().toString())), COMPANY_DENIED);
+            .header("Authorization", tokenBNamingCompanyOfA).header("Idempotency-Key", UUID.randomUUID().toString())), COMPANY_DENIED);
 
-        assertThat(statusOf("/api/v1/companies/" + companyOfA + "/branches/" + branchOfA, tokenA)).isEqualTo(before);
+        assertThat(statusOf("/api/v1/companies/" + companyOfA + "/branches/" + branchOfA, tokenAInCompany)).isEqualTo(before);
     }
 
     // ---- Quien sí tiene acceso sigue operando ----
@@ -177,29 +185,29 @@ class RestOwnershipIntegrationTest {
     }
 
     @Test
-    @DisplayName("El dueño opera la empresa recién creada sin renovar el token")
+    @DisplayName("El dueño opera la empresa recién creada: entra a ella con el token de su cuenta, sin renovarlo")
     void ownerOperatesTheCompanyJustCreatedWithoutRenewingTheToken() throws Exception {
-        mockMvc.perform(get("/api/v1/companies/{id}", companyOfA).header("Authorization", tokenA))
+        mockMvc.perform(get("/api/v1/companies/{id}", companyOfA).header("Authorization", tokenAInCompany))
             .andExpect(status().isOk());
         mockMvc.perform(post("/api/v1/companies/{id}/activation", companyOfA)
-                .header("Authorization", tokenA).header("Idempotency-Key", UUID.randomUUID().toString()))
+                .header("Authorization", tokenAInCompany).header("Idempotency-Key", UUID.randomUUID().toString()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("ACTIVE"));
-        mockMvc.perform(get("/api/v1/companies/{id}/branches/{branchId}", companyOfA, branchOfA).header("Authorization", tokenA))
+        mockMvc.perform(get("/api/v1/companies/{id}/branches/{branchId}", companyOfA, branchOfA).header("Authorization", tokenAInCompany))
             .andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("Un miembro con el claim de la empresa y un rol que lo permite la lee, pero no entra a la cuenta del dueño")
-    void memberWithTheCompanyClaimReadsTheCompanyButNotTheAccount() throws Exception {
+    @DisplayName("Un miembro con membresía activa y un rol que lo permite lee la empresa, pero no entra a la cuenta del dueño")
+    void memberWithAnActiveMembershipReadsTheCompanyButNotTheAccount() throws Exception {
         String memberId = "usr_member_" + SEQ.incrementAndGet();
-        // El claim abre la puerta de la empresa; leerla además exige que el rol de la membresía lo permita (ERR-010).
+        // La pertenencia sale de la base de datos y no del token: el token no nombra ninguna empresa (ERR-011).
         jdbc.update("""
             INSERT INTO company_management.company_membership
               (id, public_membership_id, public_company_id, user_id, status, roles_json, created_at, updated_at, version)
             VALUES (?, ?, ?, ?, 'ACTIVE', '["COMPANY_ADMIN"]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
             """, UUID.randomUUID(), "mem_" + UUID.randomUUID(), companyOfA, memberId);
-        String member = bearer(memberId, List.of(companyOfA));
+        String member = enter(memberId, companyOfA, bearer(memberId, List.of()));
 
         mockMvc.perform(get("/api/v1/companies/{id}", companyOfA).header("Authorization", member))
             .andExpect(status().isOk());
@@ -207,7 +215,7 @@ class RestOwnershipIntegrationTest {
     }
 
     @Test
-    @DisplayName("El token que entrega el inicio de sesión sirve para la propia cuenta y no para la de otro")
+    @DisplayName("El token que entrega el inicio de sesión sirve para la propia cuenta, no para la de otro ni para trabajar en una empresa")
     void tokenFromLoginWorksForTheOwnAccountOnly() throws Exception {
         String login = mockMvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"%s\",\"password\":\"ClaveSegura123!\"}".formatted(emailOfB)))
@@ -218,14 +226,15 @@ class RestOwnershipIntegrationTest {
         mockMvc.perform(get("/api/v1/accounts/{id}", accountB).header("Authorization", token))
             .andExpect(status().isOk());
         forbidden(mockMvc.perform(get("/api/v1/accounts/{id}", accountA).header("Authorization", token)), ACCOUNT_DENIED);
-        forbidden(mockMvc.perform(get("/api/v1/companies/{id}", companyOfA).header("Authorization", token)), COMPANY_DENIED);
+        forbidden(mockMvc.perform(get("/api/v1/companies/{id}", companyOfA).header("Authorization", token)), COMPANY_NOT_CHOSEN);
     }
 
     @Test
     @DisplayName("Una empresa que no existe responde 403 a quien no es miembro, sin revelar si existe")
     void aNonExistentCompanyRespondsForbiddenToANonMember() throws Exception {
-        forbidden(mockMvc.perform(get("/api/v1/companies/{id}", "com_no_existe_" + SEQ.incrementAndGet())
-            .header("Authorization", tokenB)), COMPANY_DENIED);
+        String missing = "com_no_existe_" + SEQ.incrementAndGet();
+        forbidden(mockMvc.perform(get("/api/v1/companies/{id}", missing)
+            .header("Authorization", companyBearer(accountB, missing))), COMPANY_DENIED);
     }
 
     @Test
@@ -264,6 +273,20 @@ class RestOwnershipIntegrationTest {
 
     private String bearer(String subject, List<String> companyIds) {
         return "Bearer " + tokenService.issue(subject, List.of(), companyIds, List.of());
+    }
+
+    /** Un token que nombra esa empresa, como el que se entrega al entrar a ella; aquí se fabrica sin pasar por la ruta. */
+    private String companyBearer(String subject, String companyId) {
+        return "Bearer " + tokenService.issueCompanyToken(subject, companyId, List.of(), List.of());
+    }
+
+    /** Entra a la empresa con el token de la cuenta y devuelve el token de esa empresa. */
+    private String enter(String accountId, String companyId, String accountBearer) throws Exception {
+        String response = mockMvc.perform(post("/api/v1/accounts/{id}/company-accesses/{target}/session", accountId, companyId)
+                .header("Authorization", accountBearer))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        return "Bearer " + objectMapper.readTree(response).get("accessToken").asText();
     }
 
     private record Registered(String accountId, String email) { }

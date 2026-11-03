@@ -290,6 +290,165 @@ paths:
         '422':
           $ref: '#/components/responses/UnprocessableContent'
       x-required-permission: accounts.suspend
+  /api/v1/accounts/{publicAccountId}/company-accesses:
+    parameters:
+    - $ref: '#/components/parameters/PublicAccountId'
+    get:
+      tags:
+      - Accounts
+      summary: Consultar las empresas a las que la cuenta puede entrar
+      description: >-
+        Las empresas que la cuenta posee y aquellas donde tiene una membresía activa. Alimenta la pantalla
+        «Tus empresas». Solo la propia cuenta puede consultarla.
+      operationId: listCompanyAccesses
+      responses:
+        '200':
+          description: Empresas a las que la cuenta puede entrar
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CompanyAccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-required-permission: accounts.company_accesses.read
+  /api/v1/accounts/{publicAccountId}/company-accesses/{targetCompanyId}/session:
+    parameters:
+    - $ref: '#/components/parameters/PublicAccountId'
+    - name: targetCompanyId
+      in: path
+      required: true
+      description: Identificador público de la empresa a la que se quiere entrar
+      schema:
+        type: string
+        example: com_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+    post:
+      tags:
+      - Accounts
+      summary: Entrar a una empresa
+      description: >-
+        Entrega el token de esa empresa. Ese token nombra solo esa empresa, con las sucursales y los permisos que la
+        persona tiene en ella, y no los de ninguna otra. Entrar a una empresa sin acceso responde igual que entrar a
+        una que no existe. Si la persona le puso contraseña a su acceso (`passwordProtected` en «Tus empresas»), hay
+        que enviarla en `password`; cinco contraseñas equivocadas bloquean ese acceso quince minutos.
+      operationId: enterCompany
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnterCompanyRequest'
+      responses:
+        '200':
+          description: Token de la empresa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanySession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >-
+            Sin acceso a la empresa (`INSUFFICIENT_PERMISSIONS`), o falta o es incorrecta la contraseña del acceso
+            (`COMPANY_PASSWORD_REQUIRED`, `COMPANY_PASSWORD_INVALID`). El mensaje de contraseña incorrecta dice cuántos
+            intentos quedan.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          $ref: '#/components/responses/AccessLocked'
+      x-required-permission: accounts.company_accesses.enter
+  /api/v1/accounts/{publicAccountId}/company-accesses/{targetCompanyId}/password:
+    parameters:
+    - $ref: '#/components/parameters/PublicAccountId'
+    - name: targetCompanyId
+      in: path
+      required: true
+      description: Identificador público de la empresa cuyo acceso se protege
+      schema:
+        type: string
+        example: com_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+    put:
+      tags:
+      - Accounts
+      summary: Poner o cambiar la contraseña de una empresa
+      description: >-
+        Cada persona puede ponerle, si quiere, una contraseña propia a su acceso a una empresa. Cambiarla exige la
+        actual (`currentPassword`); ponerla por primera vez, no. La nueva debe tener al menos 8 caracteres y ser distinta
+        a la de la cuenta. Equivocarse con la actual gasta los mismos intentos que equivocarse al entrar. Una empresa
+        sin acceso responde igual que una que no existe. La contraseña de empresa no sustituye los permisos.
+      operationId: setCompanyAccessPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetCompanyPasswordRequest'
+      responses:
+        '204':
+          description: Contraseña guardada
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >-
+            Sin acceso a la empresa (`INSUFFICIENT_PERMISSIONS`), o falta o es incorrecta la contraseña actual
+            (`COMPANY_PASSWORD_REQUIRED`, `COMPANY_PASSWORD_INVALID`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+        '429':
+          $ref: '#/components/responses/AccessLocked'
+      x-required-permission: accounts.company_accesses.password.set
+    delete:
+      tags:
+      - Accounts
+      summary: Quitar la contraseña de una empresa
+      description: >-
+        Quita la contraseña del acceso. Exige la contraseña de la **cuenta** (`accountPassword`), no la de la empresa:
+        es la salida para quien olvidó la de la empresa. Quitar la contraseña de un acceso que no la tiene no cambia
+        nada. Equivocarse con la de la cuenta gasta los mismos intentos que equivocarse al entrar.
+      operationId: removeCompanyAccessPassword
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveCompanyPasswordRequest'
+      responses:
+        '204':
+          description: Contraseña quitada
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >-
+            Sin acceso a la empresa (`INSUFFICIENT_PERMISSIONS`), o falta o es incorrecta la contraseña de la cuenta
+            (`ACCOUNT_PASSWORD_REQUIRED`, `ACCOUNT_PASSWORD_INVALID`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          $ref: '#/components/responses/AccessLocked'
+      x-required-permission: accounts.company_accesses.password.remove
   /api/v1/accounts/{publicAccountId}/companies:
     parameters:
     - $ref: '#/components/parameters/PublicAccountId'
@@ -4684,6 +4843,92 @@ components:
           format: date-time
         correlationId:
           type: string
+    CompanyAccess:
+      type: object
+      description: Una empresa a la que la cuenta puede entrar.
+      required: [publicCompanyId, relationship]
+      properties:
+        publicCompanyId:
+          type: string
+          example: com_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        tradeName:
+          type: string
+          description: Nombre comercial de la empresa.
+          example: Abarrotes La Esquina
+        status:
+          type: string
+          description: Estado de la empresa.
+          example: ACTIVE
+        relationship:
+          type: string
+          enum: [OWNER, MEMBER]
+          description: '`OWNER` si la cuenta es dueña de la empresa; `MEMBER` si entra por una membresía activa.'
+        roles:
+          type: array
+          description: Roles de la membresía. Vacío para quien es dueña.
+          items:
+            type: string
+          example: [STAFF]
+        passwordProtected:
+          type: boolean
+          description: >-
+            `true` si la persona le puso contraseña a su acceso a esta empresa: entrar la pide. Es una marca de la
+            persona, no de la empresa; otra persona de la misma empresa puede no tener contraseña.
+          example: false
+    CompanySession:
+      type: object
+      description: >-
+        Token de una empresa. Nombra solo esa empresa, con las sucursales y los permisos que la persona tiene en ella.
+      required: [accessToken, tokenType, expiresIn, publicCompanyId]
+      properties:
+        accessToken:
+          type: string
+          description: Token JWT de la empresa.
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          description: Segundos que dura el token.
+          example: 3600
+        publicCompanyId:
+          type: string
+          example: com_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+    EnterCompanyRequest:
+      type: object
+      description: Lo que se envía al entrar a una empresa. El cuerpo es opcional si el acceso no tiene contraseña.
+      properties:
+        password:
+          type: string
+          format: password
+          description: Contraseña que la persona le puso a su acceso a esta empresa.
+          example: contraseña-de-ejemplo
+    SetCompanyPasswordRequest:
+      type: object
+      description: Lo que se envía para poner o cambiar la contraseña del acceso a una empresa.
+      required: [newPassword]
+      properties:
+        currentPassword:
+          type: string
+          format: password
+          description: La contraseña actual. Solo se pide al cambiar una que ya existe.
+          example: contraseña-actual-de-ejemplo
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          description: La contraseña nueva. Debe ser distinta a la de la cuenta.
+          example: contraseña-nueva-de-ejemplo
+    RemoveCompanyPasswordRequest:
+      type: object
+      description: Lo que se envía para quitar la contraseña del acceso a una empresa.
+      properties:
+        accountPassword:
+          type: string
+          format: password
+          description: La contraseña de la cuenta. Es la salida si se olvidó la de la empresa.
+          example: contraseña-de-cuenta-de-ejemplo
     AccountSuspensionRequest:
       type: object
       description: >-
@@ -5309,6 +5554,20 @@ components:
             $ref: '#/components/schemas/Problem'
     TooManyRequests:
       description: Límite de consumo excedido
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    AccessLocked:
+      description: >-
+        El acceso a la empresa está bloqueado por demasiados intentos fallidos (`COMPANY_ACCESS_LOCKED`). `Retry-After`
+        indica los segundos que faltan para poder volver a intentarlo.
+      headers:
+        Retry-After:
+          description: Segundos que faltan para poder volver a intentarlo.
+          schema:
+            type: integer
+            example: 900
       content:
         application/problem+json:
           schema:

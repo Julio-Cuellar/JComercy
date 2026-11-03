@@ -6,6 +6,7 @@ import com.jcode.jcomercy.companymanagement.domain.exception.DomainRuleViolation
 import com.jcode.jcomercy.companymanagement.domain.exception.DuplicateResourceException;
 import com.jcode.jcomercy.companymanagement.domain.exception.EntityNotFoundException;
 import com.jcode.jcomercy.companymanagement.domain.exception.UnauthorizedAccessException;
+import com.jcode.jcomercy.companymanagement.infra.security.CompanyAccessPasswordException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,6 +77,26 @@ public class GlobalExceptionHandler {
             "INSUFFICIENT_PERMISSIONS"
         );
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem);
+    }
+
+    @ExceptionHandler(CompanyAccessPasswordException.class)
+    public ResponseEntity<ProblemDetails> handleCompanyAccessPassword(CompanyAccessPasswordException ex,
+                                                                      HttpServletRequest request) {
+        boolean locked = ex.kind() == CompanyAccessPasswordException.Kind.COMPANY_ACCESS_LOCKED;
+        HttpStatus status = HttpStatus.valueOf(ex.kind().status());
+        ProblemDetails problem = ProblemDetails.of(
+            locked ? "https://jcomercy.com/errors/access-locked" : "https://jcomercy.com/errors/password",
+            locked ? "Acceso Bloqueado Temporalmente" : "Contraseña Requerida o Incorrecta",
+            status.value(),
+            ex.getMessage(),
+            request.getRequestURI(),
+            ex.kind().name()
+        );
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(status);
+        if (locked) {
+            response.header("Retry-After", String.valueOf(ex.retryAfterSeconds()));
+        }
+        return response.body(problem);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

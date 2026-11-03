@@ -15,13 +15,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
@@ -52,15 +49,18 @@ class PermissionEnforcementIntegrationTest {
     private JdbcTemplate jdbc;
 
     private Registered owner;
+    private String loginOfOwner;
     private String tokenOfOwner;
     private String companyId;
     private String branchId;
 
+    /** La dueña crea su empresa con el token de la cuenta y entra a ella: dentro se trabaja con el token de la empresa. */
     @BeforeEach
     void world() throws Exception {
         owner = register();
-        tokenOfOwner = login(owner.email());
-        companyId = createCompany(owner.accountId(), tokenOfOwner);
+        loginOfOwner = login(owner.email());
+        companyId = createCompany(owner.accountId(), loginOfOwner);
+        tokenOfOwner = enter(owner.accountId(), companyId, loginOfOwner);
         branchId = createBranch(companyId, tokenOfOwner);
     }
 
@@ -128,15 +128,16 @@ class PermissionEnforcementIntegrationTest {
     void suspendedMembershipLosesAccessAtOnce() throws Exception {
         Registered member = register();
         addMember(member.accountId(), "ACTIVE", "[\"BRANCH_MANAGER\"]");
-        String token = login(member.email());
+        String token = enter(member.accountId(), companyId, login(member.email()));
 
         mockMvc.perform(get("/api/v1/companies/{id}/branches", companyId).header("Authorization", token))
             .andExpect(status().isOk());
 
         jdbc.update("UPDATE company_management.company_membership SET status='SUSPENDED' WHERE user_id=?", member.accountId());
 
+        // Suspendida, la persona ya no pertenece a la empresa: lo rechaza el control de pertenencia.
         denied(mockMvc.perform(get("/api/v1/companies/{id}/branches", companyId).header("Authorization", token)),
-            "Tu rol no permite consultar sucursales. Pide acceso a quien administra la cuenta.");
+            "No tienes acceso a esta empresa. Pide acceso a quien administra la cuenta.");
     }
 
     @Test
@@ -182,7 +183,8 @@ class PermissionEnforcementIntegrationTest {
         graphql(tokenOfOwner, "Company", Map.of("publicCompanyId", companyId))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.company.publicCompanyId").value(companyId));
-        graphql(tokenOfOwner, "CompaniesByAccount", Map.of("publicAccountId", owner.accountId()))
+        // La lista de las empresas de la cuenta es de la cuenta: se pide con el token del inicio de sesión.
+        graphql(loginOfOwner, "CompaniesByAccount", Map.of("publicAccountId", owner.accountId()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.companiesByAccount.length()").value(1));
     }
@@ -190,26 +192,15 @@ class PermissionEnforcementIntegrationTest {
     // ---- Lo que lleva el token de un inicio de sesión real ----
 
     @Test
-    @DisplayName("El token del dueño de una empresa lleva todos los permisos")
-    void ownerTokenCarriesEveryPermission() throws Exception {
-        // El token del @BeforeEach se emitió antes de que el dueño tuviera empresa; este ya la tiene.
-        assertThat(permissionsIn(login(owner.email()))).contains("*");
-    }
+    @DisplayName("El token del inicio de sesión es de cuenta: no nombra empresas, sucursales ni permisos")
+    void loginTokenIsAnAccountTokenWithoutCompaniesOrPermissions() throws Exception {
+        // El dueño ya tiene empresa y sucursal, y aun así el login no las nombra (ERR-011).
+        JsonNode claims = claimsOf(login(owner.email()));
 
-    @Test
-    @DisplayName("El token de un miembro lleva solo los permisos de su rol, con los de inventario incluidos")
-    void memberTokenCarriesOnlyThePermissionsOfItsRole() throws Exception {
-        String manager = memberToken("[\"BRANCH_MANAGER\"]");
-
-        assertThat(permissionsIn(manager))
-            .contains("branches.read", "inventory.stock.*")
-            .doesNotContain("*", "branches.create", "companies.create");
-    }
-
-    @Test
-    @DisplayName("El token de una cuenta sin empresas ni membresías no lleva permisos")
-    void tokenOfAnAccountWithoutCompaniesCarriesNoPermissions() throws Exception {
-        assertThat(permissionsIn(login(register().email()))).isEmpty();
+        assertThat(claims.path("permissions").asText("")).isEmpty();
+        assertThat(claims.path("companyIds")).isEmpty();
+        assertThat(claims.path("branchIds")).isEmpty();
+        assertThat(claims.has("ctx")).isFalse();
     }
 
     // ---- Ayudas ----
@@ -238,11 +229,20 @@ class PermissionEnforcementIntegrationTest {
         return objectMapper.readTree(body).get("status").asText();
     }
 
-    /** Registra otra cuenta, la hace miembro de la empresa del dueño con esos roles y devuelve su token de inicio de sesión. */
+    /** Registra otra cuenta, la hace miembro de la empresa del dueño con esos roles y devuelve su token de esa empresa. */
     private String memberToken(String rolesJson) throws Exception {
         Registered member = register();
         addMember(member.accountId(), "ACTIVE", rolesJson);
-        return login(member.email());
+        return enter(member.accountId(), companyId, login(member.email()));
+    }
+
+    /** Entra a la empresa con el token de la cuenta y devuelve el token de esa empresa. */
+    private String enter(String accountId, String company, String loginBearer) throws Exception {
+        String response = mockMvc.perform(post("/api/v1/accounts/{id}/company-accesses/{target}/session", accountId, company)
+                .header("Authorization", loginBearer))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        return "Bearer " + objectMapper.readTree(response).get("accessToken").asText();
     }
 
     private void addMember(String userId, String status, String rolesJson) {
@@ -261,12 +261,10 @@ class PermissionEnforcementIntegrationTest {
             """, UUID.randomUUID(), "rol_" + UUID.randomUUID(), ofCompany, name, permissionsJson);
     }
 
-    /** Los permisos que el token declara, tal como los lee el resto de módulos. */
-    private Set<String> permissionsIn(String bearer) throws Exception {
+    /** Los claims que el token declara, tal como los leen el resto de módulos. */
+    private JsonNode claimsOf(String bearer) throws Exception {
         String payload = bearer.substring("Bearer ".length()).split("\\.")[1];
-        JsonNode claims = objectMapper.readTree(new String(Base64.getUrlDecoder().decode(payload), StandardCharsets.UTF_8));
-        String permissions = claims.path("permissions").asText("");
-        return Arrays.stream(permissions.split(" ")).filter(value -> !value.isBlank()).collect(Collectors.toSet());
+        return objectMapper.readTree(new String(Base64.getUrlDecoder().decode(payload), StandardCharsets.UTF_8));
     }
 
     private String login(String email) throws Exception {
