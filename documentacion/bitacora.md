@@ -405,7 +405,7 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **GraphQL:** una empresa creada después de iniciar sesión ya se ve sin renovar el token, lo que cierra el límite anotado en BIT-022.
   - **Rendimiento:** por petición, una lectura de la empresa y, para un miembro, de su membresía y de sus roles.
   - **Documentación:** `modelo-autorizacion-jcomercy.md` tiene una sección 11 con cómo se aplica hoy. `openapi-company-management-v1.yaml`, el permiso de `suspendAccount`.
-  - **Decisiones a revisar:** `BRANCH_MANAGER` no puede consultar la empresa, porque el seed V009 le da `branches.read` pero no `companies.read`; y `inventory.stock.*` incluye `inventory.stock.adjust` e `inventory.stock.negative.enable`. Ambas siguen lo aprobado en el plan; conviene confirmarlas con el negocio.
+  - **Decisiones:** (1) `BRANCH_MANAGER` no puede consultar la empresa, porque el seed V009 le da `branches.read` pero no `companies.read`. **Confirmada por el usuario el 2026-11-03:** el encargado de sucursal no ve la empresa a menos que se le otorgue ese permiso. (2) `inventory.stock.*` incluye `inventory.stock.adjust` e `inventory.stock.negative.enable`; sigue lo aprobado en el plan y **está por confirmar con el negocio**.
   - **Sin verificar:** el comportamiento con Postgres (las pruebas usan H2 y V022 es un `UPDATE` simple); un recorrido real entre las dos aplicaciones (en pruebas, la mitad de company-management y la mitad de inventario se encuentran en el claim `permissions`, no en una llamada de punta a punta); y los miembros se crearon por SQL, porque ninguna ruta crea membresías.
   - **Pendiente:** ERR-011.
 
