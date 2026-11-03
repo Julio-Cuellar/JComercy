@@ -21,7 +21,7 @@ public class IdempotencyRegistry {
         Object previous = completed.get(registryKey);
         if (previous != null) return (T) previous;
         if (store != null && !store.claim(operation, key)) {
-            throw new IllegalStateException("La solicitud con Idempotency-Key ya fue procesada");
+            throw new IdempotencyKeyAlreadyUsedException();
         }
         try {
             T result = action.get();

@@ -1,5 +1,6 @@
 package com.jcode.jcomercy.companymanagement.infra.web.exception;
 
+import com.jcode.jcomercy.companymanagement.application.service.IdempotencyKeyAlreadyUsedException;
 import com.jcode.jcomercy.companymanagement.application.service.IdempotencyKeyRequiredException;
 import com.jcode.jcomercy.companymanagement.domain.exception.DomainRuleViolationException;
 import com.jcode.jcomercy.companymanagement.domain.exception.DuplicateResourceException;
@@ -147,6 +148,20 @@ public class GlobalExceptionHandler {
             "MISSING_HEADER"
         );
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    @ExceptionHandler(IdempotencyKeyAlreadyUsedException.class)
+    public ResponseEntity<ProblemDetails> handleRepeatedIdempotencyKey(HttpServletRequest request) {
+        log.warn("Idempotency-Key ya procesada uri={}", request.getRequestURI());
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/idempotency-key-already-used",
+            "Operación Ya Procesada",
+            HttpStatus.CONFLICT.value(),
+            "Esta operación ya se procesó. Consulta el recurso para ver el resultado.",
+            request.getRequestURI(),
+            "IDEMPOTENCY_KEY_ALREADY_USED"
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

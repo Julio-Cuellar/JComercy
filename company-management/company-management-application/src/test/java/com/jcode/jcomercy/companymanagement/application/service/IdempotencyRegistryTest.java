@@ -8,7 +8,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
-import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 class IdempotencyRegistryTest {
 
@@ -51,13 +50,11 @@ class IdempotencyRegistryTest {
     }
 
     /**
-     * ERR-007: reproduce el comportamiento actual, no el deseado. Con el almacén durable ya reclamado y la
-     * memoria del registro vacía (proceso reiniciado), repetir la clave lanza IllegalStateException y la
-     * operación no se vuelve a ejecutar. Cuando se decida cómo resolverlo (devolver el resultado anterior o
-     * responder 409), esta prueba cambia junto con el código.
+     * ERR-007: con el almacén durable ya reclamado y la memoria del registro vacía (proceso reiniciado), repetir
+     * la clave lanza su propia excepción, que la capa web responde como 409, y la operación no se vuelve a ejecutar.
      */
     @Test
-    void err007RepeatedKeyAlreadyClaimedByTheStoreFailsWithIllegalStateAfterARestart() {
+    void err007RepeatedKeyAlreadyClaimedByTheStoreFailsWithItsOwnExceptionAfterARestart() {
         FakeIdempotencyStore store = new FakeIdempotencyStore();
         AtomicInteger executions = new AtomicInteger();
 
@@ -74,7 +71,7 @@ class IdempotencyRegistryTest {
 
         assertThat(first).isEqualTo("created");
         assertThat(sameProcess).as("en el mismo proceso la memoria devuelve el resultado anterior").isEqualTo("created");
-        assertThatIllegalStateException()
+        assertThatExceptionOfType(IdempotencyKeyAlreadyUsedException.class)
             .isThrownBy(() -> afterRestart.execute("account.register", "idem-1", () -> {
                 executions.incrementAndGet();
                 return "again";
