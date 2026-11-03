@@ -67,8 +67,12 @@ paths:
                     type: integer
                     format: int64
                     example: 3600
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           description: Credenciales inválidas
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
   /api/v1/auth/refresh:
     post:
       tags: [Auth]
@@ -86,7 +90,9 @@ paths:
                 refreshToken: { type: string }
       responses:
         '200': { description: JWT renovado }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { description: Refresh token inválido, expirado o revocado }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
   /api/v1/auth/password-recovery:
     post:
       tags: [Auth]
@@ -103,6 +109,8 @@ paths:
               properties: { email: { type: string, format: email } }
       responses:
         '202': { description: Solicitud aceptada sin revelar si el correo existe }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
   /api/v1/auth/password-recovery/confirm:
     post:
       tags: [Auth]
@@ -121,7 +129,9 @@ paths:
                 newPassword: { type: string, format: password, minLength: 8, writeOnly: true }
       responses:
         '204': { description: Contraseña actualizada }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { description: Token inválido o expirado }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
   /api/v1/accounts/registration:
     post:
       tags:
@@ -147,6 +157,8 @@ paths:
                 $ref: '#/components/schemas/Account'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -229,6 +241,54 @@ paths:
         '422':
           $ref: '#/components/responses/UnprocessableContent'
       x-required-permission: accounts.update
+  /api/v1/accounts/{publicAccountId}/suspension:
+    parameters:
+    - $ref: '#/components/parameters/PublicAccountId'
+    - name: publicAccountId
+      in: path
+      required: true
+      description: Identificador público de la cuenta administrativa
+      schema:
+        type: string
+        example: acc_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+    post:
+      tags:
+      - Accounts
+      summary: Suspender cuenta administrativa
+      operationId: suspendAccount
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountSuspensionRequest'
+      responses:
+        '200':
+          description: Cuenta suspendida
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
   /api/v1/accounts/{publicAccountId}/companies:
     parameters:
     - $ref: '#/components/parameters/PublicAccountId'
@@ -286,6 +346,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateCompanyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -424,6 +488,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Branch'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -4615,6 +4683,16 @@ components:
           format: date-time
         correlationId:
           type: string
+    AccountSuspensionRequest:
+      type: object
+      description: >-
+        Cuerpo que acepta hoy la suspensión de cuenta. Difiere de `SuspensionRequest`, que anticipa `reasonCode` y
+        `confirmation`.
+      properties:
+        reason:
+          type: string
+          description: Motivo de la suspensión. Si se omite, el evento registra "Suspensión administrativa".
+          example: Pago pendiente
     SuspensionRequest:
       type: object
       required:
@@ -5179,7 +5257,10 @@ components:
               type: integer
   responses:
     BadRequest:
-      description: Solicitud inválida
+      description: >-
+        Solicitud inválida. El campo `code` indica la causa: `MALFORMED_REQUEST` (JSON ilegible o formato
+        incorrecto), `VALIDATION_ERROR` (faltan datos o no son válidos) o `MISSING_HEADER` (falta un encabezado, o
+        `Idempotency-Key` viene vacío).
       content:
         application/problem+json:
           schema:
@@ -5203,13 +5284,21 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Conflict:
-      description: Conflicto de idempotencia, concurrencia o estado
+      description: >-
+        Conflicto de idempotencia, concurrencia o estado. Con `code` `IDEMPOTENCY_KEY_ALREADY_USED`, la operación
+        ya se procesó con esa `Idempotency-Key`: hay que consultar el recurso para ver el resultado.
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     UnprocessableContent:
       description: Reglas de negocio incumplidas
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    UnsupportedMediaType:
+      description: El cuerpo no es JSON. Hay que enviarlo con `Content-Type` `application/json`.
       content:
         application/problem+json:
           schema:

@@ -321,6 +321,103 @@ paths:
         '201':
           description: Ajuste registrado exitosamente
         '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/companies/{companyId}/branches/{branchId}/stock/reservations:
+    post:
+      tags: [Stock]
+      summary: Reservar stock para una referencia
+      description: >-
+        Aparta stock sin sacarlo del almacén. Si ningún saldo alcanza solo, reparte la cantidad entre los saldos del
+        producto en el almacén. Una referencia cubre un producto en un almacén; un pedido con varios productos usa
+        una referencia por línea (por ejemplo `ML-123-1` y `ML-123-2`). Requiere el permiso `inventory.stock.write`.
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReserveStockRequest' }
+      responses:
+        '201':
+          description: Stock reservado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReservationResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /api/v1/companies/{companyId}/branches/{branchId}/stock/reservations/release:
+    post:
+      tags: [Stock]
+      summary: Liberar las reservas activas de una referencia
+      description: >-
+        Libera toda la referencia: el stock vuelve a estar disponible. Requiere el permiso `inventory.stock.write`.
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReservationReferenceRequest' }
+      responses:
+        '200':
+          description: Reservas liberadas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReservationResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/companies/{companyId}/branches/{branchId}/stock/reservations/commit:
+    post:
+      tags: [Stock]
+      summary: Confirmar las reservas activas de una referencia
+      description: >-
+        Confirma toda la referencia: descuenta el saldo y registra la salida (`ISSUE`) en el kárdex con esa
+        referencia. Requiere el permiso `inventory.stock.write`.
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReservationReferenceRequest' }
+      responses:
+        '200':
+          description: Reservas confirmadas y salida registrada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommitResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/companies/{companyId}/stock/availability:
+    get:
+      tags: [Stock]
+      summary: Consultar stock disponible (existencia menos reservado)
+      description: Requiere el permiso `inventory.stock.read`.
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - name: productId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Disponibilidad por almacén y producto
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Availability' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/v1/companies/{companyId}/stock/balances:
     get:
       tags: [Stock]
@@ -381,8 +478,36 @@ components:
       required: true
       schema: { type: string, minLength: 8, maxLength: 128 }
   responses:
+    BadRequest:
+      description: >-
+        Solicitud inválida. `code` es `VALIDATION_ERROR` (un dato no cumple las reglas del campo) o
+        `MALFORMED_REQUEST` (JSON ilegible, formato incorrecto o falta un encabezado como `Idempotency-Key`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Sin permiso, o sin acceso a la empresa o sucursal. La respuesta no trae cuerpo.
+    NotFound:
+      description: >-
+        No existe lo que se pidió, por ejemplo no hay reservas activas para la referencia. `code` es
+        `INVENTORY_OPERATION_REJECTED`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
     Conflict:
-      description: Conflicto con los datos proporcionados
+      description: >-
+        Conflicto con los datos proporcionados, por ejemplo una referencia que ya tiene reservas. `code` es
+        `INVENTORY_OPERATION_REJECTED`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    UnprocessableEntity:
+      description: >-
+        Regla de inventario incumplida, por ejemplo stock insuficiente. `code` es
+        `INVENTORY_DOMAIN_RULE_VIOLATION`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
   schemas:
     ReceiveStockRequest:
       type: object
@@ -580,3 +705,101 @@ components:
         conversionFactor: { type: number }
         decimals: { type: integer }
         system: { type: boolean, description: Indica si proviene del catálogo global }
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: INVENTORY_DOMAIN_RULE_VIOLATION }
+        message: { type: string }
+    ReserveStockRequest:
+      type: object
+      required: [warehouseId, productId, quantity, unitCode, referenceType, referenceId]
+      properties:
+        warehouseId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid, description: Si se envía, limita la reserva a esa ubicación }
+        productId: { type: string, format: uuid }
+        quantity: { type: number, minimum: 0.000000001 }
+        unitCode: { type: string, example: PZA }
+        referenceType: { type: string, example: MERCADOLIBRE_ORDER }
+        referenceId: { type: string, example: ML-123-1 }
+        expiresAt: { type: string, format: date-time }
+    ReservationReferenceRequest:
+      type: object
+      required: [referenceType, referenceId]
+      properties:
+        referenceType: { type: string, example: MERCADOLIBRE_ORDER }
+        referenceId: { type: string, example: ML-123-1 }
+        reason: { type: string }
+    StockReservation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        publicReservationId: { type: string, format: uuid }
+        companyId: { type: string }
+        branchId: { type: string }
+        warehouseId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        stockBalanceId: { type: string, format: uuid }
+        quantity: { type: number }
+        status: { type: string, enum: [ACTIVE, COMMITTED, RELEASED, EXPIRED] }
+        referenceType: { type: string }
+        referenceId: { type: string }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        actorUserId: { type: string }
+        correlationId: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64 }
+    InventoryMovement:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        publicMovementId: { type: string, format: uuid }
+        companyId: { type: string }
+        branchId: { type: string }
+        warehouseId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [RECEIPT, ISSUE, ADJUSTMENT_IN, ADJUSTMENT_OUT, TRANSFER_OUT, TRANSFER_IN, RETURN, KIT_BREAKDOWN_OUT, KIT_BREAKDOWN_IN]
+        quantity: { type: number }
+        unitCode: { type: string }
+        unitCost: { type: [number, 'null'] }
+        totalCost: { type: [number, 'null'] }
+        lotId: { type: [string, 'null'] }
+        serialNumber: { type: [string, 'null'] }
+        expirationDate: { type: [string, 'null'], format: date }
+        referenceType: { type: [string, 'null'] }
+        referenceId: { type: [string, 'null'] }
+        reason: { type: [string, 'null'] }
+        occurredAt: { type: string, format: date-time }
+        actorUserId: { type: string }
+        correlationId: { type: string }
+        createdAt: { type: string, format: date-time }
+    ReservationResult:
+      type: object
+      properties:
+        reservations:
+          type: array
+          items: { $ref: '#/components/schemas/StockReservation' }
+        available: { type: number, description: Disponible del producto después de la operación }
+    CommitResult:
+      type: object
+      properties:
+        reservations:
+          type: array
+          items: { $ref: '#/components/schemas/StockReservation' }
+        movements:
+          type: array
+          items: { $ref: '#/components/schemas/InventoryMovement' }
+        available: { type: number, description: Disponible del producto después de la operación }
+    Availability:
+      type: object
+      properties:
+        warehouseId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        onHand: { type: number, description: Existencia física }
+        reserved: { type: number, description: Cantidad apartada por reservas activas }
+        available: { type: number, description: Existencia menos reservado }

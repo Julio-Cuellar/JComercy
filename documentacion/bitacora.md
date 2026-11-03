@@ -32,6 +32,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-005 | El 500 de company-management devuelve el mensaje interno de la excepción y no la registra | RESUELTO (BIT-014) |
 | ERR-006 | Una `Idempotency-Key` vacía responde 500 en company-management | RESUELTO (BIT-016) |
 | ERR-007 | Repetir una `Idempotency-Key` ya reclamada por el almacén (proceso nuevo) lanza una excepción sin manejar, que termina en 500, en company-management | RESUELTO (BIT-017 reproducción, BIT-018 solución) |
+| ERR-008 | Los endpoints REST de company-management solo exigen un JWT válido: no comprueban que la cuenta o empresa del token sea la que se consulta o modifica | ABIERTO (leído en el código, no reproducido) |
 
 ---
 
@@ -292,6 +293,22 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Lo que no cambia:** repetir la clave en el mismo proceso sigue devolviendo el resultado anterior. Por eso el mismo reintento da el resultado anterior o un 409 según si la memoria del proceso lo conserva, y el cliente no recibe el recurso creado en el 409. La clave tampoco está atada al contenido de la solicitud.
   - **Sin verificar:** que `claim` se una a la transacción del servicio (se leyó en las anotaciones `@Transactional`; la prueba reclama la clave fuera de toda transacción y no lo demuestra), y la carrera entre instancias (la prueba usa un solo proceso con H2 en memoria).
 
+### BIT-019 · Contratos OpenAPI al día y una prueba que los vigila (fase 1)
+
+- **Qué se hizo:** `openapi-inventory-v1.yaml` documenta las 4 operaciones de reservas y `openapi-company-management-v1.yaml` documenta la suspensión de cuenta y las respuestas 400 y 415 de las operaciones con cuerpo. Dos pruebas nuevas, `OpenApiContractTest` (una por módulo), fallan si una ruta implementada no está en el contrato.
+- **Cómo se hizo:**
+  - **Prueba:** compara `GET /v3/api-docs` (springdoc: lo que el código expone) con `static/openapi-*.yaml` del classpath (copiado de `documentacion/` en `process-resources`), con las variables de ruta unificadas como `{}`. Lee el YAML con SnakeYAML, sin dependencias nuevas. Solo exige código → contrato: el YAML de company-management documenta 85 rutas y el código implementa 15, el resto son anticipadas. company-management suma una segunda prueba: toda operación implementada con cuerpo declara `400` y `415`.
+  - **RED (ejecución):** `mvn -B -pl inventory/inventory-infra,company-management/company-management-infra -am test -Dtest=OpenApiContractTest` → inventario: faltaban `GET …/stock/availability` y `POST …/stock/reservations`, `…/commit` y `…/release`. Company-management: faltaba `POST /api/v1/accounts/{}/suspension`, y la segunda prueba listó 13 respuestas ausentes (el registro sin 415; y sin 400 ni 415 crear empresa, login, refresh, password-recovery, password-recovery/confirm y crear sucursal).
+  - **Contrato de inventario:** las 4 rutas, respuestas comunes `BadRequest`, `Forbidden`, `NotFound`, `UnprocessableEntity` (y `Conflict` ahora con cuerpo) y los esquemas `ErrorResponse`, `ReserveStockRequest`, `ReservationReferenceRequest`, `StockReservation`, `InventoryMovement`, `ReservationResult`, `CommitResult` y `Availability`. Los códigos salen de BIT-009 y de `InventoryExceptionHandler`; no se ejecutó cada ruta para confirmar su respuesta.
+  - **Contrato de company-management:** `POST /accounts/{id}/suspension` con un esquema propio `AccountSuspensionRequest` (`reason`), porque el `SuspensionRequest` anticipado exige `reasonCode` y `confirmation` y el controlador recibe `{reason}`; respuesta común `UnsupportedMediaType` nueva; `BadRequest` y `Conflict` describen sus códigos (`MALFORMED_REQUEST`, `VALIDATION_ERROR`, `MISSING_HEADER`, `IDEMPOTENCY_KEY_ALREADY_USED`); 400 y 415 en las operaciones con cuerpo. A la suspensión no se le puso `x-required-permission`: `accounts.suspend` no existe en el seed V009.
+  - **GREEN:** `OpenApiContractTest` 2 de 2 en company-management y 1 de 1 en inventario; `mvn -B test` en la raíz → `BUILD SUCCESS`, **121 pruebas** (3 + 8 + 8 + 30 + 27 + 45; company-management infra +2, inventario infra +1).
+- **Afectaciones:**
+  - **Contratos:** cierra el pendiente de OpenAPI de reservas (BIT-009) y el de los 400, 409 y 415 (BIT-015, BIT-018). GraphQL sigue pendiente (fases 2 y 3).
+  - **Pruebas:** toda ruta REST nueva deberá documentarse para que la suite pase.
+  - **Límites:** la prueba compara método y ruta (y 400/415 en company-management); no valida cuerpos, códigos de respuesta ni la forma de los esquemas. Inventario no declara 415 porque no se verificó (ERR-003 sigue sin verificar allí). Los 400, 403 y 404 de las operaciones de inventario anteriores a las reservas siguen sin documentarse.
+  - **Discrepancia contrato ↔ código:** el `SuspensionRequest` anticipado para empresas, sucursales y membresías no coincide con lo que acepta hoy la cuenta.
+  - **Hallazgo:** ERR-008.
+
 ---
 
 ## Errores
@@ -358,3 +375,11 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cómo mitigarlo:** antes de reintentar tras un reinicio, consultar si el recurso ya se creó; reintentar con la misma clave podría dar un 500 aunque la operación original sí se haya completado.
 - **Cómo se resolvió:** el usuario eligió responder 409 con un mensaje claro. El registro lanza `IdempotencyKeyAlreadyUsedException` (subclase de `IllegalStateException`, mismo mensaje) y `GlobalExceptionHandler` la traduce a 409 `IDEMPOTENCY_KEY_ALREADY_USED`: "Esta operación ya se procesó. Consulta el recurso para ver el resultado." Pruebas: `IdempotencyRegistryTest#err007…FailsWithItsOwnExceptionAfterARestart` y `CompanyRepeatedKeyIntegrationTest`.
 - **Lo que no resuelve:** el cliente que reintenta tras un corte no recibe el recurso creado y tiene que consultarlo aparte, y el mismo reintento da el resultado anterior o un 409 según si la memoria del proceso lo conserva. Para devolver siempre el resultado queda el otro camino: guardarlo en el almacén durable y devolverlo en la repetición, que exige una migración Flyway y serializar la respuesta. No se hizo.
+
+### ERR-008 · Los endpoints REST de company-management no comprueban a quién pertenece lo que consultan o modifican
+
+- **Estado:** ABIERTO. Visto leyendo el código el 2026-11-03 al documentar la suspensión de cuenta (BIT-019). **No reproducido** con una prueba.
+- **De qué trata:** `JwtAuthenticationFilter` acepta cualquier JWT válido y la configuración de seguridad solo exige "autenticado" fuera de las rutas públicas. Ningún controlador REST de company-management llama a `JwtAuthorizationService` ni usa `@PreAuthorize`, y los servicios de aplicación tampoco comprueban pertenencia (búsqueda de `UnauthorizedAccessException`, `canAccess`, `ownerUserId` y `membership` sin resultados). Las comprobaciones `canAccessAccount` y `canAccessCompany` solo se usan en las consultas GraphQL (`CompanyGraphQlController`). Los permisos del token se convierten en autoridades `PERM_…`, pero ninguna ruta REST las exige; los `x-required-permission` del contrato no se aplican. Ninguna prueba cubre un 403 por pertenecer a otra cuenta.
+- **Cuándo se manifiesta:** **inferido del código, no probado:** una persona autenticada con un JWT válido de una cuenta podría consultar o modificar por REST (`GET /accounts/{id}`, `POST /accounts/{id}/suspension`, `GET /accounts/{id}/companies`, `GET /companies/{id}`, crear y activar sucursales) recursos de otra cuenta si conoce su identificador público.
+- **Cómo mitigarlo:** hasta corregirlo, no exponer el módulo a usuarios distintos del dueño de cada cuenta y tratar los identificadores públicos como sensibles.
+- **Para resolverlo:** exigir en cada ruta REST la misma comprobación que ya hace GraphQL (`canAccessAccount` o `canAccessCompany`) y el permiso correspondiente, con una prueba por ruta que verifique el 403 con el token de otra cuenta. Cambia el comportamiento de la API: merece su propia orden de trabajo.
