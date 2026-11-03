@@ -8,7 +8,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -63,6 +65,33 @@ public class GlobalExceptionHandler {
             "INSUFFICIENT_PERMISSIONS"
         );
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ProblemDetails> handleUnknownRoute(NoResourceFoundException ex, HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/route-not-found",
+            "Dirección No Encontrada",
+            HttpStatus.NOT_FOUND.value(),
+            "La dirección solicitada no existe. Revisa que esté bien escrita.",
+            request.getRequestURI(),
+            "NOT_FOUND"
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ProblemDetails> handleUnsupportedMethod(HttpRequestMethodNotSupportedException ex,
+                                                                  HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/method-not-allowed",
+            "Método No Permitido",
+            HttpStatus.METHOD_NOT_ALLOWED.value(),
+            "Esa dirección no admite este método. Revisa la documentación del contrato.",
+            request.getRequestURI(),
+            "METHOD_NOT_ALLOWED"
+        );
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).headers(ex.getHeaders()).body(problem);
     }
 
     @ExceptionHandler(Exception.class)

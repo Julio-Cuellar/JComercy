@@ -27,8 +27,9 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 |---|---|---|
 | ERR-001 | `AccountIntegrationTest` depende del orden de ejecución de las pruebas | RESUELTO (BIT-002) |
 | ERR-002 | Prueba de reintentos del Outbox falla de forma intermitente por competir con el despachador real | RESUELTO (BIT-006) |
-| ERR-003 | Rutas inexistentes y métodos no permitidos responden 500 en vez de 404/405 | RESUELTO en inventario (BIT-012); ABIERTO en company-management |
+| ERR-003 | Rutas inexistentes y métodos no permitidos responden 500 en vez de 404/405 | RESUELTO (BIT-012 inventario, BIT-013 company-management) |
 | ERR-004 | La prueba de concurrencia de reservas falla al repetirse por usar referencias fijas | RESUELTO (BIT-009) |
+| ERR-005 | El 500 de company-management devuelve el mensaje interno de la excepción y no la registra | ABIERTO |
 
 ---
 
@@ -191,6 +192,20 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Clientes con reintentos:** un 404/405 es definitivo; un cliente bien hecho ya no reintentará como lo haría ante un 500.
   - **`company-management` sigue igual** (ver ERR-003).
 
+### BIT-013 · Rutas inexistentes y métodos no permitidos también en company-management (cierra ERR-003)
+
+- **Qué se hizo:** en `company-management`, una URL que no existe responde ahora `404` (código `NOT_FOUND`) y un método no permitido responde `405` (código `METHOD_NOT_ALLOWED`, con la cabecera `Allow`), en el formato `ProblemDetails` que ya usa ese módulo.
+- **Cómo se hizo:**
+  - Prueba nueva: [CompanyRoutingErrorsIntegrationTest.java](../company-management/company-management-infra/src/test/java/com/jcode/jcomercy/companymanagement/infra/web/exception/CompanyRoutingErrorsIntegrationTest.java), con un JWT válido: `GET /api/v1/ruta-que-no-existe` → 404 y `GET /api/v1/auth/login` (solo acepta POST) → 405 con `Allow: POST`.
+  - **Corrección de mi prueba antes del RED válido:** la primera versión usaba `GET /api/v1/accounts/registration` para el 405 y respondió 404. No era un defecto: esa URL coincide con `GET /accounts/{publicAccountId}` (con el id "registration") y la cuenta no existe. Se cambió a `/api/v1/auth/login`.
+  - **RED:** `mvn -B -pl company-management/company-management-infra -am test -Dtest=CompanyRoutingErrorsIntegrationTest` → `Status expected:<404> but was:<500>` y `expected:<405> but was:<500>`. Con esto el defecto queda **reproducido** y no solo leído en el código.
+  - Código: dos manejadores en [GlobalExceptionHandler.java](../company-management/company-management-infra/src/main/java/com/jcode/jcomercy/companymanagement/infra/web/exception/GlobalExceptionHandler.java). Los códigos y mensajes son los mismos que en inventario, para que un cliente trate igual el error en ambos módulos.
+  - **GREEN:** las 2 pruebas nuevas pasan; `mvn -B test` en la raíz → `BUILD SUCCESS`, **106 pruebas** (company-management infra pasa de 15 a 17).
+- **Afectaciones:**
+  - **API:** esas respuestas cambian de 500 a 404/405 con el cuerpo `ProblemDetails`. Ningún flujo conocido dependía del 500.
+  - **Mensajes:** el 404/405 usa un mensaje fijo en español; no depende del texto de la excepción.
+  - **Sin cambios:** el manejador general de `Exception` sigue igual (ver ERR-005).
+
 ---
 
 ## Errores
@@ -215,12 +230,12 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 
 ### ERR-003 · Rutas inexistentes y métodos no permitidos responden 500 en vez de 404/405
 
-- **Estado:** RESUELTO en inventario el 2026-11-02 (BIT-012). **ABIERTO en `company-management`.**
+- **Estado:** RESUELTO el 2026-11-02 en inventario (BIT-012) y en `company-management` (BIT-013).
 - **De qué trata:** `InventoryExceptionHandler.handleUnexpected` captura `Exception`, y eso incluye `NoResourceFoundException` (la que Spring lanza cuando ninguna ruta coincide) y `HttpRequestMethodNotSupportedException` (método no permitido). Resultado: una URL que no existe responde `500 INTERNAL_SERVER_ERROR` con "Error interno del servidor" y registra un `ERROR` con traza completa.
 - **Cuándo se manifiesta:** con cualquier petición a una ruta inexistente de la aplicación de inventario, por ejemplo un error de tecleo en la URL. Se vio al correr las pruebas de reservas *antes* de que existieran sus endpoints: `Status expected:<201> but was:<500>`, con `No static resource api/v1/companies/.../stock/reservations` en el log.
 - **Cómo mitigarlo:** no interpretar un 500 en una ruta recién escrita como un fallo del servidor: revisar primero que la URL exista. Un cliente con reintentos automáticos (como el futuro canal de venta) no debe reintentar indefinidamente ante un 500 sin revisar la ruta.
 - **Cómo se resolvió (inventario):** se agregaron manejadores específicos para `NoResourceFoundException` (404, código `NOT_FOUND`) y `HttpRequestMethodNotSupportedException` (405, código `METHOD_NOT_ALLOWED`, con la cabecera `Allow`). Spring elige el manejador más específico, así que el de `Exception` queda para lo realmente inesperado. Prueba: `InventoryRoutingErrorsIntegrationTest`.
-- **Pendiente en `company-management`:** [GlobalExceptionHandler.java](../company-management/company-management-infra/src/main/java/com/jcode/jcomercy/companymanagement/infra/web/exception/GlobalExceptionHandler.java) tiene el mismo `@ExceptionHandler(Exception.class)` y ningún manejador de enrutamiento. **Confirmado leyendo el código, no reproducido con una prueba.** Además, ese 500 devuelve `ex.getMessage()` en el detalle, lo que puede exponer texto interno al cliente.
+- **Cómo se resolvió (`company-management`):** [GlobalExceptionHandler.java](../company-management/company-management-infra/src/main/java/com/jcode/jcomercy/companymanagement/infra/web/exception/GlobalExceptionHandler.java) tenía el mismo `@ExceptionHandler(Exception.class)` y ningún manejador de enrutamiento; se reprodujo con `CompanyRoutingErrorsIntegrationTest` (500 antes del arreglo) y se agregaron los mismos dos manejadores (404 y 405 con `ProblemDetails`).
 - **Otros errores del framework (no verificado):** `HttpMediaTypeNotSupportedException` (415) y `MissingServletRequestParameterException` (400) no tienen manejador propio en ninguno de los dos módulos, así que es esperable que también terminen en 500. No se probaron.
 
 ### ERR-004 · La prueba de concurrencia de reservas falla al repetirse
@@ -231,3 +246,11 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cómo mitigarlo:** reiniciar la base (nueva JVM) o usar referencias únicas por ejecución.
 - **Cómo se resolvió:** las referencias llevan como sufijo los 8 primeros caracteres del `productId` de la prueba, que es único por repetición. Resultado: 18 de 18 (8 pruebas + 10 repeticiones).
 - **Lección:** es la misma de ERR-001: en una base compartida, los datos de una prueba se identifican con IDs propios. Además, el fallo confirmó que la regla de referencia única funciona.
+
+### ERR-005 · El 500 de company-management devuelve el mensaje interno de la excepción y no la registra
+
+- **Estado:** ABIERTO (detectado el 2026-11-02 al atender ERR-003). **Confirmado leyendo el código; no reproducido con una prueba.**
+- **De qué trata:** `GlobalExceptionHandler.handleGeneral` de `company-management` pone `ex.getMessage()` en el campo `detail` de la respuesta 500, y el manejador no tiene ningún `Logger`: no registra la excepción. Dos consecuencias: (1) una excepción inesperada (SQL, puntero nulo, etc.) puede mostrar al cliente texto interno como nombres de tablas o valores; (2) ese error queda sin traza en los registros, salvo que otro componente la escriba, cosa que no se verificó. Inventario sí responde un mensaje fijo ("Error interno del servidor") y registra el error con su traza.
+- **Cuándo se manifiesta:** ante cualquier excepción no prevista en `company-management`, por ejemplo un fallo de base de datos durante un registro de cuenta.
+- **Cómo mitigarlo:** mientras no se corrija, no exponer ese módulo directamente a internet sin un intermediario que reescriba los 500, y no depender de los registros del módulo para diagnosticar errores inesperados.
+- **Cómo se resolvería:** responder un mensaje fijo en el 500, registrar la excepción con `log.error` (como hace `InventoryExceptionHandler`) y agregar una prueba que provoque una excepción inesperada y compruebe que el mensaje interno no sale en el cuerpo. No se hizo ahora porque cambia el comportamiento de errores que no pidió ERR-003.
