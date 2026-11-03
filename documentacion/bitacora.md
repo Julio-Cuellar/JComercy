@@ -434,6 +434,22 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Código que queda sin uso:** `PermissionResolver` (lo retoma B2) y `JwtAuthorizationService.canAccessCompany` con el claim de `JwtContext` (solo lo ejercita `JwtContextTest`); se limpian en B3.
   - **Sin verificar:** no se ejecutó la suite de inventario en esta fase, porque no cambió; se ejecuta completa en B6.
 
+### BIT-027 · «Tus empresas» y entrar a una empresa entregan el token de esa empresa (parte B, fase B2 de ERR-011)
+
+- **Qué se hizo:** dos rutas nuevas, `GET /api/v1/accounts/{id}/company-accesses` (las empresas que la cuenta posee y aquellas donde es miembro) y `POST …/company-accesses/{targetCompanyId}/session` (entra a una y entrega el token de esa empresa). El token nombra solo esa empresa, con las sucursales y los permisos que la persona tiene en ella, y nunca los de otra. Es el reproductor permanente de ERR-011.
+- **Cómo se hizo:**
+  - **Diseño.** `CompanyAccessService` (nuevo) lista y entra. La dueña recibe `*` y todas las sucursales activas de la empresa; un miembro, los permisos de sus roles en esa empresa y solo las sucursales que tiene asignadas. Una empresa ajena responde lo mismo que una que no existe: 403 con el mensaje de pertenencia, que ahora es una constante pública de `RestOwnershipInterceptor`. Un miembro suspendido no entra ni aparece en la lista. `EffectivePermissions` expone `ownsTheCompany`, `rolesInCompany` y `activeMembershipCompanyIds`, y `PermissionResolver` se eliminó porque quedó sin uso (`git rm`).
+  - **Trampa evitada.** La variable de la empresa en la ruta de entrada se llama `targetCompanyId` y no `publicCompanyId`. Con ese nombre, `RestPermissionInterceptor` trataría la ruta como una ruta de empresa y un miembro, sin ese permiso en su rol, no podría entrar a su propia empresa.
+  - **RED (ejecución).** `CompanyAccessIntegrationTest` (nueva, 9 pruebas): 9 de 9 fallan con 404, porque las rutas no existían.
+  - **GREEN.** 9 de 9. Infraestructura de company-management: 85 de 85 (eran 76), con `OpenApiContractTest` y `RequiredPermissionsContractTest` incluidos: las rutas nuevas ya están en el contrato (`listCompanyAccesses`, `enterCompany`, esquemas `CompanyAccess` y `CompanySession`) y sus permisos, `accounts.company_accesses.read` y `accounts.company_accesses.enter`, coinciden.
+  - **Prueba que ajusté antes de las mutaciones.** La segunda sucursal del fixture no estaba activa, así que dar a un miembro «todas las sucursales activas» habría pasado igual. Se activó. Con eso la mutación M2 se detecta.
+  - **Mutaciones temporales (script, 7), todas revertidas; las huellas de los archivos coinciden con las de antes:** M1 el token lleva `*` aunque sea miembro → falla la prueba de ERR-011; M2 un miembro recibe todas las sucursales activas → falla la de sucursales asignadas; M3 entrar sin comprobar pertenencia → fallan las 2 de rechazo; M4 la lista incluye membresías suspendidas → falla la de la lista; M5 la lista pierde los roles → falla la de la lista; M6 el token sin `ctx` → fallan 2 de acceso y `JwtTokenServiceTest`; M7 la ruta declara otro permiso que el contrato → falla `RequiredPermissionsContractTest`.
+- **Afectaciones:**
+  - **API:** dos rutas nuevas bajo `/accounts/{id}`. Solo la propia cuenta las usa; otra cuenta recibe 403 por el control de pertenencia.
+  - **Recupera lo que B1 quitó:** con un token de empresa, inventario vuelve a abrirse con un login real: el token trae `companyIds`, `branchIds` y `permissions`, que es todo lo que inventario lee.
+  - **Rendimiento:** entrar hace unas 5 lecturas; listar, 2 más por cada empresa donde la persona es miembro.
+  - **Sin verificar:** no se probó el token de empresa contra inventario en esta fase; se prueba en B6 con la suite completa y una prueba de punta a punta del claim. El estado de la empresa (`CONFIGURING`, `ACTIVE`…) no limita la entrada: quien la creó necesita entrar para configurarla.
+
 ---
 
 ## Errores

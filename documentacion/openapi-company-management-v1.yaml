@@ -290,6 +290,62 @@ paths:
         '422':
           $ref: '#/components/responses/UnprocessableContent'
       x-required-permission: accounts.suspend
+  /api/v1/accounts/{publicAccountId}/company-accesses:
+    parameters:
+    - $ref: '#/components/parameters/PublicAccountId'
+    get:
+      tags:
+      - Accounts
+      summary: Consultar las empresas a las que la cuenta puede entrar
+      description: >-
+        Las empresas que la cuenta posee y aquellas donde tiene una membresía activa. Alimenta la pantalla
+        «Tus empresas». Solo la propia cuenta puede consultarla.
+      operationId: listCompanyAccesses
+      responses:
+        '200':
+          description: Empresas a las que la cuenta puede entrar
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CompanyAccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-required-permission: accounts.company_accesses.read
+  /api/v1/accounts/{publicAccountId}/company-accesses/{targetCompanyId}/session:
+    parameters:
+    - $ref: '#/components/parameters/PublicAccountId'
+    - name: targetCompanyId
+      in: path
+      required: true
+      description: Identificador público de la empresa a la que se quiere entrar
+      schema:
+        type: string
+        example: com_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+    post:
+      tags:
+      - Accounts
+      summary: Entrar a una empresa
+      description: >-
+        Entrega el token de esa empresa. Ese token nombra solo esa empresa, con las sucursales y los permisos que la
+        persona tiene en ella, y no los de ninguna otra. Entrar a una empresa sin acceso responde igual que entrar a
+        una que no existe.
+      operationId: enterCompany
+      responses:
+        '200':
+          description: Token de la empresa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanySession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-required-permission: accounts.company_accesses.enter
   /api/v1/accounts/{publicAccountId}/companies:
     parameters:
     - $ref: '#/components/parameters/PublicAccountId'
@@ -4684,6 +4740,52 @@ components:
           format: date-time
         correlationId:
           type: string
+    CompanyAccess:
+      type: object
+      description: Una empresa a la que la cuenta puede entrar.
+      required: [publicCompanyId, relationship]
+      properties:
+        publicCompanyId:
+          type: string
+          example: com_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        tradeName:
+          type: string
+          description: Nombre comercial de la empresa.
+          example: Abarrotes La Esquina
+        status:
+          type: string
+          description: Estado de la empresa.
+          example: ACTIVE
+        relationship:
+          type: string
+          enum: [OWNER, MEMBER]
+          description: '`OWNER` si la cuenta es dueña de la empresa; `MEMBER` si entra por una membresía activa.'
+        roles:
+          type: array
+          description: Roles de la membresía. Vacío para quien es dueña.
+          items:
+            type: string
+          example: [STAFF]
+    CompanySession:
+      type: object
+      description: >-
+        Token de una empresa. Nombra solo esa empresa, con las sucursales y los permisos que la persona tiene en ella.
+      required: [accessToken, tokenType, expiresIn, publicCompanyId]
+      properties:
+        accessToken:
+          type: string
+          description: Token JWT de la empresa.
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          description: Segundos que dura el token.
+          example: 3600
+        publicCompanyId:
+          type: string
+          example: com_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
     AccountSuspensionRequest:
       type: object
       description: >-

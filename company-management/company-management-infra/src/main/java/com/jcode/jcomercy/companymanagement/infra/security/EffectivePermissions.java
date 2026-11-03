@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -61,10 +62,32 @@ public class EffectivePermissions {
         return ownsTheCompany(actorId, companyId) || hasAnActiveMembership(actorId, companyId);
     }
 
-    private boolean ownsTheCompany(String actorId, String companyId) {
+    /** Si la cuenta de la persona es la dueña de la empresa. Una empresa que no existe no es de nadie. */
+    public boolean ownsTheCompany(String actorId, String companyId) {
         return companies.findByPublicCompanyId(companyId)
             .map(company -> actorId.equals(company.getPublicAccountId()))
             .orElse(false);
+    }
+
+    /** Los ids de las empresas donde la persona tiene una membresía activa. */
+    public List<String> activeMembershipCompanyIds(String actorId) {
+        return jdbc.queryForList("""
+            SELECT public_company_id FROM company_management.company_membership
+            WHERE user_id=? AND status='ACTIVE'
+            """, String.class, actorId);
+    }
+
+    /** Los nombres de los roles de la membresía activa de la persona en esa empresa; vacío si no la tiene. */
+    public List<String> rolesInCompany(String actorId, String companyId) {
+        List<String> roles = new ArrayList<>();
+        List<String> memberships = jdbc.queryForList("""
+            SELECT roles_json FROM company_management.company_membership
+            WHERE public_company_id=? AND user_id=? AND status='ACTIVE'
+            """, String.class, companyId, actorId);
+        for (String rolesJson : memberships) {
+            roles.addAll(readList(rolesJson, "roles de la membresía"));
+        }
+        return roles;
     }
 
     private boolean hasAnActiveMembership(String actorId, String companyId) {
@@ -85,18 +108,12 @@ public class EffectivePermissions {
 
     private Set<String> permissionsOfTheActiveMembership(String actorId, String companyId) {
         Set<String> permissions = new TreeSet<>();
-        List<String> memberships = jdbc.queryForList("""
-            SELECT roles_json FROM company_management.company_membership
-            WHERE public_company_id=? AND user_id=? AND status='ACTIVE'
-            """, String.class, companyId, actorId);
-        for (String rolesJson : memberships) {
-            for (String role : readList(rolesJson, "roles de la membresía")) {
-                jdbc.queryForList("""
-                    SELECT permissions_json FROM company_management.role
-                    WHERE name=? AND status='ACTIVE' AND (public_company_id IS NULL OR public_company_id=?)
-                    """, String.class, role, companyId)
-                    .forEach(permissionsJson -> permissions.addAll(readList(permissionsJson, "permisos del rol " + role)));
-            }
+        for (String role : rolesInCompany(actorId, companyId)) {
+            jdbc.queryForList("""
+                SELECT permissions_json FROM company_management.role
+                WHERE name=? AND status='ACTIVE' AND (public_company_id IS NULL OR public_company_id=?)
+                """, String.class, role, companyId)
+                .forEach(permissionsJson -> permissions.addAll(readList(permissionsJson, "permisos del rol " + role)));
         }
         return permissions;
     }

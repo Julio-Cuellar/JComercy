@@ -21,6 +21,9 @@ import java.util.Map;
 public class RestOwnershipInterceptor implements HandlerInterceptor {
     private static final Logger log = LoggerFactory.getLogger(RestOwnershipInterceptor.class);
 
+    public static final String ACCOUNT_DENIED = "No tienes acceso a esta cuenta. Inicia sesión con la cuenta que corresponde.";
+    public static final String COMPANY_DENIED = "No tienes acceso a esta empresa. Pide acceso a quien administra la cuenta.";
+
     private final JwtAuthorizationService authorization;
     private final EffectivePermissions effectivePermissions;
 
@@ -41,12 +44,12 @@ public class RestOwnershipInterceptor implements HandlerInterceptor {
         String accountId = variables.get("publicAccountId");
         if (accountId != null && !authorization.canAccessAccount(authentication, accountId)) {
             deny(authentication, request);
-            throw new UnauthorizedAccessException("No tienes acceso a esta cuenta. Inicia sesión con la cuenta que corresponde.");
+            throw new UnauthorizedAccessException(ACCOUNT_DENIED);
         }
         String companyId = variables.get("publicCompanyId");
         if (companyId != null && !canWorkWithCompany(authentication, companyId)) {
             deny(authentication, request);
-            throw new UnauthorizedAccessException("No tienes acceso a esta empresa. Pide acceso a quien administra la cuenta.");
+            throw new UnauthorizedAccessException(COMPANY_DENIED);
         }
         return true;
     }
