@@ -9,10 +9,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -95,6 +101,70 @@ public class GlobalExceptionHandler {
             "METHOD_NOT_ALLOWED"
         );
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).headers(ex.getHeaders()).body(problem);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ProblemDetails> handleUnreadableBody(HttpMessageNotReadableException ex,
+                                                               HttpServletRequest request) {
+        // No se registra el mensaje: el lector de JSON puede citar fragmentos de lo enviado (p. ej. una contraseña).
+        log.warn("Cuerpo ilegible uri={} causa={}", request.getRequestURI(), ex.getClass().getSimpleName());
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/malformed-request",
+            "Solicitud Mal Formada",
+            HttpStatus.BAD_REQUEST.value(),
+            "No pudimos leer lo que enviaste. Revisa que sea un JSON válido y que cada dato tenga el formato correcto.",
+            request.getRequestURI(),
+            "MALFORMED_REQUEST"
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ProblemDetails> handleMissingHeader(MissingRequestHeaderException ex,
+                                                              HttpServletRequest request) {
+        log.warn("Falta un encabezado uri={} encabezado={}", request.getRequestURI(), ex.getHeaderName());
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/missing-header",
+            "Falta un Encabezado",
+            HttpStatus.BAD_REQUEST.value(),
+            "Falta el encabezado " + ex.getHeaderName() + ". Agrégalo a la solicitud e intenta de nuevo.",
+            request.getRequestURI(),
+            "MISSING_HEADER"
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ProblemDetails> handleInvalidFields(MethodArgumentNotValidException ex,
+                                                              HttpServletRequest request) {
+        String fields = ex.getBindingResult().getFieldErrors().stream()
+            .map(error -> error.getField() + " (" + error.getDefaultMessage() + ")")
+            .collect(Collectors.joining(", "));
+        log.warn("Datos inválidos uri={} campos={}", request.getRequestURI(), fields);
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/validation",
+            "Datos Inválidos",
+            HttpStatus.BAD_REQUEST.value(),
+            "Revisa estos datos de la solicitud: " + fields + ".",
+            request.getRequestURI(),
+            "VALIDATION_ERROR"
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ProblemDetails> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex,
+                                                                     HttpServletRequest request) {
+        log.warn("Tipo de contenido no admitido uri={} tipo={}", request.getRequestURI(), ex.getContentType());
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/unsupported-media-type",
+            "Tipo de Contenido No Admitido",
+            HttpStatus.UNSUPPORTED_MEDIA_TYPE.value(),
+            "Esa dirección no acepta este tipo de contenido. Envía los datos como JSON con el encabezado Content-Type: application/json.",
+            request.getRequestURI(),
+            "UNSUPPORTED_MEDIA_TYPE"
+        );
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).headers(ex.getHeaders()).body(problem);
     }
 
     @ExceptionHandler(Exception.class)

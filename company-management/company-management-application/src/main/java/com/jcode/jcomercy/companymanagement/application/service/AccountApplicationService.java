@@ -2,6 +2,7 @@ package com.jcode.jcomercy.companymanagement.application.service;
 
 import com.jcode.jcomercy.companymanagement.application.dto.AccountDto;
 import com.jcode.jcomercy.companymanagement.domain.exception.EntityNotFoundException;
+import com.jcode.jcomercy.companymanagement.domain.exception.DomainRuleViolationException;
 import com.jcode.jcomercy.companymanagement.domain.exception.DuplicateResourceException;
 import com.jcode.jcomercy.companymanagement.domain.model.account.Account;
 import com.jcode.jcomercy.companymanagement.domain.model.account.OwnerPerson;
@@ -40,7 +41,7 @@ public class AccountApplicationService {
     private AccountDto registerAccountInternal(String name, String firstName, String lastName, LocalDate birthDate, String rfc,
                                                String phoneNumber, String email, String state, String address, String password, String correlationId) {
         if (password == null || password.length() < 8) {
-            throw new IllegalArgumentException("La contraseña debe tener al menos 8 caracteres.");
+            throw new DomainRuleViolationException("La contraseña debe tener al menos 8 caracteres.");
         }
         OwnerPerson owner = OwnerPerson.create(firstName, lastName, birthDate, rfc, phoneNumber, email, state, address, passwordHasher.hash(password));
         if (accountRepository.existsByOwnerRfc(owner.getRfc())) {

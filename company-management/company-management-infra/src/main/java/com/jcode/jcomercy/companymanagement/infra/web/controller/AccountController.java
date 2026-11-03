@@ -3,6 +3,8 @@ package com.jcode.jcomercy.companymanagement.infra.web.controller;
 import com.jcode.jcomercy.companymanagement.application.dto.AccountDto;
 import com.jcode.jcomercy.companymanagement.application.service.AccountApplicationService;
 import com.jcode.jcomercy.companymanagement.domain.exception.UnauthorizedAccessException;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,14 +25,14 @@ public class AccountController {
         this.accountApplicationService = accountApplicationService;
     }
 
-    public record RegisterAccountRequest(String name, OwnerRequest owner) {}
+    public record RegisterAccountRequest(String name, @NotNull(message = "es obligatorio") OwnerRequest owner) {}
     public record OwnerRequest(String firstName, String lastName, LocalDate birthDate, String rfc,
                                String phoneNumber, String email, String state, String address, String password) {}
     public record SuspendAccountRequest(String reason) {}
 
     @PostMapping("/registration")
     public ResponseEntity<AccountDto> registerAccount(
-        @RequestBody RegisterAccountRequest request,
+        @Valid @RequestBody RegisterAccountRequest request,
         @RequestHeader(value = "Idempotency-Key", required = true) String idempotencyKey,
         @RequestHeader(value = "X-Correlation-Id", required = false) String correlationId
     ) {
