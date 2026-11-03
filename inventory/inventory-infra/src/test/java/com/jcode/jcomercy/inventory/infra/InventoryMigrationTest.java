@@ -19,7 +19,10 @@ class InventoryMigrationTest {
                 "select count(*) from information_schema.tables where table_schema = 'INVENTORY'",
                 Integer.class);
 
-        assertThat(tableCount).isEqualTo(12);
+        assertThat(tableCount).isEqualTo(13);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from information_schema.tables where table_schema = 'INVENTORY' and table_name = 'STOCK_RESERVATION'",
+                Integer.class)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from information_schema.tables where table_schema = 'INVENTORY' and table_name = 'PRODUCT'",
                 Integer.class)).isEqualTo(1);

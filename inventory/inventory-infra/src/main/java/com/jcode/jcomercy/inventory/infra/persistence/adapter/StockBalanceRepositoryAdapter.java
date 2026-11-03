@@ -20,6 +20,16 @@ public class StockBalanceRepositoryAdapter implements StockBalanceRepositoryPort
                                                           String serialNumber, InventoryStatus status) {
         return repository.findForUpdate(warehouseId, locationId, productId, lotId, serialNumber, status).map(this::toDomain);
     }
+    @Override public List<StockBalance> findAllocatableForUpdate(String companyId, UUID warehouseId, UUID productId,
+                                                                 InventoryStatus status, UUID locationId) {
+        var entities = locationId == null
+                ? repository.findAllocatableForUpdate(companyId, warehouseId, productId, status)
+                : repository.findAllocatableInLocationForUpdate(companyId, warehouseId, productId, status, locationId);
+        return entities.stream().map(this::toDomain).toList();
+    }
+    @Override public Optional<StockBalance> findByIdForUpdate(UUID id) {
+        return repository.findByIdForUpdate(id).map(this::toDomain);
+    }
     @Override public boolean existsByCompanyIdAndSerialNumber(String companyId, String serialNumber) {
         return repository.existsByCompanyIdAndSerialNumber(companyId, serialNumber);
     }
