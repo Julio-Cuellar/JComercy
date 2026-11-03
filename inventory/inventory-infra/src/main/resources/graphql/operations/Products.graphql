@@ -1,0 +1,18 @@
+query Products($companyId: ID!) {
+  products(companyId: $companyId) {
+    id
+    publicProductId
+    companyId
+    sku
+    name
+    categoryId
+    stockUnitCode
+    purchaseUnitCode
+    saleUnitCode
+    netQuantity
+    netQuantityUnitCode
+    trackingMode
+    allowNegativeStock
+    status
+  }
+}

@@ -1,0 +1,25 @@
+-- V010: Tabla outbox_event para publicación transaccional de eventos
+CREATE TABLE IF NOT EXISTS company_management.outbox_event (
+    id UUID PRIMARY KEY,
+    event_id VARCHAR(64) NOT NULL UNIQUE,
+    event_type VARCHAR(128) NOT NULL,
+    schema_version VARCHAR(16) NOT NULL,
+    aggregate_version BIGINT NOT NULL,
+    sequence BIGINT NOT NULL,
+    occurred_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    producer_module VARCHAR(64) NOT NULL DEFAULT 'company_management',
+    correlation_id VARCHAR(64) NOT NULL,
+    causation_id VARCHAR(64),
+    account_id VARCHAR(64) NOT NULL,
+    company_id VARCHAR(64) NOT NULL,
+    branch_id VARCHAR(64),
+    actor_user_id VARCHAR(64),
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    retry_count INT NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMP WITH TIME ZONE,
+    published_at TIMESTAMP WITH TIME ZONE,
+    error_message TEXT,
+    payload_json TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+);

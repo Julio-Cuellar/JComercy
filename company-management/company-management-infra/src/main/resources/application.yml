@@ -1,0 +1,62 @@
+spring:
+  application:
+    name: company-management
+  datasource:
+    url: jdbc:h2:mem:company_management_db;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    schemas: company_management
+    locations: classpath:db/migration
+  graphql:
+    path: /graphql/v1
+    schema:
+      introspection:
+        enabled: false
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    # RabbitMQ expone 5673 en el host; 5672 es el puerto interno del contenedor.
+    port: ${RABBITMQ_PORT:5673}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+
+security:
+  jwt:
+    # Sobrescribir con SECURITY_JWT_SECRET en cualquier entorno no local.
+    secret: ${SECURITY_JWT_SECRET:local-only-change-me-012345678901234567890123456789}
+    issuer: ${SECURITY_JWT_ISSUER:jcomercy}
+    expiration-ms: ${SECURITY_JWT_EXPIRATION_MS:3600000}
+graphql:
+  security:
+    persisted-only: ${GRAPHQL_PERSISTED_ONLY:true}
+    max-depth: ${GRAPHQL_MAX_DEPTH:8}
+    max-complexity: ${GRAPHQL_MAX_COMPLEXITY:100}
+    rate-limit-per-minute: ${GRAPHQL_RATE_LIMIT_PER_MINUTE:60}
+    rate-limit-backend: ${GRAPHQL_RATE_LIMIT_BACKEND:memory}
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    url: /openapi-company-management-v1.yaml
+    disable-swagger-default-url: true
+  api-docs:
+    enabled: true
+
+outbox:
+  publisher:
+    fixed-delay-ms: ${OUTBOX_PUBLISHER_FIXED_DELAY_MS:5000}
+  rabbit:
+    exchange: ${OUTBOX_RABBIT_EXCHANGE:jcomercy.events}
+    staging-queue: ${OUTBOX_RABBIT_STAGING_QUEUE:jcomercy.events.pending}
+
+server:
+  port: 8080

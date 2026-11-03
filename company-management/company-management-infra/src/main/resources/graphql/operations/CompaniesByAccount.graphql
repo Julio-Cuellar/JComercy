@@ -1,0 +1,17 @@
+query CompaniesByAccount($publicAccountId: ID!) {
+  companiesByAccount(publicAccountId: $publicAccountId) {
+    publicCompanyId
+    publicAccountId
+    legalName
+    tradeName
+    rfc
+    taxRegime
+    incorporationDate
+    phone
+    email
+    website
+    logoUrl
+    status
+    version
+  }
+}

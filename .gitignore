@@ -1,0 +1,59 @@
+# Target directory containing compiled code
+**/target/
+
+# IDE specific settings
+.idea/
+.ide/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.settings/
+.project
+.classpath
+.factorypath
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Log files
+*.log
+
+# Local/generated artifacts
+outputs/
+
+# Agent/Assistant config
+**/.claude/
+**/.codex-run/
+**/.codex-runlogs/
+
+# Docker secrets - NUNCA subir al repositorio
+.env
+.env.example
+
+# Docker configuration files
+.dockerignore
+docker*.yml
+docker*.yaml
+*.docker.yml
+*.docker.yaml
+Dockerfile.backend
+Dockerfile.frontend
+DOCKER.md
+
+# Node.js dependencies and build output
+**/node_modules/
+**/dist/
+
+# Uploads directory (archivos de usuario)
+uploads/
+
+# Documentation
+# JComercy architecture and product specifications are tracked.
+
+# Server and environment configs / collections
+nginx.conf
+postman/
+scripts/
+clinerya-users-collection.json

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.jcode.jcomercy</groupId>
+        <artifactId>jcomercy-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>inventory</artifactId>
+    <packaging>pom</packaging>
+    <name>Inventory</name>
+    <description>Módulo de inventarios, almacenes, productos, kits y valuación</description>
+
+    <modules>
+        <module>inventory-domain</module>
+        <module>inventory-application</module>
+        <module>inventory-infra</module>
+    </modules>
+</project>

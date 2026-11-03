@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.jcode.jcomercy</groupId>
+        <artifactId>jcomercy-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>company-management</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Company Management</name>
+    <description>Módulo de gestión de cuentas, empresas, sucursales, membresías y permisos</description>
+
+    <modules>
+        <module>company-management-domain</module>
+        <module>company-management-application</module>
+        <module>company-management-infra</module>
+    </modules>
+</project>

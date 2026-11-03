@@ -1,0 +1,17 @@
+query Company($publicCompanyId: ID!) {
+  company(publicCompanyId: $publicCompanyId) {
+    publicCompanyId
+    publicAccountId
+    legalName
+    tradeName
+    rfc
+    taxRegime
+    incorporationDate
+    phone
+    email
+    website
+    logoUrl
+    status
+    version
+  }
+}

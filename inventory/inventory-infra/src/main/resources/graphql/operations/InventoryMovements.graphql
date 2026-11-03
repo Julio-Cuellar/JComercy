@@ -1,0 +1,26 @@
+query InventoryMovements($companyId: ID!, $productId: ID) {
+  inventoryMovements(companyId: $companyId, productId: $productId) {
+    id
+    publicMovementId
+    companyId
+    branchId
+    warehouseId
+    locationId
+    productId
+    type
+    quantity
+    unitCode
+    unitCost
+    totalCost
+    lotId
+    serialNumber
+    expirationDate
+    referenceType
+    referenceId
+    reason
+    occurredAt
+    actorUserId
+    correlationId
+    createdAt
+  }
+}

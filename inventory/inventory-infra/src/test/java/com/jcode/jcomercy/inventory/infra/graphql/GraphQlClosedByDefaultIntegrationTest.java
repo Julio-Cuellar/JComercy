@@ -1,0 +1,114 @@
+package com.jcode.jcomercy.inventory.infra.graphql;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Date;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/** GraphQL solo ejecuta las operaciones que viven como archivos en el proyecto; todo lo demás se rechaza. */
+@SpringBootTest
+@AutoConfigureMockMvc
+class GraphQlClosedByDefaultIntegrationTest {
+
+    private static final String SECRET = "local-only-change-me-012345678901234567890123456789";
+    private static final String REJECTION = "Esta consulta no está permitida. Actualiza la aplicación e intenta de nuevo.";
+    private static final String UNREGISTERED = "query { unitsOfMeasure { code } }";
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Test
+    @DisplayName("Una operación registrada en el proyecto se ejecuta y devuelve datos")
+    void registeredOperationRunsAndReturnsData() throws Exception {
+        String document = new String(
+            new ClassPathResource("graphql/operations/UnitsOfMeasure.graphql").getInputStream().readAllBytes(),
+            StandardCharsets.UTF_8);
+
+        graphql(token(), document, null)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(jsonPath("$.data.unitsOfMeasure").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("Una consulta que no está registrada se rechaza sin ejecutarse")
+    void unregisteredOperationIsRejectedWithoutRunning() throws Exception {
+        graphql(token(), UNREGISTERED, null)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0].extensions.code").value("OPERATION_NOT_ALLOWED"))
+            .andExpect(jsonPath("$.errors[0].message").value(REJECTION));
+    }
+
+    @Test
+    @DisplayName("Mandar el hash de la propia consulta no abre la puerta")
+    void ownHashDoesNotOpenTheDoor() throws Exception {
+        graphql(token(), UNREGISTERED, sha256(UNREGISTERED))
+            .andExpect(jsonPath("$.errors[0].extensions.code").value("OPERATION_NOT_ALLOWED"));
+    }
+
+    @Test
+    @DisplayName("La introspección del esquema se rechaza")
+    void introspectionIsRejected() throws Exception {
+        graphql(token(), "{ __schema { types { name } } }", null)
+            .andExpect(jsonPath("$.errors[0].extensions.code").value("OPERATION_NOT_ALLOWED"));
+    }
+
+    @Test
+    @DisplayName("Sin token responde 401 antes de llegar a GraphQL")
+    void withoutTokenRespondsUnauthorized() throws Exception {
+        graphql(null, UNREGISTERED, null).andExpect(status().isUnauthorized());
+    }
+
+    private ResultActions graphql(String authorization, String query, String hash) throws Exception {
+        MockHttpServletRequestBuilder request = post("/graphql/v1").contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of("query", query)));
+        if (authorization != null) {
+            request.header("Authorization", authorization);
+        }
+        if (hash != null) {
+            request.header("X-GraphQL-Operation-Hash", hash);
+        }
+        ResultActions result = mockMvc.perform(request);
+        return result.andReturn().getRequest().isAsyncStarted() ? mockMvc.perform(asyncDispatch(result.andReturn())) : result;
+    }
+
+    private static String token() {
+        return "Bearer " + Jwts.builder()
+            .subject("user-graphql-100")
+            .issuer("jcomercy")
+            .claim("companyIds", List.of("cmp_graphql_100"))
+            .claim("branchIds", List.of("br_graphql_100"))
+            .claim("permissions", "INVENTORY_READ")
+            .expiration(new Date(System.currentTimeMillis() + 3600_000))
+            .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)))
+            .compact();
+    }
+
+    private static String sha256(String document) throws Exception {
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(document.getBytes(StandardCharsets.UTF_8)));
+    }
+}

@@ -1,0 +1,20 @@
+type Query {
+  company(publicCompanyId: ID!): Company
+  companiesByAccount(publicAccountId: ID!): [Company!]!
+}
+
+type Company {
+  publicCompanyId: ID!
+  publicAccountId: ID!
+  legalName: String!
+  tradeName: String
+  rfc: String!
+  taxRegime: String!
+  incorporationDate: String!
+  phone: String!
+  email: String!
+  website: String
+  logoUrl: String
+  status: String!
+  version: Int!
+}

@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Nunito+Sans:wght@400;600;700&display=swap');
+
+:root {
+  --tinta: #22343E;
+  --papel: #F5FAF9;
+  --papel-alto: #FFFFFF;
+  --azul: #4C9BE8;
+  --azul-suave: rgba(76, 155, 232, 0.14);
+  --verde: #3FBF8F;
+  --verde-suave: rgba(63, 191, 143, 0.14);
+  --menta: #8FF0D6;
+  --menta-suave: rgba(143, 240, 214, 0.28);
+  --rojo: #E5544A;
+  --rojo-suave: rgba(229, 84, 74, 0.12);
+  --linea: #DFEEEA;
+  --linea-fuerte: #C9E1DA;
+  --radio: 16px;
+  --radio-chico: 10px;
+  --display: 'Baloo 2', sans-serif;
+  --sans: 'Nunito Sans', -apple-system, sans-serif;
+  --mono: 'IBM Plex Mono', monospace;
+  --color-text-2: #50636B;
+  --color-text-3: #6E848C;
+  font-family: var(--sans);
+  color: var(--tinta);
+  background: var(--papel);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box; }
+html { min-width: 320px; min-height: 100%; background: var(--papel); }
+body { min-width: 320px; min-height: 100svh; margin: 0; font-size: 14px; }
+#root { min-height: 100svh; }
+
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 3px solid rgba(76, 155, 232, .55); outline-offset: 3px; }
+.select-wrap:focus-within { border-color: var(--azul); box-shadow: 0 0 0 3px var(--azul-suave); }
+h1, h2, h3, p { margin: 0; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; letter-spacing: -.018em; text-wrap: balance; }
+code { font-family: var(--mono); }

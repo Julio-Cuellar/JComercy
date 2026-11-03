@@ -1,0 +1,805 @@
+openapi: 3.1.0
+info:
+  title: JComercy Inventory API
+  version: 1.0.0
+  description: API inicial de almacenes y ubicaciones del módulo de inventarios.
+security:
+  - bearerAuth: []
+servers:
+  - url: http://localhost:8081
+tags:
+  - name: Warehouses
+    description: Administración de almacenes y ubicaciones
+  - name: Products
+    description: Catálogo de productos y unidades de medida
+  - name: Stock
+    description: Operaciones de inventario, entradas, salidas, saldos y kárdex
+paths:
+  /api/v1/companies/{companyId}/products:
+    get:
+      tags: [Products]
+      summary: Listar productos de una empresa
+      parameters: [{ $ref: '#/components/parameters/CompanyId' }]
+      responses:
+        '200':
+          description: Productos
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Product' } }
+    post:
+      tags: [Products]
+      summary: Crear un producto
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProductRequest' }
+      responses:
+        '201':
+          description: Producto creado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/products/{productId}:
+    get:
+      tags: [Products]
+      summary: Consultar producto
+      parameters: [{ $ref: '#/components/parameters/ProductId' }]
+      responses:
+        '200':
+          description: Producto
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '404': { description: Producto no encontrado }
+  /api/v1/companies/{companyId}/products/{productId}/unit-conversions:
+    get:
+      tags: [Products]
+      summary: Listar conversiones de unidad de un producto
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: Conversiones activas e inactivas configuradas
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ProductUnitConversion' } }
+    post:
+      tags: [Products]
+      summary: Registrar una conversión de unidad para un producto
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddProductUnitConversionRequest' }
+      responses:
+        '201':
+          description: Conversión creada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductUnitConversion' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/units-of-measure:
+    get:
+      tags: [Products]
+      summary: Listar unidades de medida activas
+      responses:
+        '200':
+          description: Unidades
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/UnitOfMeasure' } }
+  /api/v1/companies/{companyId}/units-of-measure:
+    get:
+      tags: [Products]
+      summary: Listar unidades globales y propias de una empresa
+      parameters: [{ $ref: '#/components/parameters/CompanyId' }]
+      responses:
+        '200':
+          description: Catálogo de unidades disponible para la empresa
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/CompanyUnitCatalogItem' } }
+    post:
+      tags: [Products]
+      summary: Crear una unidad de empaque propia de la empresa
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCompanyUnitRequest' }
+      responses:
+        '201':
+          description: Unidad propia creada
+  /api/v1/companies/{companyId}/warehouses:
+    get:
+      tags: [Warehouses]
+      summary: Listar almacenes de una empresa
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+      responses:
+        '200':
+          description: Almacenes visibles de la empresa
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Warehouse' }
+        '403':
+          description: Acceso no autorizado
+    post:
+      tags: [Warehouses]
+      summary: Crear un almacén
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWarehouseRequest'
+      responses:
+        '201':
+          description: Almacén creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Warehouse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/companies/{companyId}/branches/{branchId}/warehouses:
+    post:
+      tags: [Warehouses]
+      summary: Crear un almacén propio para una sucursal
+      description: La creación es manual; el scope BRANCH_OWNED y la sucursal se toman de la URL.
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBranchWarehouseRequest'
+      responses:
+        '201':
+          description: Almacén de sucursal creado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Warehouse' }
+        '403':
+          description: Acceso no autorizado
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/branches/{branchId}/warehouses:
+    get:
+      tags: [Warehouses]
+      summary: Listar almacenes disponibles para una sucursal
+      description: Incluye almacenes propios de la sucursal y almacenes compartidos con acceso activo.
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+      responses:
+        '200':
+          description: Almacenes disponibles
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Warehouse' }
+        '403':
+          description: Acceso no autorizado
+  /api/v1/warehouses/{warehouseId}:
+    get:
+      tags: [Warehouses]
+      summary: Consultar un almacén
+      parameters:
+        - $ref: '#/components/parameters/WarehouseId'
+      responses:
+        '200':
+          description: Almacén
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Warehouse' }
+        '403':
+          description: Acceso no autorizado
+        '404':
+          description: Almacén no encontrado
+  /api/v1/warehouses/{warehouseId}/activate:
+    post:
+      tags: [Warehouses]
+      summary: Activar un almacén
+      description: Cambia el estado del almacén a ACTIVE para permitir operaciones de inventario.
+      parameters:
+        - $ref: '#/components/parameters/WarehouseId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Almacén activado exitosamente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Warehouse' }
+        '403':
+          description: Acceso no autorizado
+        '404':
+          description: Almacén no encontrado
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/warehouses/{warehouseId}/branches:
+    post:
+      tags: [Warehouses]
+      summary: Autorizar una sucursal en un almacén compartido
+      parameters:
+        - $ref: '#/components/parameters/WarehouseId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantBranchAccessRequest'
+      responses:
+        '201':
+          description: Acceso creado
+  /api/v1/warehouses/{warehouseId}/locations:
+    post:
+      tags: [Warehouses]
+      summary: Crear una ubicación
+      parameters:
+        - $ref: '#/components/parameters/WarehouseId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLocationRequest'
+      responses:
+        '201':
+          description: Ubicación creada
+  /api/v1/companies/{companyId}/branches/{branchId}/stock/receipts:
+    post:
+      tags: [Stock]
+      summary: Registrar entrada de inventario
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReceiveStockRequest' }
+      responses:
+        '201':
+          description: Entrada registrada exitosamente
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/companies/{companyId}/branches/{branchId}/stock/issues:
+    post:
+      tags: [Stock]
+      summary: Registrar salida o despacho de inventario
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueStockRequest' }
+      responses:
+        '201':
+          description: Salida registrada exitosamente
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/companies/{companyId}/branches/{branchId}/stock/adjustments:
+    post:
+      tags: [Stock]
+      summary: Registrar ajuste de inventario (Entrada o Salida)
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdjustStockRequest' }
+      responses:
+        '201':
+          description: Ajuste registrado exitosamente
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/companies/{companyId}/branches/{branchId}/stock/reservations:
+    post:
+      tags: [Stock]
+      summary: Reservar stock para una referencia
+      description: >-
+        Aparta stock sin sacarlo del almacén. Si ningún saldo alcanza solo, reparte la cantidad entre los saldos del
+        producto en el almacén. Una referencia cubre un producto en un almacén; un pedido con varios productos usa
+        una referencia por línea (por ejemplo `ML-123-1` y `ML-123-2`). Requiere el permiso `inventory.stock.write`.
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReserveStockRequest' }
+      responses:
+        '201':
+          description: Stock reservado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReservationResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /api/v1/companies/{companyId}/branches/{branchId}/stock/reservations/release:
+    post:
+      tags: [Stock]
+      summary: Liberar las reservas activas de una referencia
+      description: >-
+        Libera toda la referencia: el stock vuelve a estar disponible. Requiere el permiso `inventory.stock.write`.
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReservationReferenceRequest' }
+      responses:
+        '200':
+          description: Reservas liberadas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReservationResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/companies/{companyId}/branches/{branchId}/stock/reservations/commit:
+    post:
+      tags: [Stock]
+      summary: Confirmar las reservas activas de una referencia
+      description: >-
+        Confirma toda la referencia: descuenta el saldo y registra la salida (`ISSUE`) en el kárdex con esa
+        referencia. Requiere el permiso `inventory.stock.write`.
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReservationReferenceRequest' }
+      responses:
+        '200':
+          description: Reservas confirmadas y salida registrada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommitResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/companies/{companyId}/stock/availability:
+    get:
+      tags: [Stock]
+      summary: Consultar stock disponible (existencia menos reservado)
+      description: Requiere el permiso `inventory.stock.read`.
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - name: productId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Disponibilidad por almacén y producto
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Availability' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/companies/{companyId}/stock/balances:
+    get:
+      tags: [Stock]
+      summary: Consultar saldos de inventario
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - name: productId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Saldos de inventario
+  /api/v1/companies/{companyId}/stock/movements:
+    get:
+      tags: [Stock]
+      summary: Consultar kárdex / historial de movimientos de inventario
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - name: productId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Historial de movimientos
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      schema: { type: string }
+    WarehouseId:
+      name: warehouseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    BranchId:
+      name: branchId
+      in: path
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 128 }
+  responses:
+    BadRequest:
+      description: >-
+        Solicitud inválida. `code` es `VALIDATION_ERROR` (un dato no cumple las reglas del campo) o
+        `MALFORMED_REQUEST` (JSON ilegible, formato incorrecto o falta un encabezado como `Idempotency-Key`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Sin permiso, o sin acceso a la empresa o sucursal. La respuesta no trae cuerpo.
+    NotFound:
+      description: >-
+        No existe lo que se pidió, por ejemplo no hay reservas activas para la referencia. `code` es
+        `INVENTORY_OPERATION_REJECTED`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: >-
+        Conflicto con los datos proporcionados, por ejemplo una referencia que ya tiene reservas. `code` es
+        `INVENTORY_OPERATION_REJECTED`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    UnprocessableEntity:
+      description: >-
+        Regla de inventario incumplida, por ejemplo stock insuficiente. `code` es
+        `INVENTORY_DOMAIN_RULE_VIOLATION`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+  schemas:
+    ReceiveStockRequest:
+      type: object
+      required: [warehouseId, locationId, productId, quantity, unitCode]
+      properties:
+        warehouseId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        quantity: { type: number, minimum: 0.000000001 }
+        unitCode: { type: string, example: PZA }
+        unitCost: { type: number, minimum: 0 }
+        lotId: { type: string }
+        serialNumber: { type: string }
+        expirationDate: { type: string, format: date }
+        inventoryStatus: { type: string, enum: [AVAILABLE, QUARANTINED, DAMAGED] }
+        referenceType: { type: string }
+        referenceId: { type: string }
+    IssueStockRequest:
+      type: object
+      required: [warehouseId, locationId, productId, quantity, unitCode]
+      properties:
+        warehouseId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        quantity: { type: number, minimum: 0.000000001 }
+        unitCode: { type: string, example: PZA }
+        unitCost: { type: number, minimum: 0 }
+        lotId: { type: string }
+        serialNumber: { type: string }
+        expirationDate: { type: string, format: date }
+        inventoryStatus: { type: string, enum: [AVAILABLE, QUARANTINED, DAMAGED] }
+        referenceType: { type: string }
+        referenceId: { type: string }
+    AdjustStockRequest:
+      type: object
+      required: [warehouseId, locationId, productId, quantity, unitCode, reason, direction]
+      properties:
+        warehouseId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        quantity: { type: number, minimum: 0.000000001 }
+        unitCode: { type: string, example: PZA }
+        unitCost: { type: number, minimum: 0 }
+        lotId: { type: string }
+        serialNumber: { type: string }
+        expirationDate: { type: string, format: date }
+        inventoryStatus: { type: string, enum: [AVAILABLE, QUARANTINED, DAMAGED] }
+        referenceType: { type: string }
+        referenceId: { type: string }
+        reason: { type: string }
+        direction: { type: string, enum: [IN, OUT] }
+    CreateWarehouseRequest:
+      type: object
+      required: [scope, code, name, type, timezone, currency]
+      properties:
+        scope: { type: string, enum: [BRANCH_OWNED, COMPANY_SHARED] }
+        branchId: { type: string }
+        code: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [GENERAL, RECEIVING, DISPATCH, TRANSIT, VIRTUAL] }
+        defaultWarehouse: { type: boolean }
+        address: { type: string }
+        phone: { type: string }
+        email: { type: string, format: email }
+        managerId: { type: string }
+        timezone: { type: string }
+        currency: { type: string }
+    CreateProductRequest:
+      type: object
+      required: [sku, name, stockUnitCode, trackingMode]
+      properties:
+        sku: { type: string }
+        name: { type: string }
+        categoryId: { type: string }
+        stockUnitCode: { type: string, example: PZA }
+        purchaseUnitCode: { type: string, example: CAJA }
+        saleUnitCode: { type: string, example: PZA }
+        netQuantity: { type: number }
+        netQuantityUnitCode: { type: string }
+        trackingMode: { type: string, enum: [NONE, LOT, SERIAL, LOT_AND_EXPIRATION, SERIAL_AND_EXPIRATION] }
+        allowNegativeStock: { type: boolean }
+    AddProductUnitConversionRequest:
+      type: object
+      required: [fromUnitCode, toUnitCode, factor, roundingMode]
+      properties:
+        fromUnitCode: { type: string, example: KG }
+        toUnitCode: { type: string, example: G }
+        factor: { type: number, example: 1000 }
+        roundingScale: { type: integer, minimum: 0, maximum: 9, default: 3 }
+        roundingMode: { type: string, enum: [UP, DOWN, CEILING, FLOOR, HALF_UP, HALF_DOWN, HALF_EVEN, UNNECESSARY] }
+        purchaseUnit: { type: boolean }
+        salesUnit: { type: boolean }
+        defaultConversion: { type: boolean }
+    CreateCompanyUnitRequest:
+      type: object
+      required: [code, name, symbol, dimension, baseUnitCode, conversionFactor]
+      properties:
+        code: { type: string, example: CAJA }
+        name: { type: string, example: Caja }
+        symbol: { type: string, example: caja }
+        dimension: { type: string, enum: [MASS, VOLUME, LENGTH, AREA, COUNT, TIME] }
+        baseUnitCode: { type: string, example: PZA }
+        conversionFactor: { type: number, example: 1 }
+        decimals: { type: integer, minimum: 0, maximum: 9, default: 0 }
+    CreateBranchWarehouseRequest:
+      type: object
+      required: [code, name, type, timezone, currency]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [GENERAL, RECEIVING, DISPATCH, TRANSIT, VIRTUAL] }
+        defaultWarehouse: { type: boolean }
+        address: { type: string }
+        phone: { type: string }
+        email: { type: string, format: email }
+        managerId: { type: string }
+        timezone: { type: string }
+        currency: { type: string }
+    GrantBranchAccessRequest:
+      type: object
+      required: [branchId, assignedBy]
+      properties:
+        branchId: { type: string }
+        assignedBy: { type: string }
+    CreateLocationRequest:
+      type: object
+      required: [code, type]
+      properties:
+        parentLocationId: { type: string, format: uuid, nullable: true }
+        code: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [INTERNAL, RECEIVING, PICKING, DISPATCH, TRANSIT, SUPPLIER, CUSTOMER, INVENTORY_LOSS, QUARANTINE, CUSTOM] }
+        capacity: { type: number }
+        capacityUnitCode: { type: string }
+    Warehouse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        publicWarehouseId: { type: string, format: uuid }
+        companyId: { type: string }
+        scope: { type: string }
+        branchId: { type: string, nullable: true }
+        code: { type: string }
+        name: { type: string }
+        status: { type: string }
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        publicProductId: { type: string, format: uuid }
+        companyId: { type: string }
+        sku: { type: string }
+        name: { type: string }
+        categoryId: { type: string }
+        stockUnitCode: { type: string }
+        purchaseUnitCode: { type: string }
+        saleUnitCode: { type: string }
+        netQuantity: { type: number }
+        netQuantityUnitCode: { type: string }
+        trackingMode: { type: string }
+        allowNegativeStock: { type: boolean }
+        status: { type: string }
+    UnitOfMeasure:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        symbol: { type: string }
+        dimension: { type: string }
+        baseUnitCode: { type: string }
+        conversionFactor: { type: number }
+        decimals: { type: integer }
+    ProductUnitConversion:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        fromUnitCode: { type: string }
+        toUnitCode: { type: string }
+        factor: { type: number }
+        roundingScale: { type: integer }
+        roundingMode: { type: string }
+        purchaseUnit: { type: boolean }
+        salesUnit: { type: boolean }
+        defaultConversion: { type: boolean }
+        status: { type: string }
+    CompanyUnitCatalogItem:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        symbol: { type: string }
+        dimension: { type: string }
+        baseUnitCode: { type: string }
+        conversionFactor: { type: number }
+        decimals: { type: integer }
+        system: { type: boolean, description: Indica si proviene del catálogo global }
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: INVENTORY_DOMAIN_RULE_VIOLATION }
+        message: { type: string }
+    ReserveStockRequest:
+      type: object
+      required: [warehouseId, productId, quantity, unitCode, referenceType, referenceId]
+      properties:
+        warehouseId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid, description: Si se envía, limita la reserva a esa ubicación }
+        productId: { type: string, format: uuid }
+        quantity: { type: number, minimum: 0.000000001 }
+        unitCode: { type: string, example: PZA }
+        referenceType: { type: string, example: MERCADOLIBRE_ORDER }
+        referenceId: { type: string, example: ML-123-1 }
+        expiresAt: { type: string, format: date-time }
+    ReservationReferenceRequest:
+      type: object
+      required: [referenceType, referenceId]
+      properties:
+        referenceType: { type: string, example: MERCADOLIBRE_ORDER }
+        referenceId: { type: string, example: ML-123-1 }
+        reason: { type: string }
+    StockReservation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        publicReservationId: { type: string, format: uuid }
+        companyId: { type: string }
+        branchId: { type: string }
+        warehouseId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        stockBalanceId: { type: string, format: uuid }
+        quantity: { type: number }
+        status: { type: string, enum: [ACTIVE, COMMITTED, RELEASED, EXPIRED] }
+        referenceType: { type: string }
+        referenceId: { type: string }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        actorUserId: { type: string }
+        correlationId: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64 }
+    InventoryMovement:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        publicMovementId: { type: string, format: uuid }
+        companyId: { type: string }
+        branchId: { type: string }
+        warehouseId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [RECEIPT, ISSUE, ADJUSTMENT_IN, ADJUSTMENT_OUT, TRANSFER_OUT, TRANSFER_IN, RETURN, KIT_BREAKDOWN_OUT, KIT_BREAKDOWN_IN]
+        quantity: { type: number }
+        unitCode: { type: string }
+        unitCost: { type: [number, 'null'] }
+        totalCost: { type: [number, 'null'] }
+        lotId: { type: [string, 'null'] }
+        serialNumber: { type: [string, 'null'] }
+        expirationDate: { type: [string, 'null'], format: date }
+        referenceType: { type: [string, 'null'] }
+        referenceId: { type: [string, 'null'] }
+        reason: { type: [string, 'null'] }
+        occurredAt: { type: string, format: date-time }
+        actorUserId: { type: string }
+        correlationId: { type: string }
+        createdAt: { type: string, format: date-time }
+    ReservationResult:
+      type: object
+      properties:
+        reservations:
+          type: array
+          items: { $ref: '#/components/schemas/StockReservation' }
+        available: { type: number, description: Disponible del producto después de la operación }
+    CommitResult:
+      type: object
+      properties:
+        reservations:
+          type: array
+          items: { $ref: '#/components/schemas/StockReservation' }
+        movements:
+          type: array
+          items: { $ref: '#/components/schemas/InventoryMovement' }
+        available: { type: number, description: Disponible del producto después de la operación }
+    Availability:
+      type: object
+      properties:
+        warehouseId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        onHand: { type: number, description: Existencia física }
+        reserved: { type: number, description: Cantidad apartada por reservas activas }
+        available: { type: number, description: Existencia menos reservado }

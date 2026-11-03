@@ -1,0 +1,136 @@
+type Query {
+  warehouse(id: ID!): Warehouse
+  locations(warehouseId: ID!): [Location!]!
+  product(id: ID!): Product
+  products(companyId: ID!): [Product!]!
+  unitsOfMeasure: [UnitOfMeasure!]!
+  productUnitConversions(productId: ID!): [ProductUnitConversion!]!
+  stockBalances(companyId: ID!, productId: ID): [StockBalance!]!
+  inventoryMovements(companyId: ID!, productId: ID): [InventoryMovement!]!
+  companyUnits(companyId: ID!): [UnitOfMeasure!]!
+  stockAvailability(companyId: ID!, productId: ID): [Availability!]!
+}
+
+type Warehouse {
+  id: ID!
+  publicWarehouseId: ID!
+  companyId: ID!
+  scope: String!
+  branchId: ID
+  code: String!
+  name: String!
+  type: String!
+  status: String!
+  defaultWarehouse: Boolean!
+  timezone: String!
+  currency: String!
+  version: Int!
+  locations: [Location!]!
+}
+
+type Location {
+  id: ID!
+  publicLocationId: ID!
+  warehouseId: ID!
+  parentLocationId: ID
+  code: String!
+  name: String
+  type: String!
+  status: String!
+  capacity: Float
+  capacityUnitCode: String
+}
+
+type Product {
+  id: ID!
+  publicProductId: ID!
+  companyId: ID!
+  sku: String!
+  name: String!
+  categoryId: String
+  stockUnitCode: String!
+  purchaseUnitCode: String
+  saleUnitCode: String
+  netQuantity: Float
+  netQuantityUnitCode: String
+  trackingMode: String!
+  allowNegativeStock: Boolean!
+  status: String!
+}
+
+type UnitOfMeasure {
+  code: ID!
+  name: String!
+  symbol: String!
+  dimension: String!
+  baseUnitCode: String!
+  conversionFactor: Float!
+  decimals: Int!
+}
+
+type ProductUnitConversion {
+  id: ID!
+  productId: ID!
+  fromUnitCode: String!
+  toUnitCode: String!
+  factor: Float!
+  roundingScale: Int!
+  roundingMode: String!
+  purchaseUnit: Boolean!
+  salesUnit: Boolean!
+  defaultConversion: Boolean!
+  status: String!
+}
+
+type StockBalance {
+  id: ID!
+  companyId: ID!
+  branchId: ID!
+  warehouseId: ID!
+  locationId: ID!
+  productId: ID!
+  lotId: String
+  serialNumber: String
+  expirationDate: String
+  inventoryStatus: String!
+  onHand: Float!
+  reserved: Float!
+  available: Float!
+  unitCost: Float
+  costingMethod: String
+  version: Int!
+}
+
+type Availability {
+  warehouseId: ID!
+  productId: ID!
+  onHand: Float!
+  reserved: Float!
+  available: Float!
+}
+
+type InventoryMovement {
+  id: ID!
+  publicMovementId: ID!
+  companyId: ID!
+  branchId: ID!
+  warehouseId: ID!
+  locationId: ID!
+  productId: ID!
+  type: String!
+  quantity: Float!
+  unitCode: String!
+  unitCost: Float
+  totalCost: Float
+  lotId: String
+  serialNumber: String
+  expirationDate: String
+  referenceType: String
+  referenceId: String
+  reason: String
+  occurredAt: String!
+  actorUserId: String!
+  correlationId: String!
+  createdAt: String!
+}
+
