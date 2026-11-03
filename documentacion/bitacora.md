@@ -31,7 +31,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-004 | La prueba de concurrencia de reservas falla al repetirse por usar referencias fijas | RESUELTO (BIT-009) |
 | ERR-005 | El 500 de company-management devuelve el mensaje interno de la excepción y no la registra | RESUELTO (BIT-014) |
 | ERR-006 | Una `Idempotency-Key` vacía responde 500 en company-management | RESUELTO (BIT-016) |
-| ERR-007 | Repetir una `Idempotency-Key` ya reclamada podría responder 500 en company-management (sin reproducir) | ABIERTO |
+| ERR-007 | Repetir una `Idempotency-Key` ya reclamada por el almacén (proceso nuevo) lanza una excepción sin manejar, que termina en 500, en company-management | ABIERTO (reproducido en el registro, BIT-017) |
 
 ---
 
@@ -262,6 +262,19 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Contrato:** `openapi-company-management-v1.yaml` sigue sin declarar estas respuestas 400 por operación.
   - **Sin cambios:** la repetición de una clave ya reclamada (ERR-007) no se tocó.
 
+### BIT-017 · Prueba que reproduce ERR-007 con un almacén falso
+
+- **Qué se hizo:** `IdempotencyRegistryTest` suma `err007RepeatedKeyAlreadyClaimedByTheStoreFailsWithIllegalStateAfterARestart`, que reproduce a nivel del registro lo que antes solo estaba leído en el código. **No corrige nada:** documenta el comportamiento actual.
+- **Cómo se hizo:**
+  - Un `FakeIdempotencyStore` (clase interna de la prueba) imita el contrato de `JpaIdempotencyStore`: `claim` solo funciona una vez por pareja operación-clave y `release` la libera. Dos `IdempotencyRegistry` comparten ese almacén; el segundo representa el proceso reiniciado.
+  - La prueba comprueba que (1) el primer registro ejecuta la operación, (2) repetida en ese mismo proceso devuelve el resultado anterior, (3) el registro nuevo lanza `IllegalStateException("La solicitud con Idempotency-Key ya fue procesada")` y (4) la operación se ejecutó una sola vez.
+  - **Esta prueba pasa a la primera, a propósito** (describe lo que el código ya hace). Para comprobar que no es vacía se hizo una mutación temporal: se desactivó la comprobación `store.claim` en `IdempotencyRegistry` y la prueba cayó con `Expecting code to raise a throwable`; se restauró y `git status` confirmó que `IdempotencyRegistry.java` quedó sin diferencias.
+  - `mvn -B test` en la raíz → `BUILD SUCCESS`, **117 pruebas** (`IdempotencyRegistryTest` pasa de 3 a 4).
+- **Afectaciones:**
+  - **Pruebas:** al resolver ERR-007 esta prueba debe cambiar, porque fija la excepción actual. Es deliberado; el comentario de la prueba lo dice.
+  - **Alcance:** no se probó por HTTP ni con el almacén real (`JpaIdempotencyStore`); el falso replica su contrato leído en el código, no su comportamiento bajo transacciones.
+  - **Sin cambios de código de producción.**
+
 ---
 
 ## Errores
@@ -322,8 +335,8 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 
 ### ERR-007 · Repetir una `Idempotency-Key` ya reclamada podría responder 500 en company-management
 
-- **Estado:** ABIERTO. Visto leyendo el código el 2026-11-02 al atender ERR-006. **No reproducido con una prueba.**
+- **Estado:** ABIERTO. Visto leyendo el código el 2026-11-02 al atender ERR-006 y **reproducido el 2026-11-03 a nivel del registro** con un almacén falso (BIT-017). No se corrió de extremo a extremo por HTTP.
 - **De qué trata:** `IdempotencyRegistry.execute` recuerda los resultados en un mapa en memoria del proceso y, además, reclama la clave en el almacén durable (`store.claim`). Si el almacén ya tiene reclamada la pareja operación-clave pero el mapa en memoria no tiene el resultado, lanza `IllegalStateException("La solicitud con Idempotency-Key ya fue procesada")`. Esa excepción no tiene manejador propio, así que llegaría al manejador general: 500 "problema nuestro" y un `ERROR` con traza. El registro solo usa `claim` y `release` del almacén; el resultado no se guarda ahí.
-- **Cuándo se manifiesta (inferido, no probado):** al repetir una solicitud con una clave ya procesada cuando el proceso no la recuerda en memoria, por ejemplo después de reiniciarlo o si hubiera más de una instancia.
+- **Cuándo se manifiesta:** al repetir una solicitud con una clave que el almacén durable ya reclamó cuando el registro en memoria no la recuerda. **Reproducido** con dos registros que comparten un almacén falso: el primero ejecuta la operación y, en el mismo proceso, devuelve el resultado anterior sin problema; el segundo (el proceso "reiniciado") lanza `IllegalStateException` y la operación no se vuelve a ejecutar. **Inferido, no probado:** que en producción ocurra por un reinicio o por tener más de una instancia. Que esa excepción termine en 500 se apoya en que no tiene manejador propio y `GlobalExceptionHandlerTest` ya comprueba que el manejador general responde 500 ante una `IllegalStateException`; no se encadenó en una sola prueba por HTTP.
 - **Cómo mitigarlo:** antes de reintentar tras un reinicio, consultar si el recurso ya se creó; reintentar con la misma clave podría dar un 500 aunque la operación original sí se haya completado.
-- **Para resolverlo:** decidir el comportamiento esperado de una repetición legítima: devolver el resultado anterior (hay que guardarlo en el almacén durable) o responder 409 con un mensaje claro. Empezar con una prueba del registro con un almacén falso cuyo `claim` devuelva `false`, que reproduce la excepción sin HTTP.
+- **Para resolverlo:** decidir el comportamiento esperado de una repetición legítima. La prueba que lo reproduce ya existe (`IdempotencyRegistryTest#err007…`, BIT-017) y describe el comportamiento actual, así que cambia junto con la solución. Dos caminos: (1) responder 409 con un mensaje claro ("Esta operación ya se procesó. Consulta el recurso para ver el resultado."), que es barato pero el cliente que reintenta tras un corte no recibe el resultado; (2) guardar el resultado en el almacén durable y devolverlo en la repetición, que cumple la promesa de idempotencia pero exige una migración Flyway y serializar la respuesta.

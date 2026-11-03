@@ -2,10 +2,13 @@ package com.jcode.jcomercy.companymanagement.application.service;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 class IdempotencyRegistryTest {
 
@@ -44,6 +47,54 @@ class IdempotencyRegistryTest {
             assertThatExceptionOfType(IdempotencyKeyRequiredException.class)
                 .as("clave: [%s]", key)
                 .isThrownBy(() -> new IdempotencyRegistry().execute("company.create", key, () -> "x"));
+        }
+    }
+
+    /**
+     * ERR-007: reproduce el comportamiento actual, no el deseado. Con el almacén durable ya reclamado y la
+     * memoria del registro vacía (proceso reiniciado), repetir la clave lanza IllegalStateException y la
+     * operación no se vuelve a ejecutar. Cuando se decida cómo resolverlo (devolver el resultado anterior o
+     * responder 409), esta prueba cambia junto con el código.
+     */
+    @Test
+    void err007RepeatedKeyAlreadyClaimedByTheStoreFailsWithIllegalStateAfterARestart() {
+        FakeIdempotencyStore store = new FakeIdempotencyStore();
+        AtomicInteger executions = new AtomicInteger();
+
+        IdempotencyRegistry beforeRestart = new IdempotencyRegistry(store);
+        String first = beforeRestart.execute("account.register", "idem-1", () -> {
+            executions.incrementAndGet();
+            return "created";
+        });
+        String sameProcess = beforeRestart.execute("account.register", "idem-1", () -> {
+            executions.incrementAndGet();
+            return "again";
+        });
+        IdempotencyRegistry afterRestart = new IdempotencyRegistry(store);
+
+        assertThat(first).isEqualTo("created");
+        assertThat(sameProcess).as("en el mismo proceso la memoria devuelve el resultado anterior").isEqualTo("created");
+        assertThatIllegalStateException()
+            .isThrownBy(() -> afterRestart.execute("account.register", "idem-1", () -> {
+                executions.incrementAndGet();
+                return "again";
+            }))
+            .withMessage("La solicitud con Idempotency-Key ya fue procesada");
+        assertThat(executions).as("la operación solo se ejecutó la primera vez").hasValue(1);
+    }
+
+    /** Imita el contrato de JpaIdempotencyStore: reclamar una pareja operación-clave solo funciona una vez. */
+    private static class FakeIdempotencyStore implements IdempotencyStore {
+        private final Set<String> claimed = new HashSet<>();
+
+        @Override
+        public boolean claim(String operation, String key) {
+            return claimed.add(operation + ":" + key);
+        }
+
+        @Override
+        public void release(String operation, String key) {
+            claimed.remove(operation + ":" + key);
         }
     }
 }
