@@ -105,7 +105,7 @@ class AccountIntegrationTest {
     @DisplayName("Debe fallar con 404 al consultar una cuenta inexistente")
     void shouldReturn404ForNonExistentAccount() throws Exception {
         mockMvc.perform(get("/api/v1/accounts/acc_non_existent")
-                .header("Authorization", "Bearer " + token("usr_owner_999")))
+                .header("Authorization", "Bearer " + token("acc_non_existent")))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
     }

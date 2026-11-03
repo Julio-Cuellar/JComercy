@@ -115,7 +115,7 @@ class CompanyIntegrationTest {
 
         String compRes = mockMvc.perform(post("/api/v1/accounts/" + account.publicAccountId() + "/companies")
                 .header("Idempotency-Key", "idem_comp_test_001")
-                .header("Authorization", "Bearer " + token("usr_hold_1"))
+                .header("Authorization", "Bearer " + token(account.publicAccountId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(compJson))
             .andExpect(status().isCreated())
@@ -131,14 +131,14 @@ class CompanyIntegrationTest {
         // 3. Activate Company
         mockMvc.perform(post("/api/v1/companies/" + publicCompanyId + "/activation")
                 .header("Idempotency-Key", "idem_activate_company_001")
-                .header("Authorization", "Bearer " + token("usr_hold_1")))
+                .header("Authorization", "Bearer " + token(account.publicAccountId())))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("ACTIVE"));
 
         // 4. Create Branch with mandatory contact and location data
         mockMvc.perform(post("/api/v1/companies/" + publicCompanyId + "/branches")
                 .header("Idempotency-Key", "idem_branch_company_test_001")
-                .header("Authorization", "Bearer " + token("usr_hold_1"))
+                .header("Authorization", "Bearer " + token(account.publicAccountId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {

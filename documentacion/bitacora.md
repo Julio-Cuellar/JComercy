@@ -32,8 +32,9 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-005 | El 500 de company-management devuelve el mensaje interno de la excepción y no la registra | RESUELTO (BIT-014) |
 | ERR-006 | Una `Idempotency-Key` vacía responde 500 en company-management | RESUELTO (BIT-016) |
 | ERR-007 | Repetir una `Idempotency-Key` ya reclamada por el almacén (proceso nuevo) lanza una excepción sin manejar, que termina en 500, en company-management | RESUELTO (BIT-017 reproducción, BIT-018 solución) |
-| ERR-008 | Los endpoints REST de company-management solo exigen un JWT válido: no comprueban que la cuenta o empresa del token sea la que se consulta o modifica | ABIERTO (leído en el código, no reproducido) |
+| ERR-008 | Los endpoints REST de company-management solo exigen un JWT válido: no comprueban que la cuenta o empresa del token sea la que se consulta o modifica | RESUELTO (BIT-022) |
 | ERR-009 | GraphQL ejecutaba cualquier consulta aunque `persisted-only` estuviera activo, y la introspección del esquema estaba abierta | RESUELTO (BIT-020) |
+| ERR-010 | Los permisos del contrato no se exigen en ninguna ruta REST de company-management, y a todo usuario se le conceden cinco permisos fijos | ABIERTO (leído en el código, no reproducido) |
 
 ---
 
@@ -346,6 +347,26 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Datos expuestos:** los mismos cinco campos que el REST de disponibilidad, sin identificadores de reserva.
   - **Sin verificar:** el comportamiento con muchos almacenes o productos; la prueba usa un almacén y un producto.
 
+### BIT-022 · Las rutas REST de cuentas, empresas y sucursales comprueban a quién pertenecen (resuelve ERR-008)
+
+- **Qué se hizo:** las 10 rutas REST de company-management bajo `/api/v1/accounts/{publicAccountId}` y `/api/v1/companies/{publicCompanyId}` responden 403 `INSUFFICIENT_PERMISSIONS` a quien trae un token válido de otra cuenta o sin acceso a esa empresa, y no modifican nada. Los mensajes son "No tienes acceso a esta cuenta. Inicia sesión con la cuenta que corresponde." y "No tienes acceso a esta empresa. Pide acceso a quien administra la cuenta."
+- **Cómo se hizo:**
+  - **Regla:** para una cuenta, el sujeto del token debe ser esa cuenta (`JwtAuthorizationService.canAccessAccount`). Para una empresa entra quien trae su id en el claim `companyIds` (miembros) o la cuenta dueña de la empresa, aunque la haya creado después de iniciar sesión (consulta con `CompanyRepositoryPort.findByPublicCompanyId`). Sin esa segunda cláusula, el dueño no podría activar la empresa que acaba de crear hasta renovar el token. Una empresa que no existe responde 403 a quien no es miembro, para no revelar si existe.
+  - **Implementación:** un interceptor MVC y no un `if` por controlador, porque el bug nació justo por olvidar el control en cada ruta. `RestOwnershipInterceptor` y `RestOwnershipConfig` (nuevos) lo registran para `/api/v1/accounts/{publicAccountId}/**` y `/api/v1/companies/{publicCompanyId}/**`, excluyendo `/api/v1/accounts/registration`. Una ruta nueva en esos prefijos nace protegida. Reutiliza `UnauthorizedAccessException`, que `GlobalExceptionHandler` ya traduce a 403, y registra un `WARN` con actor, método y ruta, sin el token.
+  - **RED (ejecución):** `RestOwnershipIntegrationTest` (nueva) → 12 de 14 fallan y 2 pasan (las del dueño). Con el token de otra cuenta se leyeron la cuenta, su lista de empresas, la empresa, sus sucursales y una sucursal (200); se suspendió la cuenta, se activó la empresa y se activó la sucursal (200); se creó una empresa en la cuenta ajena y una sucursal en la empresa ajena (201); una empresa inexistente respondió 404; y un miembro con solo el claim de la empresa entró a la cuenta del dueño (200).
+  - **GREEN:** 14 de 14 al primer intento. La suite de company-management mostró entonces 2 fallos esperados en pruebas existentes que fijaban el comportamiento defectuoso, porque usaban un token de sujeto inventado: `AccountIntegrationTest#shouldReturn404ForNonExistentAccount` (403 en vez de 404) y `CompanyIntegrationTest#shouldCreateAndActivateCompany` (403 en vez de 201). Se ajustaron para usar el token de la cuenta correspondiente, sin debilitar ninguna aserción.
+  - **Pruebas añadidas después:** el guardia `everyRestRouteIsPublicOrCoveredByTheOwnershipCheck` (lee `/v3/api-docs`: toda ruta es pública o cuelga de las variables que el interceptor comprueba) y `tokenFromLoginWorksForTheOwnAccountOnly` (usa el `accessToken` real de `/auth/login`). Ambas pasaron a la primera, por diseño.
+  - **Mutaciones temporales, todas revertidas:** (1) quitar la cláusula del dueño → caen las 15 pruebas de pertenencia (su fixture usa el flujo de alta) y `shouldCreateAndActivateCompany` (403 al activar); (2) quitar el acceso por claim → cae solo `memberWithTheCompanyClaimReadsTheCompanyButNotTheAccount`; (3) un controlador temporal en `/api/v1/zz-temporal/{id}` → el guardia lo nombra (`Expecting empty but was: ["/api/v1/zz-temporal/{id}"]`); el archivo y su clase compilada se borraron.
+  - **Contrato:** la respuesta común `Forbidden` de [openapi-company-management-v1.yaml](openapi-company-management-v1.yaml) explica ahora cuándo ocurre. Las 10 operaciones ya declaraban 403 (comprobado con un script, no con una prueba).
+  - **GREEN final:** `mvn -B test` en la raíz → `BUILD SUCCESS`, **172 pruebas** (3 + 8 + 8 + 62 + 27 + 64; company-management infra +16).
+- **Afectaciones:**
+  - **API:** quien usaba un token de otra cuenta, o de un sujeto inventado, recibe 403. Hoy solo afecta a las pruebas, porque no hay clientes.
+  - **Rendimiento:** una lectura de la empresa por petición cuando el claim no la incluye.
+  - **Sin cambios:** GraphQL, el registro, `/auth/*` y las rutas inexistentes (404). GraphQL sigue comprobando la empresa solo por claim, así que una empresa creada después de iniciar sesión no se ve por GraphQL hasta renovar el token.
+  - **Decisiones tomadas:** suspender una cuenta queda para la propia cuenta, porque no existe un rol de administración de la plataforma; y el control es a nivel de empresa, sin limitar por sucursal asignada (`branchIds`).
+  - **Sin verificar:** el comportamiento con Postgres (las pruebas usan H2) y el caso de un miembro con acceso a una sola sucursal.
+  - **Pendiente:** ERR-010.
+
 ---
 
 ## Errores
@@ -415,11 +436,11 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 
 ### ERR-008 · Los endpoints REST de company-management no comprueban a quién pertenece lo que consultan o modifican
 
-- **Estado:** ABIERTO. Visto leyendo el código el 2026-11-03 al documentar la suspensión de cuenta (BIT-019). **No reproducido** con una prueba.
+- **Estado:** RESUELTO el 2026-11-03 (BIT-022). Visto leyendo el código al documentar la suspensión de cuenta (BIT-019) y **reproducido** ese mismo día con `RestOwnershipIntegrationTest`.
 - **De qué trata:** `JwtAuthenticationFilter` acepta cualquier JWT válido y la configuración de seguridad solo exige "autenticado" fuera de las rutas públicas. Ningún controlador REST de company-management llama a `JwtAuthorizationService` ni usa `@PreAuthorize`, y los servicios de aplicación tampoco comprueban pertenencia (búsqueda de `UnauthorizedAccessException`, `canAccess`, `ownerUserId` y `membership` sin resultados). Las comprobaciones `canAccessAccount` y `canAccessCompany` solo se usan en las consultas GraphQL (`CompanyGraphQlController`). Los permisos del token se convierten en autoridades `PERM_…`, pero ninguna ruta REST las exige; los `x-required-permission` del contrato no se aplican. Ninguna prueba cubre un 403 por pertenecer a otra cuenta.
-- **Cuándo se manifiesta:** **inferido del código, no probado:** una persona autenticada con un JWT válido de una cuenta podría consultar o modificar por REST (`GET /accounts/{id}`, `POST /accounts/{id}/suspension`, `GET /accounts/{id}/companies`, `GET /companies/{id}`, crear y activar sucursales) recursos de otra cuenta si conoce su identificador público.
+- **Cuándo se manifiesta:** **reproducido (BIT-022):** una persona autenticada con un JWT válido de una cuenta podía consultar o modificar por REST (`GET /accounts/{id}`, `POST /accounts/{id}/suspension`, `GET /accounts/{id}/companies`, `GET /companies/{id}`, crear y activar sucursales) recursos de otra cuenta si conoce su identificador público.
 - **Cómo mitigarlo:** hasta corregirlo, no exponer el módulo a usuarios distintos del dueño de cada cuenta y tratar los identificadores públicos como sensibles.
-- **Para resolverlo:** exigir en cada ruta REST la misma comprobación que ya hace GraphQL (`canAccessAccount` o `canAccessCompany`) y el permiso correspondiente, con una prueba por ruta que verifique el 403 con el token de otra cuenta. Cambia el comportamiento de la API: merece su propia orden de trabajo.
+- **Cómo se resolvió:** un interceptor comprueba la pertenencia en todo lo que cuelga de `/api/v1/accounts/{publicAccountId}` y `/api/v1/companies/{publicCompanyId}`: la cuenta debe ser la del token, y la empresa debe estar en el claim del token o ser de la cuenta del token. Si no, 403 `INSUFFICIENT_PERMISSIONS` sin modificar nada. Pruebas: `RestOwnershipIntegrationTest` (una por ruta, más el guardia de rutas y el login real). Lo que no cubre, la exigencia de permisos por ruta, queda en ERR-010.
 
 ### ERR-009 · GraphQL ejecutaba cualquier consulta aunque `persisted-only` estuviera activo, y la introspección estaba abierta
 
@@ -428,3 +449,11 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cuándo se manifiesta:** cualquier petición autenticada a `/graphql/v1` con cualquier texto de consulta, con la configuración por defecto de inventario o de company-management; y con `persisted-only=true` sin lista, cualquier consulta acompañada del hash de sí misma. **Reproducido** en ambos módulos (ver BIT-020).
 - **Cómo mitigarlo:** mientras no se corrigió, configurar `GRAPHQL_ALLOWED_OPERATION_HASHES` con los hashes de las consultas legítimas, y limitarse a los límites de profundidad y complejidad y al limitador de 60 peticiones por minuto.
 - **Cómo se resolvió:** las operaciones permitidas viven como archivos del proyecto y todo lo demás se rechaza por defecto, con la introspección apagada. Pruebas: `PersistedOperationRegistryTest`, `PersistedQueryInterceptorTest`, `GraphQlClosedByDefaultIntegrationTest`, `GraphQlOpenModeIntegrationTest` y `GraphQlOperationsConsistencyTest` en cada módulo.
+
+### ERR-010 · Los permisos del contrato no se exigen en ninguna ruta REST de company-management
+
+- **Estado:** ABIERTO. Visto leyendo el código el 2026-11-03 al corregir ERR-008 (BIT-022). **No reproducido** con una prueba.
+- **De qué trata:** `PermissionResolver.resolve` concede a todo usuario cinco permisos fijos (`accounts.read`, `companies.create`, `companies.activate`, `branches.create` y `branches.activate`), además de los de su rol, y ningún controlador ni interceptor exige las autoridades `PERM_…` que construye el filtro JWT. Los `x-required-permission` del contrato (por ejemplo `companies.create`) no se aplican, y permisos como `accounts.suspend` ni siquiera existen en el seed V009. Desde BIT-022 se comprueba la pertenencia a la cuenta o empresa, pero no el permiso: dentro de lo suyo, quien tenga un token válido puede hacer cualquier operación REST.
+- **Cuándo se manifiesta:** **inferido del código, no probado:** un miembro de una empresa con un rol de solo lectura podría, con el claim de esa empresa, crear o activar sucursales por REST.
+- **Cómo mitigarlo:** hasta que se exijan permisos, dar acceso por REST solo a dueños y personas de confianza.
+- **Para resolverlo:** definir qué permiso exige cada ruta, sembrar los que falten, hacer que `PermissionResolver` conceda solo los del rol y exigirlos con una prueba por ruta. Es una orden de trabajo propia, porque toca el modelo de roles.

@@ -5272,7 +5272,10 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Forbidden:
-      description: El actor no tiene permisos suficientes
+      description: >-
+        El token es válido pero no da acceso: es de otra cuenta, no tiene acceso a esa empresa o faltan permisos.
+        `code` es `INSUFFICIENT_PERMISSIONS` y no se modifica nada. Una empresa que no existe responde igual a quien
+        no es miembro, para no revelar si existe.
       content:
         application/problem+json:
           schema:
