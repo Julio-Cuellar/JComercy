@@ -9,7 +9,9 @@ import com.jcode.jcomercy.inventory.domain.port.ProductRepositoryPort;
 import com.jcode.jcomercy.inventory.domain.port.UnitOfMeasureRepositoryPort;
 import com.jcode.jcomercy.inventory.domain.port.ProductUnitConversionRepositoryPort;
 import com.jcode.jcomercy.inventory.domain.port.CompanyUnitOfMeasureRepositoryPort;
+import com.jcode.jcomercy.inventory.application.service.ReservationApplicationService;
 import com.jcode.jcomercy.inventory.application.service.StockApplicationService;
+import com.jcode.jcomercy.inventory.domain.port.StockReservationRepositoryPort;
 import com.jcode.jcomercy.inventory.domain.port.StockBalanceRepositoryPort;
 import com.jcode.jcomercy.inventory.domain.port.InventoryMovementRepositoryPort;
 import com.jcode.jcomercy.inventory.domain.port.SerialNumberGeneratorPort;
@@ -34,6 +36,17 @@ public class InventoryInfraConfig {
                                                         ProductUnitConversionRepositoryPort conversions,
                                                         CompanyUnitOfMeasureRepositoryPort companyUnits) {
         return new ProductApplicationService(products, units, conversions, companyUnits);
+    }
+
+    @Bean
+    ReservationApplicationService reservationApplicationService(WarehouseRepositoryPort warehouses,
+                                                                 WarehouseBranchAccessRepositoryPort branchAccess,
+                                                                 ProductRepositoryPort products,
+                                                                 StockBalanceRepositoryPort balances,
+                                                                 StockReservationRepositoryPort reservations,
+                                                                 InventoryMovementRepositoryPort movements,
+                                                                 com.jcode.jcomercy.inventory.domain.port.InventoryOutboxPort outboxPort) {
+        return new ReservationApplicationService(warehouses, branchAccess, products, balances, reservations, movements, outboxPort);
     }
 
     @Bean
