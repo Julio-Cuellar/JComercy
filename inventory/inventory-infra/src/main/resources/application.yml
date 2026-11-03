@@ -19,6 +19,9 @@ spring:
     locations: classpath:db/migration
   graphql:
     path: /graphql/v1
+    schema:
+      introspection:
+        enabled: false
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5673}
@@ -37,8 +40,7 @@ security:
 
 graphql:
   security:
-    persisted-only: ${GRAPHQL_PERSISTED_ONLY:false}
-    allowed-operation-hashes: ${GRAPHQL_ALLOWED_OPERATION_HASHES:}
+    persisted-only: ${GRAPHQL_PERSISTED_ONLY:true}
     max-depth: ${GRAPHQL_MAX_DEPTH:8}
     max-complexity: ${GRAPHQL_MAX_COMPLEXITY:100}
     rate-limit-per-minute: ${GRAPHQL_RATE_LIMIT_PER_MINUTE:60}

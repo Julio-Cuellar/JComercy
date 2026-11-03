@@ -142,6 +142,8 @@ La retención será:
 
 GraphQL tendrá límites de profundidad, complejidad, costo por campo, tiempo de ejecución y consumo según plan.
 
+GraphQL solo ejecuta operaciones registradas. Cada operación vive como archivo `.graphql` en `src/main/resources/graphql/operations/` del módulo; el servicio calcula al arrancar el hash de su forma normalizada (los espacios y comentarios no cuentan) y rechaza todo lo demás, incluida la introspección del esquema, con `errors[0].extensions.code = OPERATION_NOT_ALLOWED`. La selección de campos se decide al diseñar cada operación y no en tiempo de ejecución: una pantalla que necesite otros campos añade una operación nueva y se despliega con ella. En desarrollo local, `GRAPHQL_PERSISTED_ONLY=false` abre las consultas; la introspección sigue apagada.
+
 Las mutaciones estarán sujetas a autorización, idempotencia y concurrencia igual que sus contratos subyacentes. GraphQL no será propietario de datos ni accederá directamente a esquemas de otros módulos.
 
 ## 10. Archivos e importaciones

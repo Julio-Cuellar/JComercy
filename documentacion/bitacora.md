@@ -33,6 +33,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-006 | Una `Idempotency-Key` vacía responde 500 en company-management | RESUELTO (BIT-016) |
 | ERR-007 | Repetir una `Idempotency-Key` ya reclamada por el almacén (proceso nuevo) lanza una excepción sin manejar, que termina en 500, en company-management | RESUELTO (BIT-017 reproducción, BIT-018 solución) |
 | ERR-008 | Los endpoints REST de company-management solo exigen un JWT válido: no comprueban que la cuenta o empresa del token sea la que se consulta o modifica | ABIERTO (leído en el código, no reproducido) |
+| ERR-009 | GraphQL ejecutaba cualquier consulta aunque `persisted-only` estuviera activo, y la introspección del esquema estaba abierta | RESUELTO (BIT-020) |
 
 ---
 
@@ -309,6 +310,27 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Discrepancia contrato ↔ código:** el `SuspensionRequest` anticipado para empresas, sucursales y membresías no coincide con lo que acepta hoy la cuenta.
   - **Hallazgo:** ERR-008.
 
+### BIT-020 · GraphQL cerrado por defecto: solo se ejecutan las operaciones registradas (fase 2, resuelve ERR-009)
+
+- **Qué se hizo:** en `inventory` y en `company-management`, `/graphql/v1` ejecuta solo las operaciones que viven como archivos `.graphql` en `src/main/resources/graphql/operations/` de cada módulo. Cualquier otra consulta, la introspección o una consulta con su propio hash se rechaza con `errors[0].extensions.code = OPERATION_NOT_ALLOWED` y "Esta consulta no está permitida. Actualiza la aplicación e intenta de nuevo.". La introspección queda apagada.
+- **Cómo se hizo:**
+  - **RED del hueco (ejecución):** `PersistedQueryInterceptorTest#rejectsAnUnlistedOperationEvenWithItsOwnValidHash`, contra el interceptor anterior (`new PersistedQueryInterceptor(true, "")`), dio 3 de 4 en verde y esta cayó con `Expecting actual not to be empty`, en inventario y en company-management: con `persisted-only=true` y sin lista, una consulta con el SHA-256 de su propio texto pasaba.
+  - **RED por HTTP (ejecución):** `GraphQlClosedByDefaultIntegrationTest` (nueva) y `GraphQlOpenModeIntegrationTest` (nueva) contra el código abierto: en cerrado fallaron 4 de 5 (la consulta no registrada, la del hash propio y la introspección se ejecutaron sin errores: `Missing property in path $['errors']`; la operación registrada falló con `FileNotFoundException` porque el archivo no existía; sin token responde 401, y esa ya pasaba); en abierto 1 de 2 (la introspección devolvía datos). Igual en ambos módulos.
+  - **RED de compilación:** las pruebas nuevas del registro y del interceptor reescrito fallaron con `cannot find symbol class PersistedOperationRegistry`.
+  - **Código (uno por módulo, copiado):** `PersistedOperationRegistry` (nuevo) normaliza el documento con el analizador de graphql-java en forma compacta, calcula su SHA-256 y lo busca entre los registrados; `PersistedOperationConfig` (nuevo) carga `classpath:graphql/operations/*.graphql` al arrancar; `PersistedQueryInterceptor` reescrito (ya no usa el encabezado `X-GraphQL-Operation-Hash`; registra en `WARN` el hash y no el documento). `application.yml`: `graphql.security.persisted-only` pasa a `true` por defecto, se retira `allowed-operation-hashes` y se agrega `spring.graphql.schema.introspection.enabled: false`.
+  - **Operaciones iniciales:** inventario 9 (`Warehouse`, `Locations`, `Product`, `Products`, `UnitsOfMeasure`, `ProductUnitConversions`, `StockBalances`, `InventoryMovements`, `CompanyUnits`); company-management 2 (`Company`, `CompaniesByAccount`). Cada una pide los campos escalares de su tipo (`Warehouse` sin `locations` anidadas).
+  - **Prueba de consistencia** (`GraphQlOperationsConsistencyTest`, una por módulo): cada operación valida contra el esquema y cada consulta del esquema tiene al menos una operación.
+  - **GREEN:** las clases GraphQL de cada módulo pasaron al primer intento (inventario 17 de 17 en las cuatro primeras clases, company-management 19 de 19 en las cinco); `mvn -B test` en la raíz con solo esta fase → `BUILD SUCCESS`, **153 pruebas** (3 + 8 + 8 + 46 + 27 + 61; infra de company-management e inventario suben 16 cada una).
+  - **Mutaciones para comprobar que las pruebas pueden fallar** (todas temporales; ninguna dejó archivos): (1) registro vacío con `-Dgraphql.security.operations-location='classpath:graphql/*.nomatch'` → cae exactamente `registeredOperationRunsAndReturnsData` en ambos módulos (con una carpeta inexistente el contexto de Spring no arranca); (2) solo las operaciones `Product*` → la prueba de consistencia lista las consultas sin operación; (3) una operación inválida temporal en `target/classes` → `FieldUndefined` señalando su archivo, borrada después.
+  - **Un tropiezo de la verificación:** con la fase 3 apartada, la suite cayó una vez porque `StockAvailability.graphql` seguía en `target/classes` (Maven no borra recursos quitados). Se borró ese archivo de la salida de compilación y la suite pasó. Es un resto de compilación; con `clean` no ocurre.
+- **Afectaciones:**
+  - **Comportamiento:** por defecto, cualquier cliente que mande otro texto recibe `OPERATION_NOT_ALLOWED` (HTTP 200 con `errors`, como es convención en GraphQL). `GRAPHQL_PERSISTED_ONLY=false` abre las consultas en local; la introspección sigue apagada, así que GraphiQL y Postman que dependen de ella dejan de funcionar.
+  - **Configuración:** desaparece `GRAPHQL_ALLOWED_OPERATION_HASHES`. El encabezado `X-GraphQL-Operation-Hash` ya no se usa (inventario aún lo permite en CORS; es inofensivo).
+  - **Producto:** una pantalla nueva que necesite otros campos exige una operación nueva (archivo) y despliegue; el cliente lleva copia de los `.graphql`. Los documentos `diseno-interfaces-company-management.md` (§9) y `catalogo-endpoints-company-management.md` (§15) lo recogen.
+  - **Duplicación consciente:** registro, configuración e interceptor están copiados en los dos módulos; el Core no puede depender de spring-graphql por su SDD.
+  - **Lo que no cambia:** profundidad máxima 8, complejidad 100, 60 peticiones por minuto por dirección y la autorización de cada resolver.
+  - **Sin verificar:** solo se ejecutó por HTTP `UnitsOfMeasure` (inventario) y `CompaniesByAccount` (company-management); las demás operaciones se validaron contra el esquema pero no se corrieron. No existe todavía un cliente real que las use.
+
 ---
 
 ## Errores
@@ -383,3 +405,11 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cuándo se manifiesta:** **inferido del código, no probado:** una persona autenticada con un JWT válido de una cuenta podría consultar o modificar por REST (`GET /accounts/{id}`, `POST /accounts/{id}/suspension`, `GET /accounts/{id}/companies`, `GET /companies/{id}`, crear y activar sucursales) recursos de otra cuenta si conoce su identificador público.
 - **Cómo mitigarlo:** hasta corregirlo, no exponer el módulo a usuarios distintos del dueño de cada cuenta y tratar los identificadores públicos como sensibles.
 - **Para resolverlo:** exigir en cada ruta REST la misma comprobación que ya hace GraphQL (`canAccessAccount` o `canAccessCompany`) y el permiso correspondiente, con una prueba por ruta que verifique el 403 con el token de otra cuenta. Cambia el comportamiento de la API: merece su propia orden de trabajo.
+
+### ERR-009 · GraphQL ejecutaba cualquier consulta aunque `persisted-only` estuviera activo, y la introspección estaba abierta
+
+- **Estado:** RESUELTO el 2026-11-03 (BIT-020). Visto leyendo el código al responder una duda sobre contratos GraphQL fijos y reproducido ese mismo día con `PersistedQueryInterceptorTest` y con pruebas por HTTP.
+- **De qué trata:** el `PersistedQueryInterceptor` dejaba pasar cualquier consulta si el encabezado `X-GraphQL-Operation-Hash` traía el SHA-256 de su propio texto; solo `allowed-operation-hashes` (una variable de entorno, vacía por defecto) restringía de verdad. Con los valores por defecto (`persisted-only=false`, lista vacía) pasaba todo, y con `persisted-only=true` sin lista no se negaba nada. Además la introspección estaba activa (`spring.graphql.schema.introspection.enabled` vale `true` por defecto en Spring Boot 3.3.4) y ninguna prueba tocaba `/graphql` por HTTP.
+- **Cuándo se manifiesta:** cualquier petición autenticada a `/graphql/v1` con cualquier texto de consulta, con la configuración por defecto de inventario o de company-management; y con `persisted-only=true` sin lista, cualquier consulta acompañada del hash de sí misma. **Reproducido** en ambos módulos (ver BIT-020).
+- **Cómo mitigarlo:** mientras no se corrigió, configurar `GRAPHQL_ALLOWED_OPERATION_HASHES` con los hashes de las consultas legítimas, y limitarse a los límites de profundidad y complejidad y al limitador de 60 peticiones por minuto.
+- **Cómo se resolvió:** las operaciones permitidas viven como archivos del proyecto y todo lo demás se rechaza por defecto, con la introspección apagada. Pruebas: `PersistedOperationRegistryTest`, `PersistedQueryInterceptorTest`, `GraphQlClosedByDefaultIntegrationTest`, `GraphQlOpenModeIntegrationTest` y `GraphQlOperationsConsistencyTest` en cada módulo.

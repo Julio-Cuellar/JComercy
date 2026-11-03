@@ -1,0 +1,11 @@
+query UnitsOfMeasure {
+  unitsOfMeasure {
+    code
+    name
+    symbol
+    dimension
+    baseUnitCode
+    conversionFactor
+    decimals
+  }
+}

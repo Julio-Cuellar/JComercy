@@ -1,0 +1,20 @@
+query StockBalances($companyId: ID!, $productId: ID) {
+  stockBalances(companyId: $companyId, productId: $productId) {
+    id
+    companyId
+    branchId
+    warehouseId
+    locationId
+    productId
+    lotId
+    serialNumber
+    expirationDate
+    inventoryStatus
+    onHand
+    reserved
+    available
+    unitCost
+    costingMethod
+    version
+  }
+}

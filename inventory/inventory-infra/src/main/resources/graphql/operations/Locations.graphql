@@ -1,0 +1,14 @@
+query Locations($warehouseId: ID!) {
+  locations(warehouseId: $warehouseId) {
+    id
+    publicLocationId
+    warehouseId
+    parentLocationId
+    code
+    name
+    type
+    status
+    capacity
+    capacityUnitCode
+  }
+}

@@ -1,0 +1,17 @@
+query Warehouse($id: ID!) {
+  warehouse(id: $id) {
+    id
+    publicWarehouseId
+    companyId
+    scope
+    branchId
+    code
+    name
+    type
+    status
+    defaultWarehouse
+    timezone
+    currency
+    version
+  }
+}

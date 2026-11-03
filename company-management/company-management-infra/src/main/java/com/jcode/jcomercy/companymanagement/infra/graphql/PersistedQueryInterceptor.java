@@ -1,8 +1,10 @@
 package com.jcode.jcomercy.companymanagement.infra.graphql;
 
+import graphql.ExecutionResultImpl;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
-import graphql.ExecutionResultImpl;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.graphql.server.WebGraphQlInterceptor;
 import org.springframework.graphql.server.WebGraphQlRequest;
@@ -11,52 +13,41 @@ import org.springframework.graphql.support.DefaultExecutionGraphQlResponse;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.Arrays;
-import java.util.HexFormat;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.Map;
 
+/**
+ * Deja pasar solo las operaciones registradas como archivos del proyecto. Con `graphql.security.persisted-only=false`
+ * (desarrollo local) deja pasar cualquiera.
+ */
 @Component
 public class PersistedQueryInterceptor implements WebGraphQlInterceptor {
-    public static final String HASH_HEADER = "X-GraphQL-Operation-Hash";
-    private final boolean persistedOnly;
-    private final Set<String> allowedHashes;
+    private static final Logger log = LoggerFactory.getLogger(PersistedQueryInterceptor.class);
 
-    public PersistedQueryInterceptor(
-            @Value("${graphql.security.persisted-only:false}") boolean persistedOnly,
-            @Value("${graphql.security.allowed-operation-hashes:}") String configuredHashes) {
+    private final boolean persistedOnly;
+    private final PersistedOperationRegistry registry;
+
+    public PersistedQueryInterceptor(@Value("${graphql.security.persisted-only:true}") boolean persistedOnly,
+                                     PersistedOperationRegistry registry) {
         this.persistedOnly = persistedOnly;
-        this.allowedHashes = Arrays.stream(configuredHashes.split(","))
-                .map(String::trim).filter(value -> !value.isBlank()).collect(Collectors.toUnmodifiableSet());
+        this.registry = registry;
     }
 
     @Override
     public Mono<WebGraphQlResponse> intercept(WebGraphQlRequest request, Chain chain) {
-        String expectedHash = sha256(request.getDocument());
-        String suppliedHash = request.getHeaders().getFirst(HASH_HEADER);
-        boolean valid = suppliedHash != null && MessageDigest.isEqual(
-                expectedHash.getBytes(StandardCharsets.US_ASCII), suppliedHash.trim().getBytes(StandardCharsets.US_ASCII));
-        if ((persistedOnly || !allowedHashes.isEmpty())
-                && (!valid || !allowedHashes.isEmpty() && !allowedHashes.contains(expectedHash))) {
-            return Mono.just(rejected(request, "GraphQL operation is not persisted or is not allowed"));
+        if (!persistedOnly || registry.isAllowed(request.getDocument())) {
+            return chain.next(request);
         }
-        return chain.next(request);
+        // Se registra el hash y no el documento: así se puede rastrear la consulta sin guardar lo que pidió el cliente.
+        log.warn("Operación GraphQL rechazada hash={}", registry.hashOf(request.getDocument()).orElse("ilegible"));
+        return Mono.just(rejected(request));
     }
 
-    static String sha256(String document) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(document.getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception exception) {
-            throw new IllegalStateException("Unable to hash GraphQL operation", exception);
-        }
-    }
-
-    private static WebGraphQlResponse rejected(WebGraphQlRequest request, String message) {
-        GraphQLError error = GraphqlErrorBuilder.newError().message(message).build();
+    private static WebGraphQlResponse rejected(WebGraphQlRequest request) {
+        GraphQLError error = GraphqlErrorBuilder.newError()
+            .message("Esta consulta no está permitida. Actualiza la aplicación e intenta de nuevo.")
+            .extensions(Map.of("code", "OPERATION_NOT_ALLOWED"))
+            .build();
         var result = ExecutionResultImpl.newExecutionResult().data(null).errors(List.of(error)).build();
         return new WebGraphQlResponse(new DefaultExecutionGraphQlResponse(request.toExecutionInput(), result));
     }

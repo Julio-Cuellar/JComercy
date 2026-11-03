@@ -249,6 +249,8 @@ Mutaciones controladas:
 
 Los comandos críticos, operaciones asíncronas, integraciones y cambios de suscripción se mantendrán en REST. GraphQL tendrá límites de profundidad, complejidad, costo por campo y tiempo de ejecución.
 
+Solo se ejecutan las operaciones registradas como archivos `.graphql` (ver el diseño de interfaces, §9). Hoy están registradas `Company` y `CompaniesByAccount`; el resto de las consultas y mutaciones de esta lista todavía no existen en el código.
+
 ## 16. Webhooks
 
 | Método | Ruta | Tipo | Propósito |

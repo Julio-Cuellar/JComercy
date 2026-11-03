@@ -1,0 +1,11 @@
+query CompanyUnits($companyId: ID!) {
+  companyUnits(companyId: $companyId) {
+    code
+    name
+    symbol
+    dimension
+    baseUnitCode
+    conversionFactor
+    decimals
+  }
+}

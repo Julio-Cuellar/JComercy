@@ -1,0 +1,15 @@
+query ProductUnitConversions($productId: ID!) {
+  productUnitConversions(productId: $productId) {
+    id
+    productId
+    fromUnitCode
+    toUnitCode
+    factor
+    roundingScale
+    roundingMode
+    purchaseUnit
+    salesUnit
+    defaultConversion
+    status
+  }
+}
