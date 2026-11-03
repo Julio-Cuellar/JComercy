@@ -27,6 +27,8 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 |---|---|---|
 | ERR-001 | `AccountIntegrationTest` depende del orden de ejecución de las pruebas | RESUELTO (BIT-002) |
 | ERR-002 | Prueba de reintentos del Outbox falla de forma intermitente por competir con el despachador real | RESUELTO (BIT-006) |
+| ERR-003 | Una ruta inexistente de inventario responde 500 en vez de 404 | ABIERTO |
+| ERR-004 | La prueba de concurrencia de reservas falla al repetirse por usar referencias fijas | RESUELTO (BIT-009) |
 
 ---
 
@@ -112,6 +114,68 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
   - Colección Postman de la carpeta `4. Stock`.
 - **Sin commit:** todos los cambios están en el árbol de trabajo (incluido el borrado de BIT-005, que está en el índice). Nada se ha subido ni confirmado.
 
+## Fase 1: reservas de stock
+
+Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, descontarlo al despachar y liberarlo si se cancela. Antes de esto el saldo ya tenía la columna `reserved` y `StockBalance.reserve()`, pero nada registraba *quién* reservó ni permitía confirmar o expirar.
+
+### BIT-008 · Dominio de reservas (fase 1)
+
+- **Qué se hizo:** se agregó el modelo de reserva y la confirmación de reservas sobre el saldo.
+- **Cómo se hizo:**
+  - [ReservationStatus.java](../inventory/inventory-domain/src/main/java/com/jcode/jcomercy/inventory/domain/model/stock/ReservationStatus.java): `ACTIVE`, `COMMITTED`, `RELEASED`, `EXPIRED`.
+  - [StockReservation.java](../inventory/inventory-domain/src/main/java/com/jcode/jcomercy/inventory/domain/model/stock/StockReservation.java): una reserva apunta a **un saldo concreto** y a una **referencia de negocio** (por ejemplo una línea de pedido). Sale de `ACTIVE` una sola vez (`commit`, `release` o `expire`). Las referencias se normalizan a mayúsculas para que la búsqueda no distinga mayúsculas. `expire` solo procede si ya pasó el plazo.
+  - [StockBalance.java](../inventory/inventory-domain/src/main/java/com/jcode/jcomercy/inventory/domain/model/stock/StockBalance.java): nuevo `commitReservation(qty)`, que descuenta existencias y reservado a la vez. No se reutilizó `issue()` porque ese método resta lo reservado de la disponibilidad y rechazaría el despacho.
+  - **RED:** `mvn test -pl inventory/inventory-domain` → error de compilación por `StockReservation`, `ReservationStatus` y `commitReservation` inexistentes (RED de compilación; las pruebas nuevas son `StockReservationTest` y 4 casos en `StockBalanceTest`).
+  - **GREEN:** 27 de 27 pruebas del dominio (15 anteriores + 12 nuevas).
+- **Afectaciones:** solo se agregan tipos y un método; nada existente cambia de comportamiento. También se agregaron pruebas de `releaseReservation`, que no tenía ninguna.
+
+### BIT-009 · Persistencia, servicio y REST de reservas (fase 1)
+
+- **Qué se hizo:** reservar, liberar y confirmar por referencia, más la consulta de disponibilidad, con eventos en el Outbox.
+- **Cómo se hizo:**
+  - **Migración** [V008__inventory_create_stock_reservation.sql](../inventory/inventory-infra/src/main/resources/db/migration/V008__inventory_create_stock_reservation.sql): tabla `inventory.stock_reservation` con claves foráneas, restricciones de cantidad y estado, e índices por referencia, por vencimiento y por saldo. El plan decía `V009`, pero `V008` (datos logísticos del producto) no se ha hecho, así que ésta tomó el siguiente número libre.
+  - **Puertos y adaptadores:** `StockReservationRepositoryPort` (nuevo) y dos métodos nuevos en `StockBalanceRepositoryPort` (`findAllocatableForUpdate`, `findByIdForUpdate`) con bloqueo pesimista ordenado por id.
+  - **Servicio** [ReservationApplicationService.java](../inventory/inventory-application/src/main/java/com/jcode/jcomercy/inventory/application/service/ReservationApplicationService.java):
+    - `reserve` reparte la cantidad entre los saldos del producto en el almacén si ninguno alcanza solo; opcionalmente se limita a una ubicación.
+    - `release` y `commit` operan sobre **toda la referencia**. `commit` descuenta el saldo y crea el movimiento `ISSUE` en el kárdex con la referencia.
+    - **Orden de bloqueo:** primero se bloquean los saldos y recién después se comprueba la referencia duplicada y se leen las reservas. Así dos reservas simultáneas se serializan y la segunda ve lo que la primera confirmó.
+    - **Regla:** una referencia cubre un producto en un almacén. Un pedido con varios productos usa una referencia por línea (por ejemplo `ML-123-1`, `ML-123-2`).
+  - **REST** [ReservationController.java](../inventory/inventory-infra/src/main/java/com/jcode/jcomercy/inventory/infra/web/controller/ReservationController.java), bajo `/api/v1/companies/{companyId}`:
+    - `POST /branches/{branchId}/stock/reservations`, `…/release`, `…/commit`: permiso `inventory.stock.write`, `Idempotency-Key` obligatorio.
+    - `GET /stock/availability?productId=`: permiso `inventory.stock.read`.
+    - Códigos: 201 reserva creada, 422 stock insuficiente, 409 referencia duplicada, 404 si no hay reservas activas, 403 sin permiso o sin acceso a la empresa o sucursal.
+  - **Eventos (Outbox):** `inventory.reservation.created|released|committed`, y `inventory.stock.issued` al confirmar. Todos llevan el usuario real y el `available` resultante.
+  - **RED:** `ReservationIntegrationTest` (9 pruebas) + `InventoryMigrationTest` → 10 de 10 fallan: la migración con `expected: 13 but was: 12` y las reservas con `Status expected:<201> but was:<500>` (ver ERR-003 sobre ese 500).
+  - **GREEN:** 10 de 10 al primer intento. Luego la prueba de concurrencia se convirtió en `@RepeatedTest(10)`; con referencias fijas fallaron 9 de 10 repeticiones (ERR-004). Corregida, **18 de 18**.
+  - **Comprobación de que la prueba detecta el defecto (mutación):** se quitó temporalmente el `@Lock` de `findAllocatableForUpdate` → la prueba concurrente **falla**: una de las dos peticiones responde 500 por `ObjectOptimisticLockingFailureException`. Se restauró el archivo y se verificó con `cmp` que quedó idéntico al respaldo.
+- **Afectaciones:**
+  - **Sobre-reserva:** imposible incluso sin el bloqueo, porque `@Version` en `stock_balance` rechaza la segunda escritura; pero sin el bloqueo el cliente recibiría un 500. El bloqueo convierte ese caso en un 422 limpio.
+  - **Datos:** tabla nueva; `stock_balance.reserved` ahora se mueve también por estas operaciones.
+  - **Contratos:** **no** se actualizó `openapi-inventory-v1.yaml` ni el esquema GraphQL (pendiente). Los endpoints existen pero no están documentados en el contrato.
+  - **Duplicación consciente:** las validaciones de almacén (empresa, activo, sucursal) se copiaron de `StockApplicationService` en vez de extraerlas, para no tocar ese servicio en esta fase. Conviene unificarlas después.
+
+### BIT-010 · Expiración de reservas (fase 1)
+
+- **Qué se hizo:** las reservas pueden llevar un plazo (`expiresAt`); al vencer se libera el stock y se publica `inventory.reservation.expired` con actor `SYSTEM`.
+- **Cómo se hizo:**
+  - `ReservationApplicationService.expireDue(now, limit)` y el trabajo [ReservationExpirationJob.java](../inventory/inventory-infra/src/main/java/com/jcode/jcomercy/inventory/infra/reservation/ReservationExpirationJob.java), que corre cada 60 s por defecto (`inventory.reservations.expiration.fixed-delay-ms`).
+  - Se puede apagar con `inventory.reservations.expiration.enabled=false`; las pruebas lo apagan en [application.properties](../inventory/inventory-infra/src/test/resources/application.properties) para evitar la carrera de ERR-002.
+  - Un plazo ya vencido al reservar se rechaza (422).
+  - **Honestidad sobre el proceso:** `expireDue` se escribió junto con el servicio, **antes** que su prueba, así que no hay RED real. Para compensarlo, tras escribir las 2 pruebas (`expiredReservationGivesTheStockBackAndCannotBeCommitted`, `deadlineInThePastIsRejected`) se hizo una **mutación**: `expireDue` marcando vencida sin devolver el stock → la prueba falla con `expected: 7 but was: 3.0` y las otras 19 siguen pasando. Se restauró el archivo y se verificó con `cmp`.
+  - **GREEN:** 20 de 20 en `ReservationIntegrationTest`.
+- **Afectaciones:** en producción el trabajo está **activo por defecto**. Si una reserva se confirma justo mientras el trabajo la procesa, `@Version` en la reserva hace fallar una de las dos transacciones y se revierte; el trabajo reintenta en el siguiente ciclo.
+
+### BIT-011 · Verificación de la fase 1
+
+- **Estado verificado:** `mvn -B test` en la raíz → `BUILD SUCCESS`, **102 pruebas**: core 3, company-management 8 + 7 + 15, inventory dominio 27 e infraestructura 42.
+- **Desviaciones respecto al plan (decididas por mí al diseñar; quedan por confirmar):**
+  - No hay evento `inventory.stock.available_changed`: el `available` viaja dentro de cada evento de reserva.
+  - No hay `inventory.reservation.failed`: por REST el rechazo es síncrono (422). Hará falta cuando el canal de venta reserve de forma asíncrona.
+  - Solo se puede liberar o confirmar una referencia completa, no parcialmente.
+  - Los saldos con lote o serie se reparten sin criterio de caducidad (no hay FEFO).
+- **Pendiente:** contrato OpenAPI y GraphQL, ERR-003, y los pendientes de la fase 0 (datos logísticos del producto, reglas de OT-INV-002, colección Postman).
+- **Sin commit:** los cambios de la fase 1 están en el árbol de trabajo.
+
 ---
 
 ## Errores
@@ -133,3 +197,21 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 - **Cómo mitigarlo:** volver a ejecutar la suite (suele pasar a la segunda), o correr la prueba sola. Un fallo de esta prueba con `retryCount` mayor que 1 no indica un defecto del Outbox.
 - **Cómo se resolvió:** el despachador se activa con `outbox.publisher.enabled` (por defecto `true`) y los recursos de prueba lo ponen en `false`. Se reprodujo de forma determinista acelerando el despachador a 20 ms (falla 3 de 3, `retryCount` entre 18 y 21) y, con el interruptor apagado, esa misma reproducción pasa 3 de 3.
 - **Lección:** una prueba que invoca a mano un componente que también corre en segundo plano debe apagar el segundo; un tick de 5 s es lo bastante raro como para pasar desapercibido varias corridas seguidas.
+
+### ERR-003 · Una ruta inexistente de inventario responde 500 en vez de 404
+
+- **Estado:** ABIERTO (detectado el 2026-11-02)
+- **De qué trata:** `InventoryExceptionHandler.handleUnexpected` captura `Exception`, y eso incluye `NoResourceFoundException` (la que Spring lanza cuando ninguna ruta coincide). Resultado: una URL que no existe responde `500 INTERNAL_SERVER_ERROR` con "Error interno del servidor" y registra un `ERROR` con traza completa.
+- **Cuándo se manifiesta:** con cualquier petición a una ruta inexistente de la aplicación de inventario, por ejemplo un error de tecleo en la URL. Se vio al correr las pruebas de reservas *antes* de que existieran sus endpoints: `Status expected:<201> but was:<500>`, con `No static resource api/v1/companies/.../stock/reservations` en el log.
+- **Cómo mitigarlo:** no interpretar un 500 en una ruta recién escrita como un fallo del servidor: revisar primero que la URL exista. Un cliente con reintentos automáticos (como el futuro canal de venta) no debe reintentar indefinidamente ante un 500 sin revisar la ruta.
+- **Cómo se resolvería:** agregar un `@ExceptionHandler(NoResourceFoundException.class)` que responda 404, con su prueba en `InventoryExceptionHandlerTest`. No se hizo en esta fase para no ampliar el alcance.
+- **Alcance:** solo se revisó inventario; `company-management` podría tener el mismo comportamiento.
+
+### ERR-004 · La prueba de concurrencia de reservas falla al repetirse
+
+- **Estado:** RESUELTO el 2026-11-02 (BIT-009)
+- **De qué trata:** `onlyOneOfTwoConcurrentReservationsFitsInTheStock` usaba las referencias fijas `ML-7-A` y `ML-7-B`. Como una referencia solo puede tener una reserva activa por empresa, las reservas de una ejecución bloqueaban a la siguiente con `409 an active reservation already exists for this reference`.
+- **Cuándo se manifiesta:** al repetir la prueba (`@RepeatedTest`) o correrla otra vez contra la misma base H2 en memoria sin reiniciarla. Con `@RepeatedTest(10)` pasó la primera repetición y fallaron las otras 9.
+- **Cómo mitigarlo:** reiniciar la base (nueva JVM) o usar referencias únicas por ejecución.
+- **Cómo se resolvió:** las referencias llevan como sufijo los 8 primeros caracteres del `productId` de la prueba, que es único por repetición. Resultado: 18 de 18 (8 pruebas + 10 repeticiones).
+- **Lección:** es la misma de ERR-001: en una base compartida, los datos de una prueba se identifican con IDs propios. Además, el fallo confirmó que la regla de referencia única funciona.
