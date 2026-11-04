@@ -128,7 +128,9 @@ public class StockApplicationService {
                 && !branchAccess.existsByWarehouseIdAndBranchId(warehouse.id(), command.branchId())) {
             throw new InventoryApplicationException("branch does not have access to this shared warehouse");
         }
-        var location = locations.findById(command.locationId())
+        // Se bloquea la ubicación: si el producto aún no tiene saldo aquí, dos movimientos a la vez lo crearían los dos
+        // (la restricción única no los frena porque lote y serie son nulos). Los demás flujos bloquean solo saldos.
+        var location = locations.findByIdForUpdate(command.locationId())
                 .orElseThrow(() -> InventoryApplicationException.notFound("warehouse location not found"));
         if (!location.warehouseId().equals(warehouse.id())) throw new InventoryApplicationException("location does not belong to warehouse");
         if (!location.acceptsStock()) throw new InventoryApplicationException("warehouse location does not accept stock");

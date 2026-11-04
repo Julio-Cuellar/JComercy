@@ -11,6 +11,9 @@ spring:
     hibernate:
       ddl-auto: validate
     show-sql: false
+    # Con open-in-view cada petición retiene una conexión hasta terminar y las consultas con JdbcTemplate piden otra:
+    # con tantas peticiones simultáneas como conexiones tiene el pool, ninguna consigue la segunda (ERR-015).
+    open-in-view: false
   flyway:
     enabled: true
     baseline-on-migrate: true

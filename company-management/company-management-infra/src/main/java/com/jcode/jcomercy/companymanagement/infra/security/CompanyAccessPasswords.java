@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
@@ -46,6 +47,9 @@ public class CompanyAccessPasswords {
 
     /** Lo que hay guardado de un acceso con contraseña. */
     private record Stored(String hash, int failedAttempts, OffsetDateTime lockedUntil) { }
+
+    /** Un intento reservado. {@code lockUntil} es el bloqueo que habría puesto si fue el último de los cinco. */
+    private record Attempt(OffsetDateTime lockUntil) { }
 
     private final JdbcTemplate jdbc;
     private final PasswordHasher hasher;
@@ -101,9 +105,13 @@ public class CompanyAccessPasswords {
         if (accountPassword == null || accountPassword.isBlank()) {
             throw new CompanyAccessPasswordException(Kind.ACCOUNT_PASSWORD_REQUIRED, ACCOUNT_REQUIRED);
         }
+        Optional<Attempt> attempt = claimAttempt(accountId, companyId);
+        if (attempt.isEmpty()) {
+            return; // Mientras tanto ya se la quitaron: no hay nada que quitar.
+        }
         if (!matchesAccountPassword(accountId, accountPassword)) {
-            throw failure(accountId, companyId, Kind.ACCOUNT_PASSWORD_INVALID, "Tu contraseña de cuenta no es correcta.",
-                "Contraseña de cuenta incorrecta al quitar la de la empresa");
+            throw failure(accountId, companyId, attempt.get(), Kind.ACCOUNT_PASSWORD_INVALID,
+                "Tu contraseña de cuenta no es correcta.", "Contraseña de cuenta incorrecta al quitar la de la empresa");
         }
         jdbc.update("DELETE FROM company_management.company_access_password WHERE user_id=? AND public_company_id=?",
             accountId, companyId);
@@ -115,17 +123,52 @@ public class CompanyAccessPasswords {
         if (password == null || password.isBlank()) {
             throw new CompanyAccessPasswordException(Kind.COMPANY_PASSWORD_REQUIRED, whenMissing);
         }
+        Optional<Attempt> attempt = claimAttempt(accountId, companyId);
+        if (attempt.isEmpty()) {
+            return; // Mientras tanto le quitaron la contraseña al acceso: ya no hay nada que probar.
+        }
         if (!hasher.matches(password, stored.hash())) {
-            throw failure(accountId, companyId, Kind.COMPANY_PASSWORD_INVALID, "La contraseña de esta empresa no es correcta.",
-                "Contraseña de empresa incorrecta");
+            throw failure(accountId, companyId, attempt.get(), Kind.COMPANY_PASSWORD_INVALID,
+                "La contraseña de esta empresa no es correcta.", "Contraseña de empresa incorrecta");
         }
-        if (stored.failedAttempts() > 0 || stored.lockedUntil() != null) {
-            jdbc.update("""
+        jdbc.update("""
+            UPDATE company_management.company_access_password
+            SET failed_attempts=0, locked_until=NULL, updated_at=?
+            WHERE user_id=? AND public_company_id=?
+            """, now(), accountId, companyId);
+    }
+
+    /**
+     * Reserva un intento <b>antes</b> de verificar la contraseña. Contarlo después dejaba que una ráfaga de peticiones
+     * pasara todas la comprobación del bloqueo antes de que ninguna anotara su fallo, y se probaban muchas más de cinco.
+     * Es una sola sentencia: sube el contador y, si este era el último intento, deja el bloqueo puesto en el mismo
+     * instante, así ninguna petición posterior verifica nada. Solo actúa si el acceso no está bloqueado.
+     *
+     * @return el intento reservado, o vacío si la contraseña del acceso ya no existe
+     * @throws CompanyAccessPasswordException si el acceso está bloqueado
+     */
+    private Optional<Attempt> claimAttempt(String accountId, String companyId) {
+        for (int tries = 0; tries < 3; tries++) {
+            OffsetDateTime now = now();
+            OffsetDateTime until = now.plus(LOCK_DURATION);
+            int claimed = jdbc.update("""
                 UPDATE company_management.company_access_password
-                SET failed_attempts=0, locked_until=NULL, updated_at=?
-                WHERE user_id=? AND public_company_id=?
-                """, now(), accountId, companyId);
+                SET failed_attempts = CASE WHEN failed_attempts + 1 >= ? THEN 0 ELSE failed_attempts + 1 END,
+                    locked_until = CASE WHEN failed_attempts + 1 >= ? THEN CAST(? AS TIMESTAMP WITH TIME ZONE) ELSE locked_until END,
+                    updated_at = ?
+                WHERE user_id=? AND public_company_id=? AND (locked_until IS NULL OR locked_until <= ?)
+                """, MAX_FAILED_ATTEMPTS, MAX_FAILED_ATTEMPTS, until, now, accountId, companyId, now);
+            if (claimed == 1) {
+                return Optional.of(new Attempt(until));
+            }
+            Optional<Stored> current = find(accountId, companyId);
+            if (current.isEmpty()) {
+                return Optional.empty();
+            }
+            failIfLocked(current.get(), accountId, companyId);
+            // Ni bloqueado ni reservado: el bloqueo venció entre las dos sentencias. Se vuelve a intentar.
         }
+        throw locked(1);
     }
 
     private void failIfLocked(Stored stored, String accountId, String companyId) {
@@ -139,31 +182,25 @@ public class CompanyAccessPasswords {
     }
 
     /**
-     * Anota un intento fallido y devuelve el error que corresponde: el aviso de cuántos intentos quedan o, si fue el
-     * último, el bloqueo. El incremento es una sola sentencia, así dos intentos a la vez no se pisan.
+     * Devuelve el error de un intento fallido: el aviso de cuántos intentos quedan o, si el acceso quedó bloqueado, el
+     * bloqueo. El intento ya se contó al reservarlo ({@link #claimAttempt}); aquí solo se lee en qué quedó el contador.
+     * Si el bloqueo lo puso este mismo intento se avisa de los quince minutos completos; si ya lo había puesto otro, de
+     * lo que falta.
      */
-    private CompanyAccessPasswordException failure(String accountId, String companyId, Kind kind, String what, String logMessage) {
+    private CompanyAccessPasswordException failure(String accountId, String companyId, Attempt attempt, Kind kind,
+                                                   String what, String logMessage) {
+        Optional<Stored> state = find(accountId, companyId);
         OffsetDateTime now = now();
-        jdbc.update("""
-            UPDATE company_management.company_access_password
-            SET failed_attempts = failed_attempts + 1, updated_at=?
-            WHERE user_id=? AND public_company_id=?
-            """, now, accountId, companyId);
-        Integer counted = jdbc.queryForObject("""
-            SELECT failed_attempts FROM company_management.company_access_password
-            WHERE user_id=? AND public_company_id=?
-            """, Integer.class, accountId, companyId);
-        int attempts = counted == null ? MAX_FAILED_ATTEMPTS : counted;
-        if (attempts >= MAX_FAILED_ATTEMPTS) {
-            OffsetDateTime until = now.plus(LOCK_DURATION);
-            jdbc.update("""
-                UPDATE company_management.company_access_password
-                SET failed_attempts=0, locked_until=?, updated_at=?
-                WHERE user_id=? AND public_company_id=?
-                """, until, now, accountId, companyId);
-            log.warn("Acceso a empresa bloqueado accountId={} companyId={} hasta={}", accountId, companyId, until);
-            return locked(LOCK_DURATION.getSeconds());
+        OffsetDateTime lockedUntil = state.map(Stored::lockedUntil).orElse(null);
+        if (lockedUntil != null && lockedUntil.isAfter(now)) {
+            if (lockedUntil.toInstant().equals(attempt.lockUntil().toInstant())) {
+                log.warn("Acceso a empresa bloqueado accountId={} companyId={} hasta={}", accountId, companyId, lockedUntil);
+                return locked(LOCK_DURATION.getSeconds());
+            }
+            Duration remaining = Duration.between(now, lockedUntil);
+            return locked(remaining.getSeconds() + (remaining.getNano() > 0 ? 1 : 0));
         }
+        int attempts = state.map(Stored::failedAttempts).orElse(0);
         log.warn("{} accountId={} companyId={} intentos={}", logMessage, accountId, companyId, attempts);
         int left = MAX_FAILED_ATTEMPTS - attempts;
         return new CompanyAccessPasswordException(kind, what + " " + (left == 1
@@ -219,7 +256,8 @@ public class CompanyAccessPasswords {
             """, hash, now(), accountId, companyId);
     }
 
+    /** Hasta microsegundos, que es lo que guarda la base de datos: así lo guardado se puede comparar con lo escrito. */
     private static OffsetDateTime now() {
-        return OffsetDateTime.now(ZoneOffset.UTC);
+        return OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
     }
 }

@@ -37,6 +37,12 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-010 | Los permisos no se exigen en ninguna ruta REST de company-management, el token de un inicio de sesión real no trae los permisos que inventario exige, y los comodines de los roles no los interpreta ningún módulo | RESUELTO (BIT-023 reproducción, BIT-024 solución) |
 | ERR-011 | El token lleva juntos los permisos de todas las empresas de la persona: quien es dueña de una y miembro de otra lleva `*` también para la ajena | RESUELTO (BIT-026 a BIT-031) |
 | ERR-012 | El repositorio git quedó con archivos de objeto vacíos y la rama `feat/token-por-empresa` apuntando a un commit ilegible; se perdió el commit de BIT-027, no su trabajo | RESUELTO (2026-11-03) |
+| ERR-013 | Las dos aplicaciones no arrancan sobre PostgreSQL: Flyway 10 rechaza la base de datos porque falta su módulo | RESUELTO (BIT-033) |
+| ERR-014 | `InventoryMigrationTest` solo valía en H2: consultaba los nombres de esquema y de tabla en mayúsculas | RESUELTO (BIT-034) |
+| ERR-015 | Company-management se queda sin conexiones con 10 peticiones simultáneas: cada petición retiene una y pide otra | RESUELTO (BIT-035) |
+| ERR-016 | Una ráfaga de intentos de contraseña de empresa verifica muchas más de cinco contraseñas antes de bloquear | RESUELTO (BIT-035) |
+| ERR-017 | Varias primeras entradas simultáneas de un producto crean un saldo cada una, y después toda operación sobre ese producto y lugar responde 500 | RESUELTO (BIT-035) |
+| ERR-018 | Los seriales de una empresa nueva, pedidos a la vez, fallan con 500 salvo una petición | RESUELTO (BIT-035) |
 
 ---
 
@@ -545,6 +551,95 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Sin verificar:** Postgres (todo corre con H2); el stock negativo de punta a punta (se prueba que el permiso no llega, pero no se ejercitó en inventario una salida que deje el saldo en negativo); y el script sigue sin correr en el CI.
 - **Pendiente:** las rutas de roles y de membresías, que son un plan propio.
 
+### BIT-033 · Las dos aplicaciones corren sobre PostgreSQL real en las pruebas (perfil `postgres`, fase P1)
+
+- **Qué se hizo:** un perfil Maven `postgres` (`mvn -Ppostgres test`) hace que las pruebas de Spring de `company-management-infra` e `inventory-infra` usen un PostgreSQL 16 real en un contenedor en lugar de H2, y una prueba de humo por módulo comprueba que la aplicación arranca, que Flyway aplica todas las migraciones y que Hibernate valida el esquema. Es la fase P1 del plan «Postgres, RabbitMQ y rutas de roles y membresías». La prueba de humo encontró un defecto real: ERR-013.
+- **Cómo se hizo:**
+  - **Rama nueva** `feat/pruebas-postgres`, desde `main` (el PR 4 ya estaba fusionado).
+  - **Mecanismo.** `PostgresTestDatabase` (en cada módulo, en `src/test`) es un `ApplicationContextInitializer` registrado en `META-INF/spring.factories`. Si la propiedad `jcomercy.test.db` vale `postgres`, arranca un solo contenedor `postgres:16-alpine` por ejecución y reemplaza la URL, el usuario, la clave, el driver y el dialecto del `application.yml`, que traían H2 fijos. Sin la propiedad no hace nada. Así las pruebas existentes se podrán correr contra Postgres sin tocarlas (fase P2). El perfil del `pom.xml` raíz solo pasa la propiedad a Surefire. Está duplicado por módulo porque los módulos son independientes entre sí.
+  - **RED (ejecución).** Con la propiedad pero sin la infraestructura, `PostgresSmokeIntegrationTest` falla en los dos módulos con `expected: "PostgreSQL" but was: "H2"`.
+  - **Primer GREEN fallido, causa distinta.** Con la versión de Testcontainers que trae Spring Boot 3.3.4 (1.19.8), el contenedor no arranca: «Could not find a valid Docker environment», con `Status 400` y una respuesta vacía al detectar el motor. El Docker de esta máquina es 29.8.2 (API mínima 1.40). Con Testcontainers 1.21.4 funciona; se fijó `testcontainers.version` en el `pom.xml` raíz. No se investigó por qué falla la versión anterior más allá de eso.
+  - **Segundo GREEN fallido: ERR-013.** Con Docker ya funcionando, las dos aplicaciones fallan al arrancar con `FlywayException: Unsupported Database: PostgreSQL 16.15`. Se agregó `flyway-database-postgresql` a ambos `pom.xml`.
+  - **GREEN.** `mvn -B -ntp -Ppostgres test -Dtest=PostgresSmokeIntegrationTest` → `BUILD SUCCESS`, 1 de 1 en cada módulo. Versiones resueltas: Flyway 10.10.0 y `flyway-database-postgresql` 10.10.0 (gestionadas por Spring Boot), Testcontainers 1.21.4.
+  - **La suite normal no cambia.** `mvn -B -ntp test` en la raíz, sin el perfil → `BUILD SUCCESS`, **247 pruebas** (13 + 8 + 8 + 115 + 27 + 76; +2), con 2 omitidas: las pruebas de humo, que solo corren con el perfil. Sin fallas y sin necesitar Docker.
+  - **Limpieza.** Terminada la ejecución no quedó ningún contenedor de Postgres ni de Testcontainers (`docker ps -a`).
+- **Afectaciones:**
+  - **Producción:** `flyway-database-postgresql` entra como dependencia normal en los dos módulos y por tanto en los jars de ejecución.
+  - **Pruebas:** con `-Ppostgres` hace falta Docker; la primera vez se descarga la imagen de Postgres (unos 106 MB). Sin el perfil nada cambia.
+  - **Mantenimiento:** `testcontainers.version` reemplaza la que gestiona Spring Boot; al subir de versión de Spring Boot hay que revisar si hace falta.
+  - **Datos y contratos:** ninguno cambia.
+- **Sin verificar:**
+  - Solo se comprobó que las aplicaciones arrancan y migran en Postgres. **El resto de las pruebas no se ha corrido contra Postgres (fase P2, hecha en BIT-034)**; a la vista, `InventoryMigrationTest` compara `table_schema = 'INVENTORY'` en mayúsculas, propio de H2, y se espera que falle ahí. No se ha ejecutado.
+  - El CI sigue corriendo solo con H2 (fase P4).
+  - No se probó la concurrencia (bloqueos, contador de intentos, reservas), que es lo que H2 más puede esconder (fase P3).
+- **Pendiente:** P3 y P4 (P2 está en BIT-034), y después los frentes de RabbitMQ y de roles y membresías.
+
+### BIT-034 · La suite completa corre en PostgreSQL real (fase P2)
+
+- **Qué se hizo:** se corrieron las 247 pruebas del proyecto con `-Ppostgres`, sin tocarlas. Pasaron 246; falló una, que no expresaba un defecto de la aplicación sino que solo valía en H2 (ERR-014). Corregida esa prueba, la suite completa pasa en PostgreSQL 16 real y en H2.
+- **Cómo se hizo:**
+  - **RED (primera corrida).** `mvn -B -ntp -Ppostgres -fae test` → 246 de 247. Falla `InventoryMigrationTest.flywayCreatesInventoryCoreTables` con `expected: 13 but was: 0`: la prueba consulta `information_schema` con `table_schema = 'INVENTORY'` en mayúsculas, y PostgreSQL guarda `inventory`. Es la única consulta a `information_schema` del repositorio.
+  - **Comprobación de que corrió en Postgres.** 0 conexiones a H2 y 8 a PostgreSQL en el registro, 2 contenedores (uno por módulo) y ningún `PSQLException`.
+  - **Primer intento de corrección, equivocado.** Se cambió a `lower(table_schema) = 'inventory'` suponiendo que bastaba. La suite completa, corrida en las dos bases, mostró que daba **14 en ambas**, y la prueba pasó a fallar también en H2, donde antes pasaba. La tabla de más es `flyway_schema_history`: en H2 las tablas de la aplicación viven en el esquema `INVENTORY` y el historial de Flyway en otro, `inventory` en minúsculas, así que antes no se contaba; en PostgreSQL comparten esquema. Lo uno se deduce de que la consulta exacta daba 13 en H2 y la de minúsculas, 14; lo otro, de que excluir ese nombre devuelve 13 en las dos.
+  - **Corrección.** Se compara en minúsculas y se excluye `flyway_schema_history`: el 13 siempre fueron las tablas de la aplicación. Un solo archivo: `InventoryMigrationTest.java`.
+  - **GREEN.** La prueba sola: 1 de 1 en H2 y 1 de 1 en PostgreSQL. Suite completa: con `-Ppostgres`, `BUILD SUCCESS`, **247 de 247**, ninguna omitida (13 + 8 + 8 + 115 + 27 + 76); sin el perfil, `BUILD SUCCESS`, 247 con 2 omitidas (las pruebas de humo). En PostgreSQL pasan, entre otras, las 16 del bloqueo por intentos fallidos de la contraseña de empresa, las 20 de reservas de stock y las del token por empresa.
+- **Afectaciones:**
+  - **Código de producción:** ninguno cambia en esta fase. Solo cambia una prueba.
+  - **Advertencia que queda:** con el perfil, Hibernate avisa (`HHH90000025`) de que no hace falta fijar el dialecto de PostgreSQL. Es el inicializador de pruebas quien lo fija, porque el `application.yml` trae `H2Dialect`. No afecta al resultado.
+  - **Alcance de la evidencia:** las pruebas ejercitan lo que ya probaban. Que pasen en PostgreSQL demuestra que el SQL, los tipos y las restricciones se comportan igual, no que la **concurrencia** lo haga: los bloqueos (`findForUpdate`), el contador de intentos fallidos con peticiones simultáneas y las reservas de stock en paralelo no se han ejercitado con varias conexiones a la vez (fase P3).
+  - **CI:** sigue corriendo solo con H2 (fase P4); nada impide que el perfil `postgres` se rompa sin que nadie lo vea.
+- **Pendiente:** P3 (hecha en BIT-035) y P4.
+
+### BIT-035 · Pruebas de concurrencia y cuatro defectos que destapan (fase P3)
+
+- **Qué se hizo:** nueve pruebas de concurrencia nuevas en tres clases, que lanzan varias peticiones a la vez. Destaparon **cuatro defectos reales, iguales en H2 y en PostgreSQL** (ERR-015 a ERR-018), y los cuatro quedaron corregidos. Antes de esto, la única prueba con hilos de todo el proyecto era la de dos reservas simultáneas, y ninguna probaba company-management. Un quinto hallazgo: **ninguna prueba del repositorio usaba productos con seriales**, así que el generador de seriales no tenía cobertura alguna. También se restauró el separador y el encabezado `## Errores`, que se borraron sin querer al escribir BIT-034.
+- **Cómo se hizo:**
+  - **`CompanyAccessConcurrencyIntegrationTest` (2).** Una ráfaga de 20 entradas con contraseña equivocada, midiendo cuántas contraseñas se verifican de verdad (se espía el cifrador, porque la respuesta de cada petición no basta para saberlo), y 6 primeras contraseñas puestas a la vez.
+    - **RED:** las 20 peticiones respondieron **500** con `HikariPool-1 - Connection is not available, request timed out after 30000ms (total=10, active=10, idle=0, waiting=18)` y la prueba tardó 40 s (ERR-015). Con ese defecto resuelto, el siguiente RED fue `Expecting actual: 20L to be less than or equal to: 5L` (ERR-016).
+    - **Correcciones:** ERR-015, `spring.jpa.open-in-view: false` en el `application.yml` de company-management, como ya tenía inventario. ERR-016, `CompanyAccessPasswords` reserva el intento con una sola sentencia antes de verificar (`claimAttempt`) y `failure()` solo lee en qué quedó el contador.
+    - **GREEN:** `CompanyAccessConcurrencyIntegrationTest` 2 de 2, `CompanyAccessPasswordIntegrationTest` 16 de 16 y `CompanyAccessIntegrationTest` 9 de 9, en H2 y en PostgreSQL. Los mensajes, el `Retry-After: 900` exacto y las líneas del registro no cambiaron.
+  - **`StockConcurrencyIntegrationTest` (6).** Primera entrada de un producto con 8 peticiones a la vez, entradas sobre un saldo que ya existe, salidas con existencias limitadas, seriales de una empresa nueva (en un mismo lugar y en lugares distintos) y una `Idempotency-Key` repetida.
+    - **RED:** primera entrada, `expected: 1 but was: 8`: **ocho saldos** para el mismo producto y lugar, y las ocho respondieron 201. Una entrada posterior respondió **500** con `NonUniqueResultException: Query did not return a unique result: 8 results were returned` (ERR-017, esta consecuencia vista en H2). Seriales, `[201, 500, 500, 500, 500, 500]` con una violación de clave primaria en `inventory_serial_sequence` (ERR-018).
+    - **Correcciones:** ERR-017, `StockApplicationService` bloquea la fila de la ubicación (`WarehouseLocationRepositoryPort.findByIdForUpdate`, método nuevo) antes de buscar o crear el saldo. ERR-018, `SerialNumberGeneratorAdapter` crea la secuencia con una inserción que tolera el conflicto: `ON CONFLICT DO NOTHING` en PostgreSQL y `MERGE … WHEN NOT MATCHED` en H2.
+  - **`IdempotencyConcurrencyIntegrationTest` (1).** Seis registros de cuenta a la vez con la misma `Idempotency-Key` y el mismo cuerpo: ninguno responde 500, las respuestas «creada» hablan de la misma cuenta y solo existe una.
+  - **Guardas que pasaron a la primera:** entradas sobre un saldo existente, salidas en paralelo, primera contraseña en paralelo e idempotencia. De las dos primeras se comprobó con mutaciones que sí detectan la falta de bloqueo (abajo). **Las de primera contraseña e idempotencia no se vieron fallar:** no se les hizo mutación.
+  - **Mutaciones temporales (script en el área de trabajo, archivos restaurados y huellas iguales).** M1 sin el bloqueo del saldo: 0 caen, porque el de la ubicación lo cubre (es redundancia). M2 sin el bloqueo de la ubicación: caen la primera entrada y los seriales. M3 sin ninguno de los dos: caen 4 (primera entrada, salidas en paralelo, entradas sobre saldo existente y seriales). M4 sin `ON CONFLICT` en PostgreSQL: caen las 2 de seriales. M1 a M3 se corrieron con la versión anterior de la prueba de seriales.
+  - **Errores míos durante la fase, todos corregidos:** (1) `containsOnly(204, 403)` exige que aparezcan los dos valores; debía ser `isSubsetOf`. (2) Exigí «exactamente un 201» en idempotencia y eran seis 201 correctos, porque repetir la clave devuelve la misma respuesta guardada. (3) La prueba de seriales mandaba todo a la misma ubicación, y el bloqueo de ubicación ponía las peticiones en fila: no probaba la creación simultánea de la secuencia. Ahora hay una variante en un mismo lugar y otra en lugares distintos. (4) Al escribir BIT-034 se borró el encabezado `## Errores`.
+  - **GREEN final.** `mvn -B -ntp -Ppostgres -fae test` → `BUILD SUCCESS`, **256 de 256**, ninguna omitida (13 + 8 + 8 + 118 + 27 + 82). `mvn -B -ntp test` → `BUILD SUCCESS`, 256 con 3 omitidas: las dos pruebas de humo y la variante de seriales en lugares distintos, que solo corre con el perfil. Sin `LazyInitializationException`, sin conexiones agotadas y sin `PSQLException`.
+- **Afectaciones:**
+  - **Rendimiento de stock:** las entradas, salidas y ajustes sobre una misma ubicación ahora se ponen en fila. Es el costo de evitar los saldos duplicados; no se midió.
+  - **Entrar a una empresa:** cada entrada correcta hace ahora dos escrituras (reservar el intento y ponerlo a cero), antes 0 o 1.
+  - **`open-in-view` desactivado en company-management:** cambia el comportamiento de todas sus rutas. La suite completa no mostró ningún problema de carga perezosa, pero solo cubre lo que las pruebas ejercitan.
+  - **H2:** no tiene inserción-si-no-existe atómica. Con peticiones a la vez que creen la secuencia de seriales de una empresa desde lugares distintos, H2 falla; PostgreSQL no. Quien corra la aplicación en H2 en local lo puede ver.
+  - **Contratos y datos:** ninguna migración, ningún cambio en OpenAPI ni en los mensajes.
+  - **Orden de bloqueos:** los flujos de stock bloquean ubicación y luego saldo; las reservas bloquean solo saldos. Por lo que muestra el código, ningún flujo toma saldo y luego ubicación, así que no hay ciclo posible. Eso se razonó leyendo el código, no se probó con una prueba de interbloqueo.
+- **Sin verificar:**
+  - La restricción `uk_stock_identity` sigue sin proteger por sí sola (lote y serie nulos nunca chocan entre sí): ahora lo evita el bloqueo, no la base de datos. Cerrarlo de verdad pide una migración (`UNIQUE NULLS NOT DISTINCT`, PostgreSQL 15 o superior) y revisar si hay saldos ya duplicados.
+  - El bloqueo del pool se reprodujo en la ruta de entrar a una empresa; la causa es general a cualquier ruta que use JPA y `JdbcTemplate` a la vez, pero no se midió otra.
+  - No hay prueba de carga: 6 a 20 peticiones simultáneas, no cientos.
+  - La causa en PostgreSQL de las fallas de seriales no se inspeccionó (se vieron los 500, no la excepción); en H2 sí.
+  - Sin concurrencia aún: creación simultánea de sucursales o de empresas, y reservas junto con entradas.
+- **Pendiente:** P4 (hecha en BIT-036) y la restricción de saldos en la base de datos.
+
+### BIT-036 · El CI corre también la suite sobre PostgreSQL (fase P4)
+
+- **Qué se hizo:** `.github/workflows/ci.yml` tiene ahora un segundo job, `postgres`, que corre `mvn -B -ntp -Ppostgres test` en `ubuntu-latest`: la misma suite, sobre un PostgreSQL 16 real en un contenedor. El job `test` no cambió. Así lo que solo falla en PostgreSQL (BIT-033 a BIT-035) deja de depender de que alguien se acuerde de correr el perfil.
+- **Cómo se hizo:**
+  - **Job aparte y no una matriz.** Una matriz habría renombrado el check `test` a `test (h2)`, y cualquier regla de la rama que lo nombre dejaría de encontrarlo. Dos jobs corren en paralelo, así que no alargan la corrida.
+  - **Mismas piezas que BIT-025:** `actions/checkout@v7`, `actions/setup-java@v6` (Temurin 21 con caché de Maven) y `actions/upload-artifact@v7`, sin permisos de escritura y sin secretos. Los reportes si algo falla se suben con un nombre distinto (`surefire-reports-postgres`), para que no choquen con los del job `test`. Un paso imprime la versión de Docker del runner, para que un fallo de entorno se distinga de uno de las pruebas.
+  - **Medición.** El comando exacto del job, en local con las dependencias en caché y la imagen ya descargada: **91,4 s**, `BUILD SUCCESS`, **256 de 256** pruebas sobre PostgreSQL (0 conexiones a H2, 9 a PostgreSQL). El job `test` tardó 92 s en GitHub en el PR 4. De ahí el límite de 20 minutos: deja margen para la primera descarga de la imagen de PostgreSQL (unos 106 MB) y de la de limpieza de Testcontainers. Después de la corrida no quedó ningún contenedor.
+  - **Validación local.** PyYAML cargó el archivo y se comprobaron 14 puntos, entre ellos que el job `test` es idéntico al del commit anterior, que los disparadores, los permisos y la cancelación de corridas viejas no cambiaron, que el comando es exactamente el medido, que las versiones de las acciones coinciden con las del otro job y que no hay `secrets.`. No hay `actionlint` instalado. **Un workflow no se puede ejecutar en local, así que no hay un rojo previo.**
+- **Afectaciones:**
+  - Cada PR y cada push a `main` ejecutan dos jobs en vez de uno, y consumen casi el doble de minutos de Actions.
+  - El check `postgres` aparecerá junto a `test`, pero **no es obligatorio**: exigirlo para fusionar es un ajuste de protección de ramas en GitHub, que no se tocó.
+  - No cambia ningún código ni contrato.
+- **Sin verificar:**
+  - **La corrida real en GitHub.** Que el runner tenga Docker, que Testcontainers lo detecte allí, el tiempo en frío y que el límite de 20 minutos alcance. Este commit no ha corrido en GitHub.
+  - Que el job se ponga **rojo** cuando se rompe algo solo en PostgreSQL (no hay rojo previo, y no se simuló).
+  - Las descargas de `postgres:16-alpine` y de `testcontainers/ryuk` desde Docker Hub en el runner: podrían toparse con límites de descarga anónima.
+  - Que la subida de reportes funcione en este job.
+- **Pendiente:** subir la rama y abrir un PR para que el job corra de verdad; decidir si se exige el check `postgres` antes de fusionar; los frentes de RabbitMQ y de roles y membresías.
+
 ---
 
 ## Errores
@@ -657,3 +752,57 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cómo se resolvió:** con una copia previa de `.git` (7,8 MB), (1) la rama volvió a `fa8c434` con `git update-ref`, (2) se borraron los 32 archivos vacíos (lista guardada antes), (3) se rehízo el índice desde `HEAD` con `git reset -q` y se volvieron a preparar desde el árbol de trabajo los 9 caminos de BIT-027 (8 archivos y el borrado de `PermissionResolver`); los hashes de los archivos no cambiaron. `git fsck --full` terminó sin errores y `git status` volvió a funcionar.
   - **GREEN tras la reparación:** `mvn -B -ntp test` en la raíz → `BUILD SUCCESS`, **216 pruebas** (13 + 8 + 8 + 85 + 27 + 75; +10 respecto a BIT-024: 1 de BIT-026 y 9 de BIT-027), con `CompanyAccessIntegrationTest` 9 de 9.
 - **Lo que no se verificó:** la causa; el contenido exacto del commit perdido, que se vuelve a crear con otro hash; y que las 7 mutaciones de BIT-027 se repitan, porque no se volvieron a ejecutar.
+
+### ERR-013 · Las aplicaciones no arrancan sobre PostgreSQL: falta el módulo de Flyway para esa base de datos
+
+- **Estado:** RESUELTO el 2026-11-03 (BIT-033). Visto con la prueba de humo del perfil `postgres`.
+- **De qué trata:** desde Flyway 10 el soporte de cada base de datos va en un módulo aparte. Spring Boot 3.3.4 trae Flyway 10.10.0, y los `pom.xml` de `company-management-infra` e `inventory-infra` solo declaraban `flyway-core` y el driver `postgresql`. Con H2, que viene en `flyway-core`, todo funcionaba; con PostgreSQL, Flyway rechaza la base de datos.
+- **Cuándo se manifiesta:** al arrancar cualquiera de las dos aplicaciones contra un PostgreSQL: `FlywayException: Unsupported Database: PostgreSQL 16.15` en el bean `flywayInitializer`, y el contexto de Spring no levanta. Nunca se había visto porque todas las pruebas y los arranques usaban H2.
+- **Cómo mitigarlo:** mientras no esté corregido, usar H2. Con la corrección no hace falta.
+- **Cómo se resolvió:** se agregó `org.flywaydb:flyway-database-postgresql` (versión gestionada por Spring Boot, 10.10.0) a los dos `pom.xml`. RED y GREEN en BIT-033: las pruebas de humo pasan de fallar con esa excepción a pasar con `-Ppostgres`.
+- **Lo que no cubre:** solo se probó el arranque y la aplicación de las migraciones. Que el resto del comportamiento sea el mismo en PostgreSQL se verifica en las fases siguientes.
+
+### ERR-014 · `InventoryMigrationTest` solo valía en H2
+
+- **Estado:** RESUELTO el 2026-11-03 (BIT-034). Visto al correr la suite completa en PostgreSQL (fase P2).
+- **De qué trata:** la prueba cuenta las tablas del esquema de inventario consultando `information_schema` con `'INVENTORY'` y nombres de tabla en mayúsculas. H2 guarda los nombres sin comillas en mayúsculas; PostgreSQL, en minúsculas. No es un defecto de la aplicación.
+- **Cuándo se manifiesta:** al correr con `-Ppostgres`: `expected: 13 but was: 0`.
+- **Cómo mitigarlo:** mientras no estaba resuelto, ignorar esa falla al correr con el perfil `postgres`; la suite normal con H2 no se veía afectada.
+- **Cómo se resolvió:** las consultas comparan en minúsculas y excluyen `flyway_schema_history`. Verificado con la prueba sola y con la suite completa en las dos bases (BIT-034).
+- **Lección:** al volver portable una prueba, correrla en las dos bases antes de darla por buena. El primer intento (solo `lower()`) daba 14 en ambas, y se vio porque la suite completa se corrió en H2 y en PostgreSQL.
+
+### ERR-015 · Company-management se queda sin conexiones con 10 peticiones simultáneas
+
+- **Estado:** RESUELTO el 2026-11-03 (BIT-035). Visto con la prueba de concurrencia de contraseñas de empresa (fase P3).
+- **De qué trata:** company-management dejaba `spring.jpa.open-in-view` en su valor por defecto (activo; Spring lo avisa en el arranque) y usa JPA y `JdbcTemplate` en la misma petición (`EffectivePermissions`, `CompanyAccessPasswords`, `CompanyAccessService`). Con `open-in-view`, la primera consulta JPA de una petición retiene una conexión hasta que termina; cada consulta con `JdbcTemplate` pide otra al mismo pool de 10. Cuando hay tantas peticiones simultáneas como conexiones, todas retienen la primera y esperan la segunda, que nadie libera. Inventario ya tenía `open-in-view: false`. Esa es la explicación que encaja con la configuración y con el registro; el arreglo la confirma, porque los 500 desaparecen.
+- **Cuándo se manifiesta:** con 10 o más peticiones simultáneas que usen las dos vías. Reproducido con 20 entradas a una empresa a la vez: las 20 respondieron 500 tras esperar 30 s, con `HikariPool-1 - Connection is not available, request timed out after 30000ms (total=10, active=10, idle=0, waiting=18)`, en H2 y en PostgreSQL.
+- **Cómo mitigarlo:** mientras no estaba resuelto, evitar ráfagas de peticiones a company-management. No se comprobó cuánto tarda el servicio en recuperarse.
+- **Cómo se resolvió:** `spring.jpa.open-in-view: false` en el `application.yml` de company-management. Con eso, la clase de pruebas de concurrencia termina en 13 s (antes 40 s) sin ningún 500, y la suite completa (118 pruebas del módulo) pasa en las dos bases sin `LazyInitializationException`.
+- **Lo que no cubre:** se reprodujo solo en la ruta de entrar a una empresa; no se midió otra ruta ni hay prueba de carga. El pool sigue siendo el de 10 conexiones por defecto.
+
+### ERR-016 · Una ráfaga de intentos de contraseña de empresa verifica muchas más de cinco contraseñas
+
+- **Estado:** RESUELTO el 2026-11-03 (BIT-035). Hipótesis propia sobre el código de BIT-029, confirmada con una prueba (fase P3).
+- **De qué trata:** `CompanyAccessPasswords` comprobaba el bloqueo al empezar, verificaba la contraseña con bcrypt y solo después anotaba el fallo. Con muchas peticiones a la vez, todas pasaban la comprobación del bloqueo antes de que ninguna anotara su fallo, así que el límite de cinco intentos no frenaba una ráfaga.
+- **Cuándo se manifiesta:** con peticiones simultáneas al entrar a una empresa con contraseña (también al cambiarla y al quitarla, que comparten el contador). Reproducido con 20 intentos a la vez: **se verificaron 20 contraseñas**, el límite es 5. Por lo que muestra el código, una contraseña correcta entre ellas habría entrado aun con el bloqueo ya puesto; eso no se probó.
+- **Cómo mitigarlo:** mientras no estaba resuelto, el límite valía solo para intentos en serie.
+- **Cómo se resolvió:** `claimAttempt` reserva el intento **antes** de verificar, con una sola sentencia que sube el contador y, si era el último, deja el bloqueo puesto en el mismo instante, y solo actúa si el acceso no está bloqueado. Después de verificar, un acierto lo pone a cero y un fallo solo lee en qué quedó el contador. Verificado con `CompanyAccessConcurrencyIntegrationTest` y con las 16 pruebas secuenciales, en las dos bases (BIT-035).
+- **Lo que no cubre:** quien manda la ráfaga puede gastar los cinco intentos y dejar bloqueado el acceso del dueño; es el bloqueo como arma que el plan ya aceptó. Una contraseña correcta que llegue entre los cinco primeros intentos sigue entrando. El arreglo no se sometió a una mutación propia: su RED fue el código anterior (20 contra 5).
+
+### ERR-017 · Varias primeras entradas simultáneas de un producto crean un saldo cada una
+
+- **Estado:** RESUELTO el 2026-11-03 (BIT-035). Visto con la prueba de concurrencia de stock (fase P3).
+- **De qué trata:** `StockApplicationService` busca el saldo con bloqueo y, si no existe, lo crea. Si no existe todavía, no hay fila que bloquear, así que dos entradas a la vez lo crean las dos. La restricción única `uk_stock_identity` no las frena: `lot_id` y `serial_number` son nulos en los productos sin lote ni serie, y en SQL los nulos nunca chocan entre sí. Las consecuencias son dos: el stock queda repartido en varios saldos y toda operación posterior sobre ese producto y lugar falla.
+- **Cuándo se manifiesta:** al recibir a la vez, por primera vez, un producto sin lote ni serie en un mismo lugar. Reproducido con 8 entradas simultáneas: **8 saldos** y las 8 respondieron 201. Una entrada posterior respondió **500** con `NonUniqueResultException: Query did not return a unique result: 8 results were returned` (visto en H2). Por el código, lo mismo ocurriría con salidas y ajustes, que usan la misma búsqueda; no se probó.
+- **Cómo mitigarlo:** mientras no estaba resuelto, no recibir a la vez el primer lote de un producto en un lugar. Con saldos ya duplicados, hay que unirlos a mano en la base.
+- **Cómo se resolvió:** el movimiento bloquea primero la fila de la ubicación (`WarehouseLocationRepositoryPort.findByIdForUpdate`) y después busca o crea el saldo, de modo que dos movimientos en un mismo lugar van en fila. Verificado con `StockConcurrencyIntegrationTest` en las dos bases, y con mutaciones: sin ese bloqueo, la prueba de primera entrada vuelve a fallar (BIT-035).
+- **Lo que no cubre:** el bloqueo está en el código y no en la base de datos: la restricción sigue sin proteger por sí sola. Cerrarlo pide una migración (`UNIQUE NULLS NOT DISTINCT`, PostgreSQL 15 o superior) y revisar si ya hay saldos duplicados. Se hizo mientras no hay datos de clientes. Pone en fila los movimientos de una misma ubicación; no se midió el costo.
+
+### ERR-018 · Los seriales de una empresa nueva, pedidos a la vez, fallan con 500 salvo una petición
+
+- **Estado:** RESUELTO el 2026-11-03 (BIT-035). Visto con la prueba de concurrencia de stock (fase P3).
+- **De qué trata:** `SerialNumberGeneratorAdapter` creaba la secuencia de seriales de la empresa con un `INSERT` y atrapaba el choque de clave para leer la fila que había creado la otra petición. En H2 el choque es inmediato y la otra transacción todavía no confirmó, así que la lectura no ve la fila y se relanza la excepción original. En PostgreSQL se esperaba que además el choque abortara la transacción; esa causa **no se inspeccionó**, solo se vieron los 500.
+- **Cuándo se manifiesta:** al recibir a la vez, por primera vez, productos con serie de una empresa que aún no tiene secuencia. Reproducido con 6 entradas simultáneas: `[201, 500, 500, 500, 500, 500]` con una violación de clave primaria en `inventory_serial_sequence`, en H2 y en PostgreSQL. Ninguna prueba anterior usaba productos con serie.
+- **Cómo mitigarlo:** mientras no estaba resuelto, generar un primer serial de la empresa antes de recibir en paralelo.
+- **Cómo se resolvió:** la secuencia se crea con una inserción que tolera el conflicto: `ON CONFLICT (company_id) DO NOTHING` en PostgreSQL, que espera a que la otra confirme y sigue sin error, y `MERGE … WHEN NOT MATCHED` en H2, que no entiende `ON CONFLICT`. Verificado en las dos bases, y con una mutación en PostgreSQL: sin `ON CONFLICT` caen las dos pruebas de seriales (BIT-035).
+- **Lo que no cubre:** H2 no tiene inserción-si-no-existe atómica. Con peticiones que creen la secuencia a la vez **desde lugares distintos**, H2 sigue fallando; por eso esa variante de la prueba corre solo con `-Ppostgres` y se omite en H2 con el motivo escrito. En un mismo lugar el bloqueo de la ubicación pone las peticiones en fila y H2 pasa.

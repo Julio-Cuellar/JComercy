@@ -38,6 +38,11 @@ public class WarehouseLocationRepositoryAdapter implements WarehouseLocationRepo
     }
 
     @Override
+    public Optional<WarehouseLocation> findByIdForUpdate(UUID id) {
+        return repository.findByIdForUpdate(id).map(this::toDomain);
+    }
+
+    @Override
     public Map<UUID, List<WarehouseLocation>> findByWarehouseIds(List<UUID> warehouseIds) {
         if (warehouseIds.isEmpty()) return Map.of();
         return repository.findByWarehouseIdIn(warehouseIds).stream().map(this::toDomain)
