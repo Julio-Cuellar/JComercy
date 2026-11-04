@@ -38,6 +38,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-011 | El token lleva juntos los permisos de todas las empresas de la persona: quien es dueña de una y miembro de otra lleva `*` también para la ajena | RESUELTO (BIT-026 a BIT-031) |
 | ERR-012 | El repositorio git quedó con archivos de objeto vacíos y la rama `feat/token-por-empresa` apuntando a un commit ilegible; se perdió el commit de BIT-027, no su trabajo | RESUELTO (2026-11-03) |
 | ERR-013 | Las dos aplicaciones no arrancan sobre PostgreSQL: Flyway 10 rechaza la base de datos porque falta su módulo | RESUELTO (BIT-033) |
+| ERR-014 | `InventoryMigrationTest` solo valía en H2: consultaba los nombres de esquema y de tabla en mayúsculas | RESUELTO (BIT-034) |
 
 ---
 
@@ -564,14 +565,26 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Mantenimiento:** `testcontainers.version` reemplaza la que gestiona Spring Boot; al subir de versión de Spring Boot hay que revisar si hace falta.
   - **Datos y contratos:** ninguno cambia.
 - **Sin verificar:**
-  - Solo se comprobó que las aplicaciones arrancan y migran en Postgres. **El resto de las pruebas no se ha corrido contra Postgres (fase P2)**; a la vista, `InventoryMigrationTest` compara `table_schema = 'INVENTORY'` en mayúsculas, propio de H2, y se espera que falle ahí. No se ha ejecutado.
+  - Solo se comprobó que las aplicaciones arrancan y migran en Postgres. **El resto de las pruebas no se ha corrido contra Postgres (fase P2, hecha en BIT-034)**; a la vista, `InventoryMigrationTest` compara `table_schema = 'INVENTORY'` en mayúsculas, propio de H2, y se espera que falle ahí. No se ha ejecutado.
   - El CI sigue corriendo solo con H2 (fase P4).
   - No se probó la concurrencia (bloqueos, contador de intentos, reservas), que es lo que H2 más puede esconder (fase P3).
-- **Pendiente:** P2 a P4, y después los frentes de RabbitMQ y de roles y membresías.
+- **Pendiente:** P3 y P4 (P2 está en BIT-034), y después los frentes de RabbitMQ y de roles y membresías.
 
----
+### BIT-034 · La suite completa corre en PostgreSQL real (fase P2)
 
-## Errores
+- **Qué se hizo:** se corrieron las 247 pruebas del proyecto con `-Ppostgres`, sin tocarlas. Pasaron 246; falló una, que no expresaba un defecto de la aplicación sino que solo valía en H2 (ERR-014). Corregida esa prueba, la suite completa pasa en PostgreSQL 16 real y en H2.
+- **Cómo se hizo:**
+  - **RED (primera corrida).** `mvn -B -ntp -Ppostgres -fae test` → 246 de 247. Falla `InventoryMigrationTest.flywayCreatesInventoryCoreTables` con `expected: 13 but was: 0`: la prueba consulta `information_schema` con `table_schema = 'INVENTORY'` en mayúsculas, y PostgreSQL guarda `inventory`. Es la única consulta a `information_schema` del repositorio.
+  - **Comprobación de que corrió en Postgres.** 0 conexiones a H2 y 8 a PostgreSQL en el registro, 2 contenedores (uno por módulo) y ningún `PSQLException`.
+  - **Primer intento de corrección, equivocado.** Se cambió a `lower(table_schema) = 'inventory'` suponiendo que bastaba. La suite completa, corrida en las dos bases, mostró que daba **14 en ambas**, y la prueba pasó a fallar también en H2, donde antes pasaba. La tabla de más es `flyway_schema_history`: en H2 las tablas de la aplicación viven en el esquema `INVENTORY` y el historial de Flyway en otro, `inventory` en minúsculas, así que antes no se contaba; en PostgreSQL comparten esquema. Lo uno se deduce de que la consulta exacta daba 13 en H2 y la de minúsculas, 14; lo otro, de que excluir ese nombre devuelve 13 en las dos.
+  - **Corrección.** Se compara en minúsculas y se excluye `flyway_schema_history`: el 13 siempre fueron las tablas de la aplicación. Un solo archivo: `InventoryMigrationTest.java`.
+  - **GREEN.** La prueba sola: 1 de 1 en H2 y 1 de 1 en PostgreSQL. Suite completa: con `-Ppostgres`, `BUILD SUCCESS`, **247 de 247**, ninguna omitida (13 + 8 + 8 + 115 + 27 + 76); sin el perfil, `BUILD SUCCESS`, 247 con 2 omitidas (las pruebas de humo). En PostgreSQL pasan, entre otras, las 16 del bloqueo por intentos fallidos de la contraseña de empresa, las 20 de reservas de stock y las del token por empresa.
+- **Afectaciones:**
+  - **Código de producción:** ninguno cambia en esta fase. Solo cambia una prueba.
+  - **Advertencia que queda:** con el perfil, Hibernate avisa (`HHH90000025`) de que no hace falta fijar el dialecto de PostgreSQL. Es el inicializador de pruebas quien lo fija, porque el `application.yml` trae `H2Dialect`. No afecta al resultado.
+  - **Alcance de la evidencia:** las pruebas ejercitan lo que ya probaban. Que pasen en PostgreSQL demuestra que el SQL, los tipos y las restricciones se comportan igual, no que la **concurrencia** lo haga: los bloqueos (`findForUpdate`), el contador de intentos fallidos con peticiones simultáneas y las reservas de stock en paralelo no se han ejercitado con varias conexiones a la vez (fase P3).
+  - **CI:** sigue corriendo solo con H2 (fase P4); nada impide que el perfil `postgres` se rompa sin que nadie lo vea.
+- **Pendiente:** P3 y P4.
 
 ### ERR-001 · `AccountIntegrationTest` depende del orden de ejecución
 
@@ -690,3 +703,12 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cómo mitigarlo:** mientras no esté corregido, usar H2. Con la corrección no hace falta.
 - **Cómo se resolvió:** se agregó `org.flywaydb:flyway-database-postgresql` (versión gestionada por Spring Boot, 10.10.0) a los dos `pom.xml`. RED y GREEN en BIT-033: las pruebas de humo pasan de fallar con esa excepción a pasar con `-Ppostgres`.
 - **Lo que no cubre:** solo se probó el arranque y la aplicación de las migraciones. Que el resto del comportamiento sea el mismo en PostgreSQL se verifica en las fases siguientes.
+
+### ERR-014 · `InventoryMigrationTest` solo valía en H2
+
+- **Estado:** RESUELTO el 2026-11-03 (BIT-034). Visto al correr la suite completa en PostgreSQL (fase P2).
+- **De qué trata:** la prueba cuenta las tablas del esquema de inventario consultando `information_schema` con `'INVENTORY'` y nombres de tabla en mayúsculas. H2 guarda los nombres sin comillas en mayúsculas; PostgreSQL, en minúsculas. No es un defecto de la aplicación.
+- **Cuándo se manifiesta:** al correr con `-Ppostgres`: `expected: 13 but was: 0`.
+- **Cómo mitigarlo:** mientras no estaba resuelto, ignorar esa falla al correr con el perfil `postgres`; la suite normal con H2 no se veía afectada.
+- **Cómo se resolvió:** las consultas comparan en minúsculas y excluyen `flyway_schema_history`. Verificado con la prueba sola y con la suite completa en las dos bases (BIT-034).
+- **Lección:** al volver portable una prueba, correrla en las dos bases antes de darla por buena. El primer intento (solo `lower()`) daba 14 en ambas, y se vio porque la suite completa se corrió en H2 y en PostgreSQL.
