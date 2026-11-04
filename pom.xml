@@ -25,6 +25,8 @@
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <!-- Spring Boot 3.3.4 trae 1.19.8, que no se entiende con Docker 29 (responde 400 al detectar el motor). -->
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <modules>
@@ -32,6 +34,29 @@
         <module>company-management</module>
         <module>inventory</module>
     </modules>
+
+    <profiles>
+        <!--
+            mvn -Ppostgres test: las pruebas de Spring corren sobre un PostgreSQL real en un contenedor (necesita Docker)
+            en lugar de H2. Sin el perfil, la suite usa H2 y no necesita Docker.
+        -->
+        <profile>
+            <id>postgres</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <jcomercy.test.db>postgres</jcomercy.test.db>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
     <build>
         <pluginManagement>

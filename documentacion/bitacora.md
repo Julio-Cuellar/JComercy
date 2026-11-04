@@ -37,6 +37,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-010 | Los permisos no se exigen en ninguna ruta REST de company-management, el token de un inicio de sesión real no trae los permisos que inventario exige, y los comodines de los roles no los interpreta ningún módulo | RESUELTO (BIT-023 reproducción, BIT-024 solución) |
 | ERR-011 | El token lleva juntos los permisos de todas las empresas de la persona: quien es dueña de una y miembro de otra lleva `*` también para la ajena | RESUELTO (BIT-026 a BIT-031) |
 | ERR-012 | El repositorio git quedó con archivos de objeto vacíos y la rama `feat/token-por-empresa` apuntando a un commit ilegible; se perdió el commit de BIT-027, no su trabajo | RESUELTO (2026-11-03) |
+| ERR-013 | Las dos aplicaciones no arrancan sobre PostgreSQL: Flyway 10 rechaza la base de datos porque falta su módulo | RESUELTO (BIT-033) |
 
 ---
 
@@ -545,6 +546,29 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Sin verificar:** Postgres (todo corre con H2); el stock negativo de punta a punta (se prueba que el permiso no llega, pero no se ejercitó en inventario una salida que deje el saldo en negativo); y el script sigue sin correr en el CI.
 - **Pendiente:** las rutas de roles y de membresías, que son un plan propio.
 
+### BIT-033 · Las dos aplicaciones corren sobre PostgreSQL real en las pruebas (perfil `postgres`, fase P1)
+
+- **Qué se hizo:** un perfil Maven `postgres` (`mvn -Ppostgres test`) hace que las pruebas de Spring de `company-management-infra` e `inventory-infra` usen un PostgreSQL 16 real en un contenedor en lugar de H2, y una prueba de humo por módulo comprueba que la aplicación arranca, que Flyway aplica todas las migraciones y que Hibernate valida el esquema. Es la fase P1 del plan «Postgres, RabbitMQ y rutas de roles y membresías». La prueba de humo encontró un defecto real: ERR-013.
+- **Cómo se hizo:**
+  - **Rama nueva** `feat/pruebas-postgres`, desde `main` (el PR 4 ya estaba fusionado).
+  - **Mecanismo.** `PostgresTestDatabase` (en cada módulo, en `src/test`) es un `ApplicationContextInitializer` registrado en `META-INF/spring.factories`. Si la propiedad `jcomercy.test.db` vale `postgres`, arranca un solo contenedor `postgres:16-alpine` por ejecución y reemplaza la URL, el usuario, la clave, el driver y el dialecto del `application.yml`, que traían H2 fijos. Sin la propiedad no hace nada. Así las pruebas existentes se podrán correr contra Postgres sin tocarlas (fase P2). El perfil del `pom.xml` raíz solo pasa la propiedad a Surefire. Está duplicado por módulo porque los módulos son independientes entre sí.
+  - **RED (ejecución).** Con la propiedad pero sin la infraestructura, `PostgresSmokeIntegrationTest` falla en los dos módulos con `expected: "PostgreSQL" but was: "H2"`.
+  - **Primer GREEN fallido, causa distinta.** Con la versión de Testcontainers que trae Spring Boot 3.3.4 (1.19.8), el contenedor no arranca: «Could not find a valid Docker environment», con `Status 400` y una respuesta vacía al detectar el motor. El Docker de esta máquina es 29.8.2 (API mínima 1.40). Con Testcontainers 1.21.4 funciona; se fijó `testcontainers.version` en el `pom.xml` raíz. No se investigó por qué falla la versión anterior más allá de eso.
+  - **Segundo GREEN fallido: ERR-013.** Con Docker ya funcionando, las dos aplicaciones fallan al arrancar con `FlywayException: Unsupported Database: PostgreSQL 16.15`. Se agregó `flyway-database-postgresql` a ambos `pom.xml`.
+  - **GREEN.** `mvn -B -ntp -Ppostgres test -Dtest=PostgresSmokeIntegrationTest` → `BUILD SUCCESS`, 1 de 1 en cada módulo. Versiones resueltas: Flyway 10.10.0 y `flyway-database-postgresql` 10.10.0 (gestionadas por Spring Boot), Testcontainers 1.21.4.
+  - **La suite normal no cambia.** `mvn -B -ntp test` en la raíz, sin el perfil → `BUILD SUCCESS`, **247 pruebas** (13 + 8 + 8 + 115 + 27 + 76; +2), con 2 omitidas: las pruebas de humo, que solo corren con el perfil. Sin fallas y sin necesitar Docker.
+  - **Limpieza.** Terminada la ejecución no quedó ningún contenedor de Postgres ni de Testcontainers (`docker ps -a`).
+- **Afectaciones:**
+  - **Producción:** `flyway-database-postgresql` entra como dependencia normal en los dos módulos y por tanto en los jars de ejecución.
+  - **Pruebas:** con `-Ppostgres` hace falta Docker; la primera vez se descarga la imagen de Postgres (unos 106 MB). Sin el perfil nada cambia.
+  - **Mantenimiento:** `testcontainers.version` reemplaza la que gestiona Spring Boot; al subir de versión de Spring Boot hay que revisar si hace falta.
+  - **Datos y contratos:** ninguno cambia.
+- **Sin verificar:**
+  - Solo se comprobó que las aplicaciones arrancan y migran en Postgres. **El resto de las pruebas no se ha corrido contra Postgres (fase P2)**; a la vista, `InventoryMigrationTest` compara `table_schema = 'INVENTORY'` en mayúsculas, propio de H2, y se espera que falle ahí. No se ha ejecutado.
+  - El CI sigue corriendo solo con H2 (fase P4).
+  - No se probó la concurrencia (bloqueos, contador de intentos, reservas), que es lo que H2 más puede esconder (fase P3).
+- **Pendiente:** P2 a P4, y después los frentes de RabbitMQ y de roles y membresías.
+
 ---
 
 ## Errores
@@ -657,3 +681,12 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cómo se resolvió:** con una copia previa de `.git` (7,8 MB), (1) la rama volvió a `fa8c434` con `git update-ref`, (2) se borraron los 32 archivos vacíos (lista guardada antes), (3) se rehízo el índice desde `HEAD` con `git reset -q` y se volvieron a preparar desde el árbol de trabajo los 9 caminos de BIT-027 (8 archivos y el borrado de `PermissionResolver`); los hashes de los archivos no cambiaron. `git fsck --full` terminó sin errores y `git status` volvió a funcionar.
   - **GREEN tras la reparación:** `mvn -B -ntp test` en la raíz → `BUILD SUCCESS`, **216 pruebas** (13 + 8 + 8 + 85 + 27 + 75; +10 respecto a BIT-024: 1 de BIT-026 y 9 de BIT-027), con `CompanyAccessIntegrationTest` 9 de 9.
 - **Lo que no se verificó:** la causa; el contenido exacto del commit perdido, que se vuelve a crear con otro hash; y que las 7 mutaciones de BIT-027 se repitan, porque no se volvieron a ejecutar.
+
+### ERR-013 · Las aplicaciones no arrancan sobre PostgreSQL: falta el módulo de Flyway para esa base de datos
+
+- **Estado:** RESUELTO el 2026-11-03 (BIT-033). Visto con la prueba de humo del perfil `postgres`.
+- **De qué trata:** desde Flyway 10 el soporte de cada base de datos va en un módulo aparte. Spring Boot 3.3.4 trae Flyway 10.10.0, y los `pom.xml` de `company-management-infra` e `inventory-infra` solo declaraban `flyway-core` y el driver `postgresql`. Con H2, que viene en `flyway-core`, todo funcionaba; con PostgreSQL, Flyway rechaza la base de datos.
+- **Cuándo se manifiesta:** al arrancar cualquiera de las dos aplicaciones contra un PostgreSQL: `FlywayException: Unsupported Database: PostgreSQL 16.15` en el bean `flywayInitializer`, y el contexto de Spring no levanta. Nunca se había visto porque todas las pruebas y los arranques usaban H2.
+- **Cómo mitigarlo:** mientras no esté corregido, usar H2. Con la corrección no hace falta.
+- **Cómo se resolvió:** se agregó `org.flywaydb:flyway-database-postgresql` (versión gestionada por Spring Boot, 10.10.0) a los dos `pom.xml`. RED y GREEN en BIT-033: las pruebas de humo pasan de fallar con esa excepción a pasar con `-Ppostgres`.
+- **Lo que no cubre:** solo se probó el arranque y la aplicación de las migraciones. Que el resto del comportamiento sea el mismo en PostgreSQL se verifica en las fases siguientes.
