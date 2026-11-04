@@ -43,3 +43,34 @@ jobs:
           name: surefire-reports
           path: '**/target/surefire-reports'
           if-no-files-found: ignore
+
+  # La misma suite, pero sobre un PostgreSQL real en un contenedor (Testcontainers) en lugar de H2. Corre aparte y a la
+  # vez que `test`, así que no alarga la corrida. Lo que solo falla en PostgreSQL (tipos, bloqueos, transacciones) no
+  # aparece en `test`. Los runners de GitHub traen Docker.
+  postgres:
+    name: postgres
+    runs-on: ubuntu-latest
+    # Descargar la imagen de PostgreSQL y levantar un contenedor por módulo suma tiempo a la suite de `test`.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Versión de Docker
+        run: docker version --format 'servidor {{.Server.Version}}'
+
+      - name: Pruebas de todos los módulos sobre PostgreSQL
+        run: mvn -B -ntp -Ppostgres test
+
+      - name: Subir los reportes de pruebas si algo falla
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: surefire-reports-postgres
+          path: '**/target/surefire-reports'
+          if-no-files-found: ignore

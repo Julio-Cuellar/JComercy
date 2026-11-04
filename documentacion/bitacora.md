@@ -619,7 +619,26 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - No hay prueba de carga: 6 a 20 peticiones simultáneas, no cientos.
   - La causa en PostgreSQL de las fallas de seriales no se inspeccionó (se vieron los 500, no la excepción); en H2 sí.
   - Sin concurrencia aún: creación simultánea de sucursales o de empresas, y reservas junto con entradas.
-- **Pendiente:** P4 (el job de Postgres en el CI) y la restricción de saldos en la base de datos.
+- **Pendiente:** P4 (hecha en BIT-036) y la restricción de saldos en la base de datos.
+
+### BIT-036 · El CI corre también la suite sobre PostgreSQL (fase P4)
+
+- **Qué se hizo:** `.github/workflows/ci.yml` tiene ahora un segundo job, `postgres`, que corre `mvn -B -ntp -Ppostgres test` en `ubuntu-latest`: la misma suite, sobre un PostgreSQL 16 real en un contenedor. El job `test` no cambió. Así lo que solo falla en PostgreSQL (BIT-033 a BIT-035) deja de depender de que alguien se acuerde de correr el perfil.
+- **Cómo se hizo:**
+  - **Job aparte y no una matriz.** Una matriz habría renombrado el check `test` a `test (h2)`, y cualquier regla de la rama que lo nombre dejaría de encontrarlo. Dos jobs corren en paralelo, así que no alargan la corrida.
+  - **Mismas piezas que BIT-025:** `actions/checkout@v7`, `actions/setup-java@v6` (Temurin 21 con caché de Maven) y `actions/upload-artifact@v7`, sin permisos de escritura y sin secretos. Los reportes si algo falla se suben con un nombre distinto (`surefire-reports-postgres`), para que no choquen con los del job `test`. Un paso imprime la versión de Docker del runner, para que un fallo de entorno se distinga de uno de las pruebas.
+  - **Medición.** El comando exacto del job, en local con las dependencias en caché y la imagen ya descargada: **91,4 s**, `BUILD SUCCESS`, **256 de 256** pruebas sobre PostgreSQL (0 conexiones a H2, 9 a PostgreSQL). El job `test` tardó 92 s en GitHub en el PR 4. De ahí el límite de 20 minutos: deja margen para la primera descarga de la imagen de PostgreSQL (unos 106 MB) y de la de limpieza de Testcontainers. Después de la corrida no quedó ningún contenedor.
+  - **Validación local.** PyYAML cargó el archivo y se comprobaron 14 puntos, entre ellos que el job `test` es idéntico al del commit anterior, que los disparadores, los permisos y la cancelación de corridas viejas no cambiaron, que el comando es exactamente el medido, que las versiones de las acciones coinciden con las del otro job y que no hay `secrets.`. No hay `actionlint` instalado. **Un workflow no se puede ejecutar en local, así que no hay un rojo previo.**
+- **Afectaciones:**
+  - Cada PR y cada push a `main` ejecutan dos jobs en vez de uno, y consumen casi el doble de minutos de Actions.
+  - El check `postgres` aparecerá junto a `test`, pero **no es obligatorio**: exigirlo para fusionar es un ajuste de protección de ramas en GitHub, que no se tocó.
+  - No cambia ningún código ni contrato.
+- **Sin verificar:**
+  - **La corrida real en GitHub.** Que el runner tenga Docker, que Testcontainers lo detecte allí, el tiempo en frío y que el límite de 20 minutos alcance. Este commit no ha corrido en GitHub.
+  - Que el job se ponga **rojo** cuando se rompe algo solo en PostgreSQL (no hay rojo previo, y no se simuló).
+  - Las descargas de `postgres:16-alpine` y de `testcontainers/ryuk` desde Docker Hub en el runner: podrían toparse con límites de descarga anónima.
+  - Que la subida de reportes funcione en este job.
+- **Pendiente:** subir la rama y abrir un PR para que el job corra de verdad; decidir si se exige el check `postgres` antes de fusionar; los frentes de RabbitMQ y de roles y membresías.
 
 ---
 
