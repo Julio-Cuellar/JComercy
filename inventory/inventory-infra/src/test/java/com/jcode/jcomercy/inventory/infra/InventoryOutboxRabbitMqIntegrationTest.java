@@ -6,6 +6,7 @@ import com.jcode.jcomercy.inventory.infra.persistence.entity.InventoryOutboxEven
 import com.jcode.jcomercy.inventory.infra.persistence.repository.InventoryOutboxEventSpringDataRepository;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -24,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -73,6 +75,14 @@ class InventoryOutboxRabbitMqIntegrationTest {
 
     @Autowired
     private RabbitTemplate rabbitTemplate;
+
+    @BeforeEach
+    void cleanOutbox() {
+        // La base de datos de pruebas se comparte entre clases. El despachador de inventario reintenta siempre los 50
+        // pendientes más antiguos: con eventos viejos de otras pruebas delante, los de esta no se intentarían (visto en
+        // una corrida completa, ERR-022). Igual que InventoryOutboxIntegrationTest, se parte de una tabla vacía.
+        outbox.deleteAll();
+    }
 
     @Test
     @DisplayName("Un evento del Outbox llega a la cola del broker real con su identificador, su clave, sus cabeceras y modo persistente")
@@ -159,7 +169,70 @@ class InventoryOutboxRabbitMqIntegrationTest {
         assertThat(received).as("orden de creación").containsExactlyElementsOf(expected);
     }
 
+    /**
+     * Fase R3: un broker que no responde. Se congela el contenedor ({@code docker pause}) con la conexión ya abierta: el
+     * sistema operativo sigue aceptando lo que se le manda, pero nadie confirma. Cada evento espera entonces los 5 s de
+     * la confirmación y sigue pendiente; al reanudarse el broker, ninguno debe haberse perdido.
+     */
+    @Test
+    @DisplayName("Con el broker colgado, cada evento espera su confirmación y sigue pendiente; al reanudarse, ninguno se pierde")
+    void eventsAreNotLostWhenTheBrokerStopsAnswering() throws Exception {
+        InventoryOutboxDispatcher dispatcher = new InventoryOutboxDispatcher(outbox, rabbitTemplate, EXCHANGE);
+        // La conexión se abre con el broker vivo: si se congelara antes, el saludo inicial se quedaría esperando y no se
+        // probaría la espera de la confirmación, que es lo que interesa.
+        String warmUp = "cmp_rmq_" + UUID.randomUUID().toString().substring(0, 8);
+        outboxPort.publish("inventory.stock.received", warmUp, "br_rmq_1", "user_rmq", "cor_rmq_w", Map.of("quantity", 1));
+        for (int round = 0; round < 5 && !"PUBLISHED".equals(find(warmUp).getStatus()); round++) {
+            dispatcher.publishPending();
+        }
+        assertThat(find(warmUp).getStatus()).isEqualTo("PUBLISHED");
+
+        // Un solo evento: con varios, la segunda publicación se queda bloqueada hasta que el cliente da la conexión por
+        // muerta por falta de latidos (unos 130 s, medido en BIT-039), y la prueba tardaría minutos.
+        String pending = "cmp_rmq_" + UUID.randomUUID().toString().substring(0, 8);
+        outboxPort.publish("inventory.stock.received", pending, "br_rmq_1", "user_rmq", "cor_rmq_p", Map.of("quantity", 1));
+        List<String> companies = List.of(pending);
+
+        brokerFrozen();
+        long started = System.nanoTime();
+        try {
+            dispatcher.publishPending();
+        } finally {
+            brokerResumed();
+        }
+        long seconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);
+
+        // El evento espera 5 s una confirmación que no llega: si tardó menos, el broker no estaba colgado.
+        assertThat(seconds).as("segundos que tardó el ciclo con el broker colgado").isGreaterThanOrEqualTo(4);
+        for (String companyId : companies) {
+            InventoryOutboxEventJpaEntity stored = find(companyId);
+            assertThat(stored.getStatus()).as("estado del evento de %s con el broker colgado", companyId).isEqualTo("PENDING");
+            assertThat(stored.getPublishedAt()).isNull();
+            assertThat(stored.getRetryCount()).isGreaterThanOrEqualTo(1);
+            assertThat(stored.getLastError()).as("error guardado con el broker colgado").isNotBlank();
+        }
+
+        long deadline = System.currentTimeMillis() + 60_000;
+        while (System.currentTimeMillis() < deadline
+            && companies.stream().anyMatch(companyId -> !"PUBLISHED".equals(find(companyId).getStatus()))) {
+            dispatcher.publishPending();
+            Thread.sleep(1_000);
+        }
+        List<String> expected = companies.stream().map(companyId -> find(companyId).getEventId().toString()).toList();
+        List<String> received = receiveAll(expected);
+        // Al menos una vez, no exactamente una: el primer envío llegó al broker cuando se reanudó, y luego se reintentó.
+        assertThat(received).as("cada evento llega al menos una vez").containsAll(expected);
+    }
+
     // ---- Ayudas ----
+
+    private static void brokerFrozen() {
+        broker.getDockerClient().pauseContainerCmd(broker.getContainerId()).exec();
+    }
+
+    private static void brokerResumed() {
+        broker.getDockerClient().unpauseContainerCmd(broker.getContainerId()).exec();
+    }
 
     private static void brokerDown() throws Exception {
         assertThat(broker.execInContainer("rabbitmqctl", "stop_app").getExitCode()).isZero();

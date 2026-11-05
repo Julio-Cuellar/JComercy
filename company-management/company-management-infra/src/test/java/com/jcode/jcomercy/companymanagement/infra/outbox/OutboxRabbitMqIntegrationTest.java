@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -163,7 +164,71 @@ class OutboxRabbitMqIntegrationTest {
         assertThat(received).as("orden de creación").containsExactlyElementsOf(expected);
     }
 
+    /**
+     * Fase R3: un broker que no responde. Se congela el contenedor ({@code docker pause}) con la conexión ya abierta: el
+     * sistema operativo sigue aceptando lo que se le manda, pero nadie confirma. Cada evento espera entonces los 5 s de
+     * la confirmación y vuelve a pendiente; al reanudarse el broker, ninguno debe haberse perdido.
+     */
+    @Test
+    @DisplayName("Con el broker colgado, cada evento espera su confirmación y vuelve a pendiente; al reanudarse, ninguno se pierde")
+    void eventsAreNotLostWhenTheBrokerStopsAnswering() throws Exception {
+        // La conexión se abre con el broker vivo: si se congelara antes, el saludo inicial se quedaría esperando y no se
+        // probaría la espera de la confirmación, que es lo que interesa.
+        OutboxEventJpaEntity warmUp = eventOf(registerAccount());
+        for (int round = 0; round < 5 && !"PUBLISHED".equals(statusOf(warmUp)); round++) {
+            dispatcher.publishPending();
+        }
+        assertThat(statusOf(warmUp)).isEqualTo("PUBLISHED");
+
+        // Un solo evento: con varios, la segunda publicación se queda bloqueada hasta que el cliente da la conexión por
+        // muerta por falta de latidos (unos 130 s, medido en BIT-039), y la prueba tardaría minutos.
+        List<OutboxEventJpaEntity> events = List.of(eventOf(registerAccount()));
+
+        brokerFrozen();
+        long started = System.nanoTime();
+        try {
+            dispatcher.publishPending();
+        } finally {
+            brokerResumed();
+        }
+        long seconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);
+
+        // El evento espera 5 s una confirmación que no llega: si tardó menos, el broker no estaba colgado.
+        assertThat(seconds).as("segundos que tardó el ciclo con el broker colgado").isGreaterThanOrEqualTo(4);
+        for (OutboxEventJpaEntity event : events) {
+            OutboxEventJpaEntity stored = outbox.findById(event.getId()).orElseThrow();
+            assertThat(stored.getStatus()).as("estado de %s con el broker colgado", event.getEventId()).isEqualTo("PENDING");
+            assertThat(stored.getPublishedAt()).isNull();
+            assertThat(stored.getRetryCount()).isGreaterThanOrEqualTo(1);
+            assertThat(stored.getErrorMessage()).as("error guardado con el broker colgado").isNotBlank();
+        }
+
+        long deadline = System.currentTimeMillis() + 60_000;
+        while (System.currentTimeMillis() < deadline && events.stream().anyMatch(event -> !"PUBLISHED".equals(statusOf(event)))) {
+            dispatcher.publishPending();
+            Thread.sleep(1_000);
+        }
+        List<String> expected = events.stream().map(OutboxEventJpaEntity::getEventId).toList();
+        List<String> received = receiveAll(expected);
+        // Al menos una vez, no exactamente una: el primer envío llegó al broker cuando se reanudó, y luego se reintentó.
+        assertThat(received).as("cada evento llega al menos una vez").containsAll(expected);
+    }
+
     // ---- Ayudas ----
+
+    private static void brokerFrozen() {
+        broker.getDockerClient().pauseContainerCmd(broker.getContainerId()).exec();
+    }
+
+    private static void brokerResumed() {
+        broker.getDockerClient().unpauseContainerCmd(broker.getContainerId()).exec();
+    }
+
+    private OutboxEventJpaEntity eventOf(String accountId) {
+        return outbox.findAll().stream()
+            .filter(candidate -> accountId.equals(candidate.getAccountId()))
+            .findFirst().orElseThrow();
+    }
 
     private static void brokerDown() throws Exception {
         assertThat(broker.execInContainer("rabbitmqctl", "stop_app").getExitCode()).isZero();
