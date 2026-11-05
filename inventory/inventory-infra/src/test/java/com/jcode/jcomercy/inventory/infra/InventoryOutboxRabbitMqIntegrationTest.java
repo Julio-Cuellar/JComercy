@@ -20,6 +20,8 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.RabbitMQContainer;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -107,7 +109,78 @@ class InventoryOutboxRabbitMqIntegrationTest {
         assertThat(new String(message.getBody(), StandardCharsets.UTF_8)).isEqualTo(event.getPayload());
     }
 
+    /**
+     * Fase R2: la caída y el regreso del broker. El Outbox existe para que registrar un evento no dependa de que el
+     * broker esté arriba, y para que ningún evento se pierda. La caída se simula parando la aplicación de RabbitMQ dentro
+     * del contenedor ({@code rabbitmqctl stop_app}): el puerto sigue asignado, rechaza conexiones y sus datos sobreviven.
+     */
+    @Test
+    @DisplayName("Con el broker caído los eventos no se pierden, y al volver salen todos, una sola vez y en orden")
+    void eventsSurviveABrokerOutageAndGoOutOnceItIsBack() throws Exception {
+        InventoryOutboxDispatcher dispatcher = new InventoryOutboxDispatcher(outbox, rabbitTemplate, EXCHANGE);
+        List<String> companies = new ArrayList<>();
+        brokerDown();
+        try {
+            for (int i = 0; i < 3; i++) {
+                String companyId = "cmp_rmq_" + UUID.randomUUID().toString().substring(0, 8);
+                // Registrar el evento es solo una fila en la base de datos: no depende del broker.
+                outboxPort.publish("inventory.stock.received", companyId, "br_rmq_1", "user_rmq", "cor_rmq_" + i,
+                    Map.of("productId", "prod-1", "quantity", i + 1));
+                companies.add(companyId);
+            }
+            dispatcher.publishPending();
+
+            for (String companyId : companies) {
+                InventoryOutboxEventJpaEntity stored = find(companyId);
+                assertThat(stored.getStatus()).as("estado del evento de %s con el broker caído", companyId).isEqualTo("PENDING");
+                assertThat(stored.getPublishedAt()).isNull();
+                assertThat(stored.getRetryCount()).isGreaterThanOrEqualTo(1);
+                assertThat(stored.getLastError()).isNotBlank();
+            }
+        } finally {
+            brokerUp();
+        }
+
+        long deadline = System.currentTimeMillis() + 60_000;
+        while (System.currentTimeMillis() < deadline
+            && companies.stream().anyMatch(companyId -> !"PUBLISHED".equals(find(companyId).getStatus()))) {
+            dispatcher.publishPending();
+            Thread.sleep(1_000);
+        }
+        for (String companyId : companies) {
+            InventoryOutboxEventJpaEntity stored = find(companyId);
+            assertThat(stored.getStatus()).as("estado del evento de %s tras volver el broker", companyId).isEqualTo("PUBLISHED");
+            assertThat(stored.getLastError()).isNull();
+        }
+
+        List<String> expected = companies.stream().map(companyId -> find(companyId).getEventId().toString()).toList();
+        List<String> received = receiveAll(expected);
+        assertThat(received).as("mensajes de los tres eventos, sin duplicados").doesNotHaveDuplicates().hasSize(3);
+        assertThat(received).as("orden de creación").containsExactlyElementsOf(expected);
+    }
+
     // ---- Ayudas ----
+
+    private static void brokerDown() throws Exception {
+        assertThat(broker.execInContainer("rabbitmqctl", "stop_app").getExitCode()).isZero();
+    }
+
+    private static void brokerUp() throws Exception {
+        assertThat(broker.execInContainer("rabbitmqctl", "start_app").getExitCode()).isZero();
+    }
+
+    /** Vacía la cola y devuelve, en el orden en que salieron, los identificadores de los mensajes pedidos. */
+    private List<String> receiveAll(List<String> wanted) {
+        List<String> received = new ArrayList<>();
+        Message message;
+        while ((message = rabbitTemplate.receive(QUEUE, 3_000)) != null) {
+            String id = message.getMessageProperties().getMessageId();
+            if (wanted.contains(id)) {
+                received.add(id);
+            }
+        }
+        return received;
+    }
 
     private InventoryOutboxEventJpaEntity find(String companyId) {
         return outbox.findAll().stream()

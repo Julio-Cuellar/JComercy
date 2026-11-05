@@ -22,6 +22,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.RabbitMQContainer;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -111,7 +113,78 @@ class OutboxRabbitMqIntegrationTest {
         assertThat(new String(message.getBody(), StandardCharsets.UTF_8)).isEqualTo(event.getPayloadJson());
     }
 
+    /**
+     * Fase R2: la caída y el regreso del broker. El Outbox existe para que la operación de negocio no dependa de que el
+     * broker esté arriba, y para que ningún evento se pierda. La caída se simula parando la aplicación de RabbitMQ dentro
+     * del contenedor ({@code rabbitmqctl stop_app}): el puerto sigue asignado, rechaza conexiones y sus datos sobreviven.
+     */
+    @Test
+    @DisplayName("Con el broker caído los eventos no se pierden ni frenan la operación, y al volver salen todos, una sola vez y en orden")
+    void eventsSurviveABrokerOutageAndGoOutOnceItIsBack() throws Exception {
+        List<OutboxEventJpaEntity> events = new ArrayList<>();
+        brokerDown();
+        try {
+            for (int i = 0; i < 3; i++) {
+                // registerAccount exige un 201: la operación de negocio no depende de que el broker esté arriba.
+                String accountId = registerAccount();
+                events.add(outbox.findAll().stream()
+                    .filter(candidate -> accountId.equals(candidate.getAccountId()))
+                    .findFirst().orElseThrow());
+            }
+            dispatcher.publishPending();
+
+            for (OutboxEventJpaEntity event : events) {
+                OutboxEventJpaEntity stored = outbox.findById(event.getId()).orElseThrow();
+                assertThat(stored.getStatus()).as("estado de %s con el broker caído", event.getEventId()).isEqualTo("PENDING");
+                assertThat(stored.getPublishedAt()).isNull();
+                assertThat(stored.getRetryCount()).isGreaterThanOrEqualTo(1);
+                assertThat(stored.getErrorMessage()).isNotBlank();
+                assertThat(stored.getNextRetryAt()).isNotNull();
+            }
+        } finally {
+            brokerUp();
+        }
+
+        // El reintento espera (5 s por intento): se despacha hasta que salgan los tres, con un límite.
+        long deadline = System.currentTimeMillis() + 60_000;
+        while (System.currentTimeMillis() < deadline && events.stream().anyMatch(event -> !"PUBLISHED".equals(statusOf(event)))) {
+            dispatcher.publishPending();
+            Thread.sleep(1_000);
+        }
+        for (OutboxEventJpaEntity event : events) {
+            OutboxEventJpaEntity stored = outbox.findById(event.getId()).orElseThrow();
+            assertThat(stored.getStatus()).as("estado de %s tras volver el broker", event.getEventId()).isEqualTo("PUBLISHED");
+            assertThat(stored.getErrorMessage()).isNull();
+        }
+
+        List<String> expected = events.stream().map(OutboxEventJpaEntity::getEventId).toList();
+        List<String> received = receiveAll(expected);
+        assertThat(received).as("mensajes de los tres eventos, sin duplicados").doesNotHaveDuplicates().hasSize(3);
+        assertThat(received).as("orden de creación").containsExactlyElementsOf(expected);
+    }
+
     // ---- Ayudas ----
+
+    private static void brokerDown() throws Exception {
+        assertThat(broker.execInContainer("rabbitmqctl", "stop_app").getExitCode()).isZero();
+    }
+
+    private static void brokerUp() throws Exception {
+        assertThat(broker.execInContainer("rabbitmqctl", "start_app").getExitCode()).isZero();
+    }
+
+    /** Vacía la cola y devuelve, en el orden en que salieron, los identificadores de los mensajes pedidos. */
+    private List<String> receiveAll(List<String> wanted) {
+        List<String> received = new ArrayList<>();
+        Message message;
+        while ((message = rabbitTemplate.receive(QUEUE, 3_000)) != null) {
+            String id = message.getMessageProperties().getMessageId();
+            if (wanted.contains(id)) {
+                received.add(id);
+            }
+        }
+        return received;
+    }
 
     private String statusOf(OutboxEventJpaEntity event) {
         return outbox.findById(event.getId()).orElseThrow().getStatus();

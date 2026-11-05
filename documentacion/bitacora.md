@@ -658,7 +658,30 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   3. **Tipo de contenido.** Se publica una cadena de texto, por lo que se espera `text/plain` y no `application/json`; no se comprobó ni se contrastó con el AsyncAPI (R4).
   4. **Transacción larga.** `publishPending` es transaccional y espera hasta 5 s la confirmación de cada evento (hasta 50): con un broker lento podría retener una conexión de la base de datos durante minutos (R3). Después de ERR-015 pesa más.
 - **Sin verificar:** la caída y el regreso del broker, sin pérdida ni duplicados (R2); la espera de la transacción (R3); el contraste con el AsyncAPI (R4); que el CI corra estas pruebas (hoy se omiten allí, porque no hay un job con el perfil); y la versión de RabbitMQ de producción, que no se conoce.
-- **Pendiente:** R2 a R4 y el job de CI.
+- **Pendiente:** R2 (hecha en BIT-038), R3, R4 y el job de CI.
+
+### BIT-038 · El Outbox aguanta la caída y el regreso del broker (fase R2)
+
+- **Qué se hizo:** una segunda prueba por módulo, en las mismas clases de R1, que **apaga el RabbitMQ real**, produce tres eventos y, al encenderlo, comprueba que salen todos, una sola vez y en orden. **Resultado: no hay defecto en lo probado**; son pruebas de guarda. Es la fase R2, y es el criterio que la orden de trabajo de inventario pedía («detener RabbitMQ sin perder eventos» y «al restablecerlo, que se publiquen»), que nunca se había ejecutado.
+- **Cómo se hizo:**
+  - **La caída.** `rabbitmqctl stop_app` y `start_app` dentro del contenedor: el puerto sigue asignado, el broker rechaza conexiones y sus datos sobreviven. Se restaura siempre en un `finally`.
+  - **Con el broker caído.** Company-management registra tres cuentas por REST y cada una debe responder 201, así que la operación de negocio no depende del broker; inventario publica tres eventos por el puerto del Outbox. Se despacha una vez y se comprueba que cada evento sigue en `PENDING`, sin `publishedAt`, con al menos un reintento contado y el error guardado, y en company-management con `nextRetryAt`.
+  - **Con el broker de vuelta.** Se despacha cada segundo, con un límite de 60 s, porque company-management espera 5 s por intento antes de reintentar. Los tres pasan a `PUBLISHED` con el error limpio. Se vacía la cola y se comprueba que hay **exactamente un mensaje por evento** (sin duplicados) y que salen **en el orden de creación**.
+  - **Primera ejecución.** Antes de correr, Docker Desktop estaba apagado tras el reinicio de la máquina (`Could not find a valid Docker environment`); se preguntó y la persona lo inició. Con Docker, la prueba pasó a la primera en los dos módulos, sin rojo previo, porque es una guarda.
+  - **Mutaciones temporales (script en el área de trabajo, archivos restaurados, huellas iguales).** M1 marca como publicado un evento que falló, es decir, lo pierde. M2 despacha en orden inverso. M3 no reintenta nunca un evento que ya falló. **Con las tres cae la prueba de R2 en los dos módulos**, y la de R1 sigue pasando.
+  - **GREEN.** Con el broker: `mvn -B -ntp -Prabbitmq test -Dtest='*RabbitMqIntegrationTest'` → `BUILD SUCCESS`, 2 de 2 en cada módulo (30 s company-management, 25 s inventario, con el contenedor). Suite normal: `mvn -B -ntp test` → `BUILD SUCCESS`, **260 pruebas** (13 + 8 + 8 + 120 + 27 + 84), 7 omitidas, sin Docker y sin contenedores sobrantes.
+- **Afectaciones:** solo pruebas; ningún código de producción, contrato ni dato.
+- **Lo que muestra el código, sin una prueba que lo demuestre (decisiones pendientes):**
+  1. **Orden en company-management.** El despachador junta primero los eventos que nunca fallaron y después los que tienen el reintento vencido. Si en un mismo ciclo hay de los dos, un evento nuevo sale **antes** que uno más antiguo que esperaba su reintento. La prueba de R2 no lo ve, porque los tres eventos fallan y esperan juntos. Las filas llevan `sequence` y `aggregateVersion`, que sugieren que el consumidor reordene, pero hoy no hay consumidor.
+  2. **Inventario no espera entre reintentos.** `markFailed` no programa ninguna demora, y cada ciclo reintenta los 50 eventos más antiguos. Si 50 eventos fallan siempre por una causa que no sea el broker, tapan a los demás. R2 no lo muestra: con el broker caído todos fallan igual y al volver todos salen.
+  3. **Duplicados.** R2 comprueba que en una recuperación normal no los hay. No son imposibles: si la aplicación cae entre la confirmación del broker y el marcado como publicado, el evento se vuelve a publicar (garantía «al menos una vez»). Un consumidor tendría que descartar repetidos por el identificador del mensaje. Es inherente al patrón y no se arregla.
+- **Sin verificar:**
+  - Un broker **lento o colgado**: `stop_app` rechaza conexiones, no simula lentitud (R3).
+  - Que el broker vuelva **sin sus colas**, de modo que se tengan que volver a declarar.
+  - Mensajes que ya estaban en la cola antes de la caída, y una parada completa del broker (solo se paró su aplicación).
+  - La cola de company-management unida con `#` al exchange compartido, que recibiría también los eventos de inventario (hipótesis de R1): requiere las dos aplicaciones sobre el mismo broker.
+  - El contraste con el AsyncAPI (R4) y que el CI corra estas pruebas, que hoy se omiten allí.
+- **Pendiente:** R3, R4 y el job de CI.
 
 ---
 
