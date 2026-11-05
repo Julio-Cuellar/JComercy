@@ -1,5 +1,7 @@
 package com.jcode.jcomercy.companymanagement.infra.outbox;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
 import com.jcode.jcomercy.companymanagement.infra.persistence.entity.OutboxEventJpaEntity;
 import com.jcode.jcomercy.companymanagement.infra.persistence.repository.OutboxSpringDataRepository;
@@ -21,7 +23,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.RabbitMQContainer;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -73,6 +74,9 @@ class OutboxRabbitMqIntegrationTest {
     private MockMvc mockMvc;
 
     @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
     private OutboxSpringDataRepository outbox;
 
     @Autowired
@@ -111,7 +115,11 @@ class OutboxRabbitMqIntegrationTest {
             .containsEntry("accountId", event.getAccountId())
             .containsEntry("companyId", event.getCompanyId());
         assertThat(properties.getHeaders().get("branchId")).isEqualTo(event.getBranchId());
-        assertThat(new String(message.getBody(), StandardCharsets.UTF_8)).isEqualTo(event.getPayloadJson());
+        // El cuerpo es el sobre que describe el AsyncAPI (R4): el payload guardado va como «data», con el identificador.
+        assertThat(properties.getContentType()).isEqualTo("application/json");
+        JsonNode body = objectMapper.readTree(message.getBody());
+        assertThat(body.path("eventId").asText()).isEqualTo(event.getEventId());
+        assertThat(body.path("data")).isEqualTo(objectMapper.readTree(event.getPayloadJson()));
     }
 
     /**

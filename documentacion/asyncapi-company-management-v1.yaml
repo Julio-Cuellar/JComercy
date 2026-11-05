@@ -12,7 +12,11 @@ servers:
   eventBus:
     url: rabbitmq.jcomercy.internal:5672
     protocol: amqp
-    description: Bus de eventos de integración interno entre módulos de JComercy
+    description: Bus de eventos de integración interno entre módulos de JComercy. Los eventos se publican en el exchange
+      `jcomercy.events` (tipo topic, durable) con la clave de enrutamiento igual al tipo de evento, por ejemplo
+      `account.created`; el canal `events/account/created` es su nombre lógico. El mensaje lleva el sobre `EventEnvelope`
+      como cuerpo JSON (`application/json`), es persistente y trae su `eventId` como `messageId` AMQP. Los eventos se
+      entregan al menos una vez, así que quien los consuma debe descartar los repetidos por ese identificador.
   webSockets:
     url: wss://ws.jcomercy.com/ws/v1
     protocol: wss

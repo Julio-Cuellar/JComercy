@@ -47,6 +47,10 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-020 | El error guardado de un evento que el broker no confirma es nulo, y nadie sabe por qué sigue pendiente | RESUELTO (BIT-039) |
 | ERR-021 | Con un broker colgado, un ciclo del despachador se bloquea minutos y el evento puede publicarse dos veces | ABIERTO |
 | ERR-022 | Inventario reintenta siempre los 50 eventos pendientes más antiguos: si fallan, los nuevos no se intentan | ABIERTO |
+| ERR-023 | Company-management publicaba solo el `data` de cada evento, no el sobre (`EventEnvelope`) que exige el AsyncAPI | RESUELTO (BIT-040) |
+| ERR-024 | Valores del sobre que no significan lo que el contrato dice: `accountId` o `companyId` vacíos y `sequence` constante | ABIERTO |
+| ERR-025 | El `data` de tres eventos no usa los nombres que declara el contrato (`ownerPersonId`, `rfc`, falta `isHeadOffice`) | ABIERTO |
+| ERR-026 | Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola | ABIERTO |
 
 ---
 
@@ -708,7 +712,31 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - Un broker congelado **antes** de abrir la conexión (el saludo inicial): no se midió cuánto tarda cada evento ahí. Por el tiempo de conexión por defecto, podría ser del orden de un minuto por evento; es una inferencia.
   - Cuánto tardaría un ciclo de 50 eventos con el broker colgado: solo se midieron dos.
   - Que las pruebas con RabbitMQ real corran en el CI: hoy se omiten allí. Cada clase (R1, R2 y broker colgado, con el contenedor) tarda 35 a 44 s.
-- **Pendiente:** R4 (el contraste con el AsyncAPI) y el job de CI; las decisiones de ERR-021 y ERR-022; y el orden de company-management de BIT-038.
+- **Pendiente:** R4 (hecha en BIT-040) y el job de CI; las decisiones de ERR-021 y ERR-022; y el orden de company-management de BIT-038.
+
+### BIT-040 · El Outbox de company-management publica el sobre que el AsyncAPI exige (fase R4)
+
+- **Qué se hizo:** una prueba de contrato compara lo que el Outbox publica con `asyncapi-company-management-v1.yaml`. Dio **98 fallas**: el módulo publicaba solo el `data` de cada evento, no el sobre que el contrato describe. Se corrigió, y quedaron **tres desajustes abiertos** que piden una decisión (ERR-024 a ERR-026). Es la fase R4, la última del frente de RabbitMQ.
+- **Cómo se hizo:**
+  - **La prueba** (`OutboxEventsContractIntegrationTest`, sin Docker, en la suite normal). Conduce los flujos REST reales: registrar una cuenta, crear una empresa, crear una sucursal matriz, activar la sucursal y la empresa, y suspender una segunda cuenta. Salen **seis tipos de evento** (`account.created`, `account.suspended`, `company.created`, `company.activated`, `branch.created`, `branch.activated`), siete eventos en total. Un `RabbitTemplate` falso convierte el cuerpo con el mismo `SimpleMessageConverter` y aplica el mismo post-procesador que el real, y guarda la clave de enrutamiento, las propiedades y el cuerpo.
+  - **Lo que contrasta** (los campos se leen del YAML, no están escritos en la prueba): que el canal `events/<tipo con barras>` y su mensaje existan en el contrato; el tipo de contenido (el del mensaje o el `defaultContentType`); que el cuerpo sea un `EventEnvelope`, con sus 11 campos obligatorios y del tipo que dicen; que `occurredAt` sea una fecha y hora; que `eventId` coincida con el `messageId`, `eventType` con la clave de enrutamiento y `schemaVersion` con la cabecera; y que el estado del `data` esté dentro de los valores que el contrato declara. Solo se exige en un sentido, como `OpenApiContractTest`: el contrato documenta también eventos anticipados que aún no se emiten.
+  - **El contrato en el classpath de pruebas.** Una ejecución nueva del plugin de recursos copia el AsyncAPI solo a las pruebas. No va a `static/`, como el OpenAPI, para no servir por HTTP el contrato de eventos.
+  - **RED: 98 fallas**, 14 por cada uno de los siete eventos. Faltaban **10 de los 11 campos obligatorios** del sobre en el cuerpo (el undécimo, `accountId` o `companyId`, aparecía solo porque el `data` llevaba una clave con ese nombre), el tipo de contenido no era `application/json`, y no coincidían `eventId`, `eventType` ni `schemaVersion`. **Lo que sí cumplía:** los seis tipos están declarados en el contrato y sus estados caen dentro de los valores permitidos.
+  - **Corrección.** `OutboxDispatcher.envelopeOf` arma el `EventEnvelope` con las columnas de la fila y el payload guardado como `data`, y fija `application/json`. No hace falta migración: la tabla ya guardaba todos esos campos. El constructor recibe el `ObjectMapper`. **GREEN.**
+  - **Mutaciones temporales** (script en el área de trabajo, archivo restaurado, huella igual): sin tipo de contenido, sin `occurredAt` en el sobre, y `aggregateVersion` como texto. **Cada una produce 7 fallas de contrato**, una por evento.
+  - **Prueba de R1 con broker real, actualizada.** Comparaba el cuerpo con el `data` pelado. Ahora comprueba `application/json`, el `eventId` del cuerpo y que el `data` sea el payload guardado.
+  - **AsyncAPI.** La descripción del servidor `eventBus` documenta ahora lo que solo existía en el código: el exchange `jcomercy.events` (topic, durable), la clave de enrutamiento igual al tipo de evento, el cuerpo en `EventEnvelope` con `application/json`, la persistencia, el `messageId`, y la garantía «al menos una vez». Se verificó que el resto del archivo es idéntico (67 canales, 62 mensajes y 76 esquemas).
+  - **Una falla intermitente que encontré yo.** La primera corrida de la suite normal falló en la prueba de contrato: solo salieron 2 de los 6 tipos. Las pruebas de company-management comparten la base de datos en memoria, y los contextos de las clases ya ejecutadas siguen vivos con su despachador programado cada 5 s, que sin broker se llevaba mis eventos y los dejaba en espera de reintento. Es el problema de ERR-002 en inventario. Se corrigió en la raíz con un `application.properties` de pruebas que difiere ese despachador una hora, y además la prueba despacha hasta que salgan todos, con límite de tiempo. **Pasó en las dos corridas completas siguientes, pero dos pasadas no demuestran que ya no sea intermitente.**
+  - **GREEN final.** `mvn -B -ntp test` → `BUILD SUCCESS`, **267 pruebas** (13 + 8 + 8 + 124 + 27 + 87), 9 omitidas, sin Docker. `mvn -B -ntp -Ppostgres,rabbitmq test` → `BUILD SUCCESS`, **267 de 267**, ninguna omitida, sobre PostgreSQL y RabbitMQ reales; sin contenedores sobrantes.
+- **Afectaciones:**
+  - **Producción:** cambia lo que company-management publica. El cuerpo pasa de ser el `data` a ser el sobre completo, con `application/json`. Hoy no hay consumidores. La columna `payload_json` de la tabla no cambia.
+  - **Pruebas:** en company-management el despachador programado queda apagado en todas las pruebas, como ya estaba en inventario.
+  - **Sin migraciones.**
+- **Sin verificar:**
+  - La prueba no valida el `data` contra todo su esquema: comprueba los campos obligatorios del sobre, sus tipos y el estado. Los otros 60 eventos del contrato no se emiten y no se contrastan.
+  - La cola de company-management unida con `#` al exchange compartido, que recibiría también los eventos de inventario (hipótesis de R1): requiere las dos aplicaciones sobre el mismo broker.
+  - Que las pruebas con RabbitMQ real y la de contrato corran en el CI: las de contrato sí (sin Docker); las de broker real se omiten allí.
+- **Pendiente:** el job de CI para las pruebas con RabbitMQ real; las decisiones de ERR-021, ERR-022, ERR-024, ERR-025 y ERR-026; y el PR que cierra el frente de RabbitMQ.
 
 ---
 
@@ -912,3 +940,36 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cómo mitigarlo:** vigilar los eventos con `retry_count` alto y retirarlos a mano de la cola.
 - **Para resolverlo (decisión):** ordenar por reintentos y luego por antigüedad, que no necesita migración pero altera el orden de publicación; o agregar `next_retry_at` con espera creciente, como company-management, que sí necesita una migración de `inventory.outbox_event`.
 - **Mientras tanto:** la prueba de R2 de inventario parte de una tabla vacía para no depender de esto.
+
+### ERR-023 · Company-management publicaba solo el `data` de cada evento, no el sobre que exige el AsyncAPI
+
+- **Estado:** RESUELTO el 2026-11-05 (BIT-040). Visto con la prueba de contrato de R4.
+- **De qué trata:** el AsyncAPI declara que el cuerpo de cada mensaje es un `EventEnvelope` con 11 campos obligatorios (`eventId`, `eventType`, `schemaVersion`, `aggregateVersion`, `sequence`, `occurredAt`, `producerModule`, `correlationId`, `accountId`, `companyId` y `data`) y `application/json`. El Outbox guardaba esos campos en columnas, pero el despachador publicaba solo el `payload_json`, que es únicamente el `data`, y lo marcaba como texto. Algunos campos viajaban como cabeceras AMQP (`eventType`, `schemaVersion`, `accountId`, `companyId`, `branchId`) y el `eventId` como `messageId`; `occurredAt`, `correlationId`, `aggregateVersion`, `sequence`, `producerModule`, `causationId` y `actorUserId` **no se publicaban**.
+- **Cuándo se manifiesta:** en todo evento de company-management. Reproducido con los seis tipos que el módulo emite: 98 fallas de contrato en siete eventos.
+- **Cómo mitigarlo:** mientras no estaba resuelto, quien quisiera consumir los eventos tenía que leer las cabeceras y no el cuerpo, y no podía conocer la fecha ni la correlación. No había consumidores.
+- **Cómo se resolvió:** `OutboxDispatcher.envelopeOf` arma el sobre con las columnas de la fila y el payload como `data`, y fija `application/json`. Verificado con `OutboxEventsContractIntegrationTest` y con la prueba con broker real de R1.
+- **Lo que no cubre:** que los **valores** del sobre signifiquen lo que el contrato dice (ERR-024) y que el `data` use los nombres del contrato (ERR-025).
+
+### ERR-024 · Valores del sobre que no significan lo que el contrato dice
+
+- **Estado:** ABIERTO. Visto al preparar la prueba de R4, por lectura del código; **requiere una decisión**.
+- **De qué trata:** tres cosas. (1) Los eventos de sucursal salen con `accountId` vacío (`""`), y los de cuenta con `companyId` vacío; el contrato marca los dos como obligatorios. En una cuenta recién creada la empresa aún no existe, así que ahí quien debería cambiar es el contrato, que tendría que admitir `companyId` nulo; en las sucursales, en cambio, el `accountId` se podría resolver desde la empresa. (2) `sequence` vale siempre `1` en los eventos de creación y `2` en los de activación o suspensión: es una constante, no una secuencia. El contrato no define qué debe contar. (3) `aggregateVersion` sí es la versión real de la entidad.
+- **Cuándo se manifiesta:** en todos los eventos `branch.*`, `account.*` y, para `sequence`, en los seis tipos. La prueba de contrato no lo ve porque exige que el campo esté presente, no que tenga contenido.
+- **Cómo mitigarlo:** un consumidor no debe fiarse de `accountId` ni de `companyId` vacíos, ni de `sequence`.
+- **Para resolverlo (decisión):** hacer opcional `companyId` en los eventos de cuenta, resolver el `accountId` de las sucursales, y definir `sequence` (por ejemplo, por agregado) o dejar de publicarlo.
+
+### ERR-025 · El `data` de tres eventos no usa los nombres que declara el contrato
+
+- **Estado:** ABIERTO. Visto al preparar la prueba de R4; **requiere una decisión**.
+- **De qué trata:** `account.created` envía `ownerPersonId` y el contrato declara `ownerUserId`; `company.created` envía `rfc` y el contrato declara `taxId`; `branch.created` no envía `isHeadOffice` y sí `type`, `domicilio` y `phoneNumber`, que el contrato no declara. Ninguna de esas propiedades es obligatoria en el contrato, y los datos extra están permitidos, por eso la prueba de R4 no lo exige.
+- **Cuándo se manifiesta:** en esos tres eventos. Un consumidor hecho a partir del AsyncAPI no encontraría `ownerUserId`, `taxId` ni `isHeadOffice`.
+- **Cómo mitigarlo:** documentar los nombres reales; por ahora no hay consumidores.
+- **Para resolverlo (decisión):** cambiar el contrato o el código. `rfc` es un dato fiscal de México y `taxId` es genérico; `ownerPersonId` es el id de la persona dueña y no el de un usuario.
+
+### ERR-026 · Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola
+
+- **Estado:** ABIERTO. Visto en la fase R4, por lectura del código; **requiere una decisión**.
+- **De qué trata:** (1) No existe un AsyncAPI de inventario. (2) Inventario publica un sobre propio (`eventId`, `eventType`, `schemaVersion`, `occurredAt`, `correlationId`, `companyId`, `branchId`, `actorUserId` y `data`) que no es el de company-management: le faltan `accountId`, `aggregateVersion`, `sequence` y `producerModule`. Los dos módulos publican en el mismo exchange, así que un consumidor tendría que entender dos formas. Además, el despachador de inventario no fija el tipo de contenido. (3) Los eventos `warehouse.created` y `warehouse.activated` se publican con una clave que no coincide con el patrón de la cola de inventario (`inventory.#`), de modo que no llegarían a ella. Esto último no se probó con el broker, y hoy no hay consumidores.
+- **Cuándo se manifiesta:** al conectar a un consumidor, no antes.
+- **Cómo mitigarlo:** por ahora, no consumir eventos de inventario sin revisar su forma real.
+- **Para resolverlo (decisión):** escribir el AsyncAPI de inventario, acordar un sobre común (por ejemplo, en `jcomercy-core`) y renombrar los eventos de almacén con el prefijo `inventory.`, o ampliar el patrón de la cola.
