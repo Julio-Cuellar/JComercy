@@ -43,6 +43,14 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-016 | Una ráfaga de intentos de contraseña de empresa verifica muchas más de cinco contraseñas antes de bloquear | RESUELTO (BIT-035) |
 | ERR-017 | Varias primeras entradas simultáneas de un producto crean un saldo cada una, y después toda operación sobre ese producto y lugar responde 500 | RESUELTO (BIT-035) |
 | ERR-018 | Los seriales de una empresa nueva, pedidos a la vez, fallan con 500 salvo una petición | RESUELTO (BIT-035) |
+| ERR-019 | El despachador del Outbox espera al broker dentro de una sola transacción: retiene una conexión de la base de datos y los eventos ya confirmados no se ven como publicados hasta el final del ciclo | RESUELTO (BIT-039) |
+| ERR-020 | El error guardado de un evento que el broker no confirma es nulo, y nadie sabe por qué sigue pendiente | RESUELTO (BIT-039) |
+| ERR-021 | Con un broker colgado, un ciclo del despachador se bloquea minutos y el evento puede publicarse dos veces | ABIERTO |
+| ERR-022 | Inventario reintenta siempre los 50 eventos pendientes más antiguos: si fallan, los nuevos no se intentan | ABIERTO |
+| ERR-023 | Company-management publicaba solo el `data` de cada evento, no el sobre (`EventEnvelope`) que exige el AsyncAPI | RESUELTO (BIT-040) |
+| ERR-024 | Valores del sobre que no significan lo que el contrato dice: `accountId` o `companyId` vacíos y `sequence` constante | ABIERTO |
+| ERR-025 | El `data` de tres eventos no usa los nombres que declara el contrato (`ownerPersonId`, `rfc`, falta `isHeadOffice`) | ABIERTO |
+| ERR-026 | Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola | ABIERTO |
 
 ---
 
@@ -633,12 +641,102 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - Cada PR y cada push a `main` ejecutan dos jobs en vez de uno, y consumen casi el doble de minutos de Actions.
   - El check `postgres` aparecerá junto a `test`, pero **no es obligatorio**: exigirlo para fusionar es un ajuste de protección de ramas en GitHub, que no se tocó.
   - No cambia ningún código ni contrato.
+- **Verificado después (PR 5, 2026-11-04):** el job corrió en GitHub por primera vez y pasó, junto con `test`, antes de fusionar. `test` tardó 116 s y `postgres` 138 s en frío (de 13:15:20 a 13:17:16 y a 13:17:38 UTC), muy por debajo del límite de 20 minutos. Con eso quedan comprobados que el runner trae Docker, que Testcontainers lo detecta allí y que las imágenes se descargan.
 - **Sin verificar:**
-  - **La corrida real en GitHub.** Que el runner tenga Docker, que Testcontainers lo detecte allí, el tiempo en frío y que el límite de 20 minutos alcance. Este commit no ha corrido en GitHub.
   - Que el job se ponga **rojo** cuando se rompe algo solo en PostgreSQL (no hay rojo previo, y no se simuló).
-  - Las descargas de `postgres:16-alpine` y de `testcontainers/ryuk` desde Docker Hub en el runner: podrían toparse con límites de descarga anónima.
-  - Que la subida de reportes funcione en este job.
-- **Pendiente:** subir la rama y abrir un PR para que el job corra de verdad; decidir si se exige el check `postgres` antes de fusionar; los frentes de RabbitMQ y de roles y membresías.
+  - Que Docker Hub no limite las descargas anónimas de `postgres:16-alpine` y de `testcontainers/ryuk` en otras corridas: esta vez no pasó nada.
+  - Que la subida de reportes funcione en este job: solo se ejecuta si algo falla.
+- **Pendiente:** decidir si se exige el check `postgres` antes de fusionar (es un ajuste de protección de ramas en GitHub, que no se tocó); los frentes de RabbitMQ y de roles y membresías.
+
+### BIT-037 · El Outbox de los dos módulos publica de verdad a un RabbitMQ real (fase R1)
+
+- **Qué se hizo:** un perfil Maven `rabbitmq` y una prueba de integración por módulo que levantan un RabbitMQ en un contenedor, publican un evento del Outbox y comprueban lo que llega a la cola. Hasta ahora el broker real nunca se había probado: todas las pruebas usaban un `RabbitTemplate` simulado (BIT-031 lo había anotado como «sin verificar»). **Resultado: no hay defecto en lo que se probó**; son pruebas de guarda. Es la fase R1 del frente de RabbitMQ.
+- **Cómo se hizo:**
+  - **Rama nueva** `feat/pruebas-rabbitmq`, desde `main` con el PR 5 ya fusionado.
+  - **Perfil y dependencia.** `mvn -Prabbitmq test -Dtest='*RabbitMqIntegrationTest'` pasa la propiedad `jcomercy.test.broker` a las pruebas; sin el perfil se omiten y no hace falta Docker. Misma idea que `-Ppostgres` (BIT-033). Dependencia de ámbito `test`: `org.testcontainers:rabbitmq` (1.21.4, ya fijada) en los dos módulos.
+  - **Las pruebas.** `OutboxRabbitMqIntegrationTest` (company-management) registra una cuenta por REST, deja el despachador programado para dentro de una hora y lo invoca a mano; `InventoryOutboxRabbitMqIntegrationTest` publica por el puerto del Outbox y crea un despachador con el `RabbitTemplate` real del contexto, porque en pruebas el programado está apagado. Cada una levanta `rabbitmq:3.13-alpine` (arranque y parada manuales, `@DynamicPropertySource` para la dirección), despacha hasta que el evento sale (la base H2 se comparte entre pruebas y puede haber otros pendientes delante) y saca mensajes de la cola hasta encontrar el suyo.
+  - **Lo que se comprueba en el mensaje recibido:** el identificador del mensaje es el del evento; el exchange es `jcomercy.events`; la clave de enrutamiento es el tipo de evento; las cabeceras (`eventType`, `schemaVersion`, `companyId`, `branchId` y, según el módulo, `accountId`, `actorUserId`, `correlationId`) valen lo guardado; el cuerpo es el mismo JSON guardado; el modo de entrega es persistente. Y la fila del Outbox pasa a `PUBLISHED` con `publishedAt`, lo que exige que el broker confirme (la confirmación correlacionada funcionó con un broker real).
+  - **Primera ejecución: error mío.** Las dos fallaron con `expected: PERSISTENT but was: null`. Era la propiedad equivocada: en un mensaje recibido el modo está en `getReceivedDeliveryMode()`, no en `getDeliveryMode()`, que es solo para los que se envían. Con la propiedad correcta pasan, y **el modo persistente queda confirmado en el mensaje que llegó**.
+  - **Mutaciones temporales (script en el área de trabajo, archivos restaurados, huellas iguales):** M1 mensaje no persistente, M2 sin identificador de mensaje, M3 clave de enrutamiento distinta. Con cada una **fallan las dos pruebas**.
+  - **GREEN.** Con el broker: `mvn -B -ntp -Prabbitmq test -Dtest='*RabbitMqIntegrationTest'` → `BUILD SUCCESS`, 1 de 1 en cada módulo (16 s cada una, con el contenedor). Suite normal: `mvn -B -ntp test` → `BUILD SUCCESS`, **258 pruebas** (13 + 8 + 8 + 119 + 27 + 83), 5 omitidas: las dos de humo de Postgres, la variante de seriales y las dos de RabbitMQ. Sin Docker y sin contenedores sobrantes.
+- **Afectaciones:** solo pruebas y `pom.xml` (un perfil y una dependencia de prueba); ningún código de producción, contrato ni dato. La primera vez se descarga la imagen de RabbitMQ.
+- **Lo que mostró la lectura del código, sin probar todavía (candidatos para R2 a R4):**
+  1. **Reintentos distintos.** Company-management, al fallar, deja el evento pendiente con espera creciente (5 s por intento, tope de 300 s). Inventario no espera: lo reintenta en cada ciclo, siempre con los 50 más antiguos, de modo que un grupo de eventos que fallen siempre taparía a los demás.
+  2. **Cola de company-management.** Se une con `#` al exchange compartido, así que también recibiría los eventos de inventario; no tiene consumidor ni tope de tamaño o de vida, y podría crecer sin límite. Es una hipótesis: hay que verla con las dos aplicaciones sobre el mismo broker.
+  3. **Tipo de contenido.** Se publica una cadena de texto, por lo que se espera `text/plain` y no `application/json`; no se comprobó ni se contrastó con el AsyncAPI (R4).
+  4. **Transacción larga.** `publishPending` es transaccional y espera hasta 5 s la confirmación de cada evento (hasta 50): con un broker lento podría retener una conexión de la base de datos durante minutos (R3). Después de ERR-015 pesa más.
+- **Sin verificar:** la caída y el regreso del broker, sin pérdida ni duplicados (R2); la espera de la transacción (R3); el contraste con el AsyncAPI (R4); que el CI corra estas pruebas (hoy se omiten allí, porque no hay un job con el perfil); y la versión de RabbitMQ de producción, que no se conoce.
+- **Pendiente:** R2 (hecha en BIT-038), R3, R4 y el job de CI.
+
+### BIT-038 · El Outbox aguanta la caída y el regreso del broker (fase R2)
+
+- **Qué se hizo:** una segunda prueba por módulo, en las mismas clases de R1, que **apaga el RabbitMQ real**, produce tres eventos y, al encenderlo, comprueba que salen todos, una sola vez y en orden. **Resultado: no hay defecto en lo probado**; son pruebas de guarda. Es la fase R2, y es el criterio que la orden de trabajo de inventario pedía («detener RabbitMQ sin perder eventos» y «al restablecerlo, que se publiquen»), que nunca se había ejecutado.
+- **Cómo se hizo:**
+  - **La caída.** `rabbitmqctl stop_app` y `start_app` dentro del contenedor: el puerto sigue asignado, el broker rechaza conexiones y sus datos sobreviven. Se restaura siempre en un `finally`.
+  - **Con el broker caído.** Company-management registra tres cuentas por REST y cada una debe responder 201, así que la operación de negocio no depende del broker; inventario publica tres eventos por el puerto del Outbox. Se despacha una vez y se comprueba que cada evento sigue en `PENDING`, sin `publishedAt`, con al menos un reintento contado y el error guardado, y en company-management con `nextRetryAt`.
+  - **Con el broker de vuelta.** Se despacha cada segundo, con un límite de 60 s, porque company-management espera 5 s por intento antes de reintentar. Los tres pasan a `PUBLISHED` con el error limpio. Se vacía la cola y se comprueba que hay **exactamente un mensaje por evento** (sin duplicados) y que salen **en el orden de creación**.
+  - **Primera ejecución.** Antes de correr, Docker Desktop estaba apagado tras el reinicio de la máquina (`Could not find a valid Docker environment`); se preguntó y la persona lo inició. Con Docker, la prueba pasó a la primera en los dos módulos, sin rojo previo, porque es una guarda.
+  - **Mutaciones temporales (script en el área de trabajo, archivos restaurados, huellas iguales).** M1 marca como publicado un evento que falló, es decir, lo pierde. M2 despacha en orden inverso. M3 no reintenta nunca un evento que ya falló. **Con las tres cae la prueba de R2 en los dos módulos**, y la de R1 sigue pasando.
+  - **GREEN.** Con el broker: `mvn -B -ntp -Prabbitmq test -Dtest='*RabbitMqIntegrationTest'` → `BUILD SUCCESS`, 2 de 2 en cada módulo (30 s company-management, 25 s inventario, con el contenedor). Suite normal: `mvn -B -ntp test` → `BUILD SUCCESS`, **260 pruebas** (13 + 8 + 8 + 120 + 27 + 84), 7 omitidas, sin Docker y sin contenedores sobrantes.
+- **Afectaciones:** solo pruebas; ningún código de producción, contrato ni dato.
+- **Lo que muestra el código, sin una prueba que lo demuestre (decisiones pendientes):**
+  1. **Orden en company-management.** El despachador junta primero los eventos que nunca fallaron y después los que tienen el reintento vencido. Si en un mismo ciclo hay de los dos, un evento nuevo sale **antes** que uno más antiguo que esperaba su reintento. La prueba de R2 no lo ve, porque los tres eventos fallan y esperan juntos. Las filas llevan `sequence` y `aggregateVersion`, que sugieren que el consumidor reordene, pero hoy no hay consumidor.
+  2. **Inventario no espera entre reintentos.** `markFailed` no programa ninguna demora, y cada ciclo reintenta los 50 eventos más antiguos. Si 50 eventos fallan siempre por una causa que no sea el broker, tapan a los demás. R2 no lo muestra: con el broker caído todos fallan igual y al volver todos salen.
+  3. **Duplicados.** R2 comprueba que en una recuperación normal no los hay. No son imposibles: si la aplicación cae entre la confirmación del broker y el marcado como publicado, el evento se vuelve a publicar (garantía «al menos una vez»). Un consumidor tendría que descartar repetidos por el identificador del mensaje. Es inherente al patrón y no se arregla.
+- **Sin verificar:**
+  - Un broker **lento o colgado**: `stop_app` rechaza conexiones, no simula lentitud (R3).
+  - Que el broker vuelva **sin sus colas**, de modo que se tengan que volver a declarar.
+  - Mensajes que ya estaban en la cola antes de la caída, y una parada completa del broker (solo se paró su aplicación).
+  - La cola de company-management unida con `#` al exchange compartido, que recibiría también los eventos de inventario (hipótesis de R1): requiere las dos aplicaciones sobre el mismo broker.
+  - El contraste con el AsyncAPI (R4) y que el CI corra estas pruebas, que hoy se omiten allí.
+- **Pendiente:** R3 (hecha en BIT-039), R4 y el job de CI.
+
+### BIT-039 · El despachador del Outbox deja de retener una transacción mientras espera al broker (fase R3)
+
+- **Qué se hizo:** R3 mide qué pasa con un broker lento o colgado. La hipótesis de la transacción larga **se confirmó** (ERR-019) y se corrigió; se encontró y corrigió un error guardado vacío (ERR-020); y se midieron dos problemas que **siguen abiertos y piden una decisión** (ERR-021 y ERR-022).
+- **Cómo se hizo:**
+  - **Prueba de conexión, sin Docker** (`OutboxDispatcherConnectionIntegrationTest` e `InventoryOutboxDispatcherConnectionIntegrationTest`). Un `RabbitTemplate` falso confirma todo al instante salvo un evento, que deja esperando como lo haría un broker que no responde. Mientras el tercero espera, mide el estado de los dos primeros y las conexiones activas del pool (Hikari). Corre en la suite normal.
+    - **RED, en los dos módulos, tres fallas:** el primer evento seguía `PENDING` en vez de `PUBLISHED`, el segundo también, y había **1 conexión retenida** (esperado 0). Es decir, todo el ciclo iba dentro de una transacción.
+    - **Corrección:** se quita `@Transactional` de `publishPending` en `OutboxDispatcher` y en `InventoryOutboxDispatcher`; cada `repository.save` confirma por su cuenta. **GREEN.**
+  - **Error vacío.** Segunda prueba en las mismas clases, con un evento que el broker recibe y nunca confirma. **RED en los dos módulos:** `Expecting not blank but was: null`. La espera agotada (`TimeoutException`) no trae mensaje, y eso es lo que se guardaba. **Corrección:** `describe(ex)` guarda «El broker no confirmó el evento en 5 segundos.» para la espera agotada y el nombre de la clase de la excepción si no hay mensaje. **GREEN.**
+  - **Broker colgado de verdad** (en las clases de R1 y R2, con `-Prabbitmq`). `docker pause` al contenedor con la conexión ya abierta (congelado antes de abrirla, el saludo inicial se queda esperando y no se prueba la confirmación). Con un evento: tras 5 s queda `PENDING`, con un reintento y un error legible; al reanudar el broker sale, **al menos una vez**.
+  - **Medición con dos eventos** (una sonda con salida temporal, que no se conserva). El ciclo tardó **134 a 135 s**: el primer evento falló a los **5,0 s** (la espera de confirmación) y el segundo a los **130 s**, porque la publicación se quedó bloqueada hasta que el cliente dio la conexión por muerta (coincide con los latidos de 2 × 60 s; la causa se infiere, no se diagnosticó con más pruebas). Los errores guardados eran `null` y `java.io.IOException`. **El primer evento apareció dos veces en la cola y el segundo una.** Por eso la prueba que se conserva usa un solo evento: con dos tardaba casi tres minutos por módulo.
+  - **Mutación** (script en el área de trabajo, archivos restaurados, huellas iguales): un evento que falla se marca como publicado. **Caen la prueba de R2 y la del broker colgado, en los dos módulos.** Las pruebas de conexión y de error vacío tuvieron su RED con el código original.
+  - **Error mío en una prueba.** La primera corrida completa con Postgres y RabbitMQ falló en la prueba de R2 de inventario: `retryCount >= 1` no se cumplía, es decir, el despachador **no intentó** sus eventos. La base de pruebas se comparte entre clases y tenía eventos pendientes más antiguos de otras (almacenes) que también fallaban en ese ciclo; como inventario reintenta siempre los 50 más antiguos, los de la prueba quedaron fuera. No se contó el total de pendientes, pero es la explicación que encaja con el registro. Ahora la prueba parte de una tabla vacía (`deleteAll` antes de cada prueba), como ya hace `InventoryOutboxIntegrationTest`. Es la evidencia de ERR-022.
+  - **GREEN final.** `mvn -B -ntp test` → `BUILD SUCCESS`, **266 pruebas** (13 + 8 + 8 + 123 + 27 + 87), 9 omitidas, sin Docker. `mvn -B -ntp -Ppostgres,rabbitmq test` → `BUILD SUCCESS`, **266 de 266**, ninguna omitida, sobre PostgreSQL y RabbitMQ reales; sin contenedores sobrantes.
+- **Afectaciones:**
+  - **Producción:** los dos despachadores dejan de ser transaccionales. Cada evento se confirma en su propia transacción corta: uno publicado queda marcado de inmediato, y si el proceso cae a mitad de un ciclo ya no se vuelven a publicar los anteriores. A cambio hay más viajes a la base de datos por ciclo (un `save` por evento, antes agrupados); no se midió.
+  - **Texto de error:** cambia solo cuando no había mensaje.
+  - **Sin migraciones ni cambios de contrato.**
+- **Sin verificar:**
+  - Un broker congelado **antes** de abrir la conexión (el saludo inicial): no se midió cuánto tarda cada evento ahí. Por el tiempo de conexión por defecto, podría ser del orden de un minuto por evento; es una inferencia.
+  - Cuánto tardaría un ciclo de 50 eventos con el broker colgado: solo se midieron dos.
+  - Que las pruebas con RabbitMQ real corran en el CI: hoy se omiten allí. Cada clase (R1, R2 y broker colgado, con el contenedor) tarda 35 a 44 s.
+- **Pendiente:** R4 (hecha en BIT-040) y el job de CI; las decisiones de ERR-021 y ERR-022; y el orden de company-management de BIT-038.
+
+### BIT-040 · El Outbox de company-management publica el sobre que el AsyncAPI exige (fase R4)
+
+- **Qué se hizo:** una prueba de contrato compara lo que el Outbox publica con `asyncapi-company-management-v1.yaml`. Dio **98 fallas**: el módulo publicaba solo el `data` de cada evento, no el sobre que el contrato describe. Se corrigió, y quedaron **tres desajustes abiertos** que piden una decisión (ERR-024 a ERR-026). Es la fase R4, la última del frente de RabbitMQ.
+- **Cómo se hizo:**
+  - **La prueba** (`OutboxEventsContractIntegrationTest`, sin Docker, en la suite normal). Conduce los flujos REST reales: registrar una cuenta, crear una empresa, crear una sucursal matriz, activar la sucursal y la empresa, y suspender una segunda cuenta. Salen **seis tipos de evento** (`account.created`, `account.suspended`, `company.created`, `company.activated`, `branch.created`, `branch.activated`), siete eventos en total. Un `RabbitTemplate` falso convierte el cuerpo con el mismo `SimpleMessageConverter` y aplica el mismo post-procesador que el real, y guarda la clave de enrutamiento, las propiedades y el cuerpo.
+  - **Lo que contrasta** (los campos se leen del YAML, no están escritos en la prueba): que el canal `events/<tipo con barras>` y su mensaje existan en el contrato; el tipo de contenido (el del mensaje o el `defaultContentType`); que el cuerpo sea un `EventEnvelope`, con sus 11 campos obligatorios y del tipo que dicen; que `occurredAt` sea una fecha y hora; que `eventId` coincida con el `messageId`, `eventType` con la clave de enrutamiento y `schemaVersion` con la cabecera; y que el estado del `data` esté dentro de los valores que el contrato declara. Solo se exige en un sentido, como `OpenApiContractTest`: el contrato documenta también eventos anticipados que aún no se emiten.
+  - **El contrato en el classpath de pruebas.** Una ejecución nueva del plugin de recursos copia el AsyncAPI solo a las pruebas. No va a `static/`, como el OpenAPI, para no servir por HTTP el contrato de eventos.
+  - **RED: 98 fallas**, 14 por cada uno de los siete eventos. Faltaban **10 de los 11 campos obligatorios** del sobre en el cuerpo (el undécimo, `accountId` o `companyId`, aparecía solo porque el `data` llevaba una clave con ese nombre), el tipo de contenido no era `application/json`, y no coincidían `eventId`, `eventType` ni `schemaVersion`. **Lo que sí cumplía:** los seis tipos están declarados en el contrato y sus estados caen dentro de los valores permitidos.
+  - **Corrección.** `OutboxDispatcher.envelopeOf` arma el `EventEnvelope` con las columnas de la fila y el payload guardado como `data`, y fija `application/json`. No hace falta migración: la tabla ya guardaba todos esos campos. El constructor recibe el `ObjectMapper`. **GREEN.**
+  - **Mutaciones temporales** (script en el área de trabajo, archivo restaurado, huella igual): sin tipo de contenido, sin `occurredAt` en el sobre, y `aggregateVersion` como texto. **Cada una produce 7 fallas de contrato**, una por evento.
+  - **Prueba de R1 con broker real, actualizada.** Comparaba el cuerpo con el `data` pelado. Ahora comprueba `application/json`, el `eventId` del cuerpo y que el `data` sea el payload guardado.
+  - **AsyncAPI.** La descripción del servidor `eventBus` documenta ahora lo que solo existía en el código: el exchange `jcomercy.events` (topic, durable), la clave de enrutamiento igual al tipo de evento, el cuerpo en `EventEnvelope` con `application/json`, la persistencia, el `messageId`, y la garantía «al menos una vez». Se verificó que el resto del archivo es idéntico (67 canales, 62 mensajes y 76 esquemas).
+  - **Una falla intermitente que encontré yo.** La primera corrida de la suite normal falló en la prueba de contrato: solo salieron 2 de los 6 tipos. Las pruebas de company-management comparten la base de datos en memoria, y los contextos de las clases ya ejecutadas siguen vivos con su despachador programado cada 5 s, que sin broker se llevaba mis eventos y los dejaba en espera de reintento. Es el problema de ERR-002 en inventario. Se corrigió en la raíz con un `application.properties` de pruebas que difiere ese despachador una hora, y además la prueba despacha hasta que salgan todos, con límite de tiempo. **Pasó en las dos corridas completas siguientes, pero dos pasadas no demuestran que ya no sea intermitente.**
+  - **GREEN final.** `mvn -B -ntp test` → `BUILD SUCCESS`, **267 pruebas** (13 + 8 + 8 + 124 + 27 + 87), 9 omitidas, sin Docker. `mvn -B -ntp -Ppostgres,rabbitmq test` → `BUILD SUCCESS`, **267 de 267**, ninguna omitida, sobre PostgreSQL y RabbitMQ reales; sin contenedores sobrantes.
+- **Afectaciones:**
+  - **Producción:** cambia lo que company-management publica. El cuerpo pasa de ser el `data` a ser el sobre completo, con `application/json`. Hoy no hay consumidores. La columna `payload_json` de la tabla no cambia.
+  - **Pruebas:** en company-management el despachador programado queda apagado en todas las pruebas, como ya estaba en inventario.
+  - **Sin migraciones.**
+- **Sin verificar:**
+  - La prueba no valida el `data` contra todo su esquema: comprueba los campos obligatorios del sobre, sus tipos y el estado. Los otros 60 eventos del contrato no se emiten y no se contrastan.
+  - La cola de company-management unida con `#` al exchange compartido, que recibiría también los eventos de inventario (hipótesis de R1): requiere las dos aplicaciones sobre el mismo broker.
+  - Que las pruebas con RabbitMQ real y la de contrato corran en el CI: las de contrato sí (sin Docker); las de broker real se omiten allí.
+- **Pendiente:** el job de CI para las pruebas con RabbitMQ real; las decisiones de ERR-021, ERR-022, ERR-024, ERR-025 y ERR-026; y el PR que cierra el frente de RabbitMQ.
 
 ---
 
@@ -806,3 +904,72 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cómo mitigarlo:** mientras no estaba resuelto, generar un primer serial de la empresa antes de recibir en paralelo.
 - **Cómo se resolvió:** la secuencia se crea con una inserción que tolera el conflicto: `ON CONFLICT (company_id) DO NOTHING` en PostgreSQL, que espera a que la otra confirme y sigue sin error, y `MERGE … WHEN NOT MATCHED` en H2, que no entiende `ON CONFLICT`. Verificado en las dos bases, y con una mutación en PostgreSQL: sin `ON CONFLICT` caen las dos pruebas de seriales (BIT-035).
 - **Lo que no cubre:** H2 no tiene inserción-si-no-existe atómica. Con peticiones que creen la secuencia a la vez **desde lugares distintos**, H2 sigue fallando; por eso esa variante de la prueba corre solo con `-Ppostgres` y se omite en H2 con el motivo escrito. En un mismo lugar el bloqueo de la ubicación pone las peticiones en fila y H2 pasa.
+
+### ERR-019 · El despachador del Outbox espera al broker dentro de una sola transacción
+
+- **Estado:** RESUELTO el 2026-11-05 (BIT-039). Era una hipótesis de BIT-031 y de la fase R1; la prueba de R3 la confirmó.
+- **De qué trata:** `publishPending`, en company-management y en inventario, llevaba `@Transactional` y esperaba hasta 5 s la confirmación de cada evento, hasta 50 por ciclo. Todo el ciclo era una sola transacción: retenía una conexión de la base de datos durante las esperas, y los eventos ya confirmados por el broker no quedaban marcados como publicados hasta el final. Si el proceso caía a mitad de un ciclo, se volvían a publicar.
+- **Cuándo se manifiesta:** cuando el broker tarda o no confirma. Reproducido sin broker real, con un `RabbitTemplate` falso que deja esperar a un evento: mientras esperaba, había 1 conexión retenida y los dos eventos ya confirmados seguían `PENDING` en la base de datos, en los dos módulos.
+- **Cómo mitigarlo:** mientras no estaba resuelto, no había forma de acortarlo desde fuera; solo evitar que el broker quedara lento.
+- **Cómo se resolvió:** se quitó `@Transactional` de los dos despachadores; cada `repository.save` confirma por su cuenta. Verificado con `OutboxDispatcherConnectionIntegrationTest` e `InventoryOutboxDispatcherConnectionIntegrationTest`, y con las pruebas del Outbox que ya existían.
+- **Lo que no cubre:** la **duración** del ciclo, que sigue siendo larga con un broker colgado (ERR-021). Quitar la transacción evita retener la conexión, no acorta la espera.
+
+### ERR-020 · El error guardado de un evento que el broker no confirma es nulo
+
+- **Estado:** RESUELTO el 2026-11-05 (BIT-039). Visto con la prueba de broker colgado de R3.
+- **De qué trata:** al fallar un evento se guardaba `ex.getMessage()`. Una espera de confirmación agotada (`TimeoutException`) no trae mensaje, así que el evento quedaba `PENDING` con el error en `null`: nadie podía saber por qué estaba atascado. Otros fallos guardaban solo `java.io.IOException`.
+- **Cuándo se manifiesta:** cuando el broker no confirma a tiempo. Reproducido en los dos módulos: `Expecting not blank but was: null`.
+- **Cómo mitigarlo:** mientras no estaba resuelto, mirar el registro de la aplicación, que sí tenía la traza completa.
+- **Cómo se resolvió:** `describe(ex)` guarda «El broker no confirmó el evento en 5 segundos.» para la espera agotada y el nombre de la clase de la excepción cuando no hay mensaje. Verificado en los dos módulos con una prueba sin Docker.
+- **Lo que no cubre:** otros fallos siguen guardando el mensaje que traiga la excepción; el de un cierre de conexión es solo `java.io.IOException`.
+
+### ERR-021 · Con un broker colgado, un ciclo del despachador se bloquea minutos y el evento puede publicarse dos veces
+
+- **Estado:** ABIERTO. Medido en la fase R3 (BIT-039), en los dos módulos; **requiere una decisión**.
+- **De qué trata:** si el broker no responde pero la conexión sigue abierta, el primer evento espera los 5 s de la confirmación y falla; la publicación siguiente se queda bloqueada hasta que el cliente da la conexión por muerta (unos 130 s, medidos con dos eventos). Como el ciclo procesa hasta 50 eventos en serie, **ningún evento sale mientras tanto**, aunque el broker se recupere a mitad. Además, un evento cuyo envío sí llegó al broker pero no se confirmó a tiempo se reintenta y **queda duplicado**: se vio dos veces en la cola.
+- **Cuándo se manifiesta:** con un broker colgado, no caído: proceso congelado, red cortada sin cierre de conexión o sobrecarga. Reproducido con `docker pause`: dos eventos, 134 a 135 s, uno de ellos duplicado.
+- **Cómo mitigarlo:** vigilar los eventos `PENDING` con reintentos; los consumidores, que hoy no existen, tendrán que descartar mensajes repetidos por su identificador (`messageId`).
+- **Para resolverlo (decisión):** (B) cortar el ciclo en el primer fallo de confirmación o de conexión; cambia la semántica, porque los eventos siguientes no cuentan un intento ese ciclo, y la prueba de caída de R2 supone que un ciclo marca todos como fallados. (C) acortar los tiempos del cliente: `spring.rabbitmq.connection-timeout`, `requested-heartbeat` y los tiempos de canal, con el costo de más reconexiones. (D) las dos. Los duplicados no desaparecen con ninguna: son la garantía «al menos una vez».
+- **Lo que no se midió:** un broker congelado antes de abrir la conexión, y un ciclo de 50 eventos.
+
+### ERR-022 · Inventario reintenta siempre los 50 eventos pendientes más antiguos: si fallan, los nuevos no se intentan
+
+- **Estado:** ABIERTO. Visto en la fase R3 (BIT-039); **requiere una decisión**.
+- **De qué trata:** `InventoryOutboxDispatcher` toma `findTop50ByStatusOrderByCreatedAtAsc("PENDING")` y `markFailed` no programa ninguna espera, así que cada ciclo reintenta los mismos 50 más antiguos. Si esos 50 fallan siempre, los eventos más nuevos nunca llegan a intentarse. Company-management no tiene el problema porque espera 5 s por intento (hasta 300 s) antes de reintentar.
+- **Cuándo se manifiesta:** visto en una corrida completa de pruebas con la base compartida: la prueba de caída de R2 de inventario dejó sus eventos con 0 intentos tras un despacho, y en ese mismo ciclo fallaban eventos de almacenes de otras clases. No se contó el total de pendientes, pero es la explicación que encaja. En producción ocurriría si hay 50 o más eventos que fallan por una causa que no sea el broker.
+- **Cómo mitigarlo:** vigilar los eventos con `retry_count` alto y retirarlos a mano de la cola.
+- **Para resolverlo (decisión):** ordenar por reintentos y luego por antigüedad, que no necesita migración pero altera el orden de publicación; o agregar `next_retry_at` con espera creciente, como company-management, que sí necesita una migración de `inventory.outbox_event`.
+- **Mientras tanto:** la prueba de R2 de inventario parte de una tabla vacía para no depender de esto.
+
+### ERR-023 · Company-management publicaba solo el `data` de cada evento, no el sobre que exige el AsyncAPI
+
+- **Estado:** RESUELTO el 2026-11-05 (BIT-040). Visto con la prueba de contrato de R4.
+- **De qué trata:** el AsyncAPI declara que el cuerpo de cada mensaje es un `EventEnvelope` con 11 campos obligatorios (`eventId`, `eventType`, `schemaVersion`, `aggregateVersion`, `sequence`, `occurredAt`, `producerModule`, `correlationId`, `accountId`, `companyId` y `data`) y `application/json`. El Outbox guardaba esos campos en columnas, pero el despachador publicaba solo el `payload_json`, que es únicamente el `data`, y lo marcaba como texto. Algunos campos viajaban como cabeceras AMQP (`eventType`, `schemaVersion`, `accountId`, `companyId`, `branchId`) y el `eventId` como `messageId`; `occurredAt`, `correlationId`, `aggregateVersion`, `sequence`, `producerModule`, `causationId` y `actorUserId` **no se publicaban**.
+- **Cuándo se manifiesta:** en todo evento de company-management. Reproducido con los seis tipos que el módulo emite: 98 fallas de contrato en siete eventos.
+- **Cómo mitigarlo:** mientras no estaba resuelto, quien quisiera consumir los eventos tenía que leer las cabeceras y no el cuerpo, y no podía conocer la fecha ni la correlación. No había consumidores.
+- **Cómo se resolvió:** `OutboxDispatcher.envelopeOf` arma el sobre con las columnas de la fila y el payload como `data`, y fija `application/json`. Verificado con `OutboxEventsContractIntegrationTest` y con la prueba con broker real de R1.
+- **Lo que no cubre:** que los **valores** del sobre signifiquen lo que el contrato dice (ERR-024) y que el `data` use los nombres del contrato (ERR-025).
+
+### ERR-024 · Valores del sobre que no significan lo que el contrato dice
+
+- **Estado:** ABIERTO. Visto al preparar la prueba de R4, por lectura del código; **requiere una decisión**.
+- **De qué trata:** tres cosas. (1) Los eventos de sucursal salen con `accountId` vacío (`""`), y los de cuenta con `companyId` vacío; el contrato marca los dos como obligatorios. En una cuenta recién creada la empresa aún no existe, así que ahí quien debería cambiar es el contrato, que tendría que admitir `companyId` nulo; en las sucursales, en cambio, el `accountId` se podría resolver desde la empresa. (2) `sequence` vale siempre `1` en los eventos de creación y `2` en los de activación o suspensión: es una constante, no una secuencia. El contrato no define qué debe contar. (3) `aggregateVersion` sí es la versión real de la entidad.
+- **Cuándo se manifiesta:** en todos los eventos `branch.*`, `account.*` y, para `sequence`, en los seis tipos. La prueba de contrato no lo ve porque exige que el campo esté presente, no que tenga contenido.
+- **Cómo mitigarlo:** un consumidor no debe fiarse de `accountId` ni de `companyId` vacíos, ni de `sequence`.
+- **Para resolverlo (decisión):** hacer opcional `companyId` en los eventos de cuenta, resolver el `accountId` de las sucursales, y definir `sequence` (por ejemplo, por agregado) o dejar de publicarlo.
+
+### ERR-025 · El `data` de tres eventos no usa los nombres que declara el contrato
+
+- **Estado:** ABIERTO. Visto al preparar la prueba de R4; **requiere una decisión**.
+- **De qué trata:** `account.created` envía `ownerPersonId` y el contrato declara `ownerUserId`; `company.created` envía `rfc` y el contrato declara `taxId`; `branch.created` no envía `isHeadOffice` y sí `type`, `domicilio` y `phoneNumber`, que el contrato no declara. Ninguna de esas propiedades es obligatoria en el contrato, y los datos extra están permitidos, por eso la prueba de R4 no lo exige.
+- **Cuándo se manifiesta:** en esos tres eventos. Un consumidor hecho a partir del AsyncAPI no encontraría `ownerUserId`, `taxId` ni `isHeadOffice`.
+- **Cómo mitigarlo:** documentar los nombres reales; por ahora no hay consumidores.
+- **Para resolverlo (decisión):** cambiar el contrato o el código. `rfc` es un dato fiscal de México y `taxId` es genérico; `ownerPersonId` es el id de la persona dueña y no el de un usuario.
+
+### ERR-026 · Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola
+
+- **Estado:** ABIERTO. Visto en la fase R4, por lectura del código; **requiere una decisión**.
+- **De qué trata:** (1) No existe un AsyncAPI de inventario. (2) Inventario publica un sobre propio (`eventId`, `eventType`, `schemaVersion`, `occurredAt`, `correlationId`, `companyId`, `branchId`, `actorUserId` y `data`) que no es el de company-management: le faltan `accountId`, `aggregateVersion`, `sequence` y `producerModule`. Los dos módulos publican en el mismo exchange, así que un consumidor tendría que entender dos formas. Además, el despachador de inventario no fija el tipo de contenido. (3) Los eventos `warehouse.created` y `warehouse.activated` se publican con una clave que no coincide con el patrón de la cola de inventario (`inventory.#`), de modo que no llegarían a ella. Esto último no se probó con el broker, y hoy no hay consumidores.
+- **Cuándo se manifiesta:** al conectar a un consumidor, no antes.
+- **Cómo mitigarlo:** por ahora, no consumir eventos de inventario sin revisar su forma real.
+- **Para resolverlo (decisión):** escribir el AsyncAPI de inventario, acordar un sobre común (por ejemplo, en `jcomercy-core`) y renombrar los eventos de almacén con el prefijo `inventory.`, o ampliar el patrón de la cola.

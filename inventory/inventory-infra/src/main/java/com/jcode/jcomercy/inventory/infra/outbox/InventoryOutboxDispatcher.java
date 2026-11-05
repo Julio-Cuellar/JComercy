@@ -12,7 +12,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -37,8 +36,10 @@ public class InventoryOutboxDispatcher {
         this.exchange = exchange;
     }
 
+    // Sin @Transactional a propósito (ERR-019): esperar la confirmación del broker puede tardar hasta 5 s por evento, y
+    // todo el ciclo en una transacción retenía una conexión de la base de datos y no dejaba ver como publicados los
+    // eventos ya confirmados hasta el final. Cada repository.save confirma por su cuenta.
     @Scheduled(fixedDelayString = "${outbox.publisher.fixed-delay-ms:5000}")
-    @Transactional
     public void publishPending() {
         if (rabbitTemplate == null) {
             return;
@@ -75,11 +76,20 @@ public class InventoryOutboxDispatcher {
                 log.info("Evento Outbox de Inventario publicado eventId={} eventType={} exchange={}",
                         event.getEventId(), event.getEventType(), exchange);
             } catch (Exception ex) {
-                event.markFailed(ex.getMessage());
+                event.markFailed(describe(ex));
                 log.error("Error publicando evento Outbox de Inventario eventId={} eventType={} retryCount={}",
                         event.getEventId(), event.getEventType(), event.getRetryCount(), ex);
             }
             repository.save(event);
         }
+    }
+
+    /** El texto que queda guardado cuando falla un evento. Una espera agotada no trae mensaje, y sin él nadie sabría por qué el evento sigue pendiente. */
+    private static String describe(Exception ex) {
+        if (ex instanceof java.util.concurrent.TimeoutException) {
+            return "El broker no confirmó el evento en 5 segundos.";
+        }
+        String message = ex.getMessage();
+        return message != null && !message.isBlank() ? message : ex.getClass().getName();
     }
 }
