@@ -37,6 +37,27 @@
 
     <profiles>
         <!--
+            mvn -Prabbitmq test -Dtest='*RabbitMqIntegrationTest': activa las pruebas del Outbox contra un RabbitMQ real
+            en un contenedor (necesita Docker). Sin el perfil se omiten, y la suite no necesita Docker. Se combina con
+            -Ppostgres si se quieren los dos.
+        -->
+        <profile>
+            <id>rabbitmq</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <jcomercy.test.broker>rabbitmq</jcomercy.test.broker>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!--
             mvn -Ppostgres test: las pruebas de Spring corren sobre un PostgreSQL real en un contenedor (necesita Docker)
             en lugar de H2. Sin el perfil, la suite usa H2 y no necesita Docker.
         -->

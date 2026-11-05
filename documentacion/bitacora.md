@@ -633,12 +633,32 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - Cada PR y cada push a `main` ejecutan dos jobs en vez de uno, y consumen casi el doble de minutos de Actions.
   - El check `postgres` aparecerá junto a `test`, pero **no es obligatorio**: exigirlo para fusionar es un ajuste de protección de ramas en GitHub, que no se tocó.
   - No cambia ningún código ni contrato.
+- **Verificado después (PR 5, 2026-11-04):** el job corrió en GitHub por primera vez y pasó, junto con `test`, antes de fusionar. `test` tardó 116 s y `postgres` 138 s en frío (de 13:15:20 a 13:17:16 y a 13:17:38 UTC), muy por debajo del límite de 20 minutos. Con eso quedan comprobados que el runner trae Docker, que Testcontainers lo detecta allí y que las imágenes se descargan.
 - **Sin verificar:**
-  - **La corrida real en GitHub.** Que el runner tenga Docker, que Testcontainers lo detecte allí, el tiempo en frío y que el límite de 20 minutos alcance. Este commit no ha corrido en GitHub.
   - Que el job se ponga **rojo** cuando se rompe algo solo en PostgreSQL (no hay rojo previo, y no se simuló).
-  - Las descargas de `postgres:16-alpine` y de `testcontainers/ryuk` desde Docker Hub en el runner: podrían toparse con límites de descarga anónima.
-  - Que la subida de reportes funcione en este job.
-- **Pendiente:** subir la rama y abrir un PR para que el job corra de verdad; decidir si se exige el check `postgres` antes de fusionar; los frentes de RabbitMQ y de roles y membresías.
+  - Que Docker Hub no limite las descargas anónimas de `postgres:16-alpine` y de `testcontainers/ryuk` en otras corridas: esta vez no pasó nada.
+  - Que la subida de reportes funcione en este job: solo se ejecuta si algo falla.
+- **Pendiente:** decidir si se exige el check `postgres` antes de fusionar (es un ajuste de protección de ramas en GitHub, que no se tocó); los frentes de RabbitMQ y de roles y membresías.
+
+### BIT-037 · El Outbox de los dos módulos publica de verdad a un RabbitMQ real (fase R1)
+
+- **Qué se hizo:** un perfil Maven `rabbitmq` y una prueba de integración por módulo que levantan un RabbitMQ en un contenedor, publican un evento del Outbox y comprueban lo que llega a la cola. Hasta ahora el broker real nunca se había probado: todas las pruebas usaban un `RabbitTemplate` simulado (BIT-031 lo había anotado como «sin verificar»). **Resultado: no hay defecto en lo que se probó**; son pruebas de guarda. Es la fase R1 del frente de RabbitMQ.
+- **Cómo se hizo:**
+  - **Rama nueva** `feat/pruebas-rabbitmq`, desde `main` con el PR 5 ya fusionado.
+  - **Perfil y dependencia.** `mvn -Prabbitmq test -Dtest='*RabbitMqIntegrationTest'` pasa la propiedad `jcomercy.test.broker` a las pruebas; sin el perfil se omiten y no hace falta Docker. Misma idea que `-Ppostgres` (BIT-033). Dependencia de ámbito `test`: `org.testcontainers:rabbitmq` (1.21.4, ya fijada) en los dos módulos.
+  - **Las pruebas.** `OutboxRabbitMqIntegrationTest` (company-management) registra una cuenta por REST, deja el despachador programado para dentro de una hora y lo invoca a mano; `InventoryOutboxRabbitMqIntegrationTest` publica por el puerto del Outbox y crea un despachador con el `RabbitTemplate` real del contexto, porque en pruebas el programado está apagado. Cada una levanta `rabbitmq:3.13-alpine` (arranque y parada manuales, `@DynamicPropertySource` para la dirección), despacha hasta que el evento sale (la base H2 se comparte entre pruebas y puede haber otros pendientes delante) y saca mensajes de la cola hasta encontrar el suyo.
+  - **Lo que se comprueba en el mensaje recibido:** el identificador del mensaje es el del evento; el exchange es `jcomercy.events`; la clave de enrutamiento es el tipo de evento; las cabeceras (`eventType`, `schemaVersion`, `companyId`, `branchId` y, según el módulo, `accountId`, `actorUserId`, `correlationId`) valen lo guardado; el cuerpo es el mismo JSON guardado; el modo de entrega es persistente. Y la fila del Outbox pasa a `PUBLISHED` con `publishedAt`, lo que exige que el broker confirme (la confirmación correlacionada funcionó con un broker real).
+  - **Primera ejecución: error mío.** Las dos fallaron con `expected: PERSISTENT but was: null`. Era la propiedad equivocada: en un mensaje recibido el modo está en `getReceivedDeliveryMode()`, no en `getDeliveryMode()`, que es solo para los que se envían. Con la propiedad correcta pasan, y **el modo persistente queda confirmado en el mensaje que llegó**.
+  - **Mutaciones temporales (script en el área de trabajo, archivos restaurados, huellas iguales):** M1 mensaje no persistente, M2 sin identificador de mensaje, M3 clave de enrutamiento distinta. Con cada una **fallan las dos pruebas**.
+  - **GREEN.** Con el broker: `mvn -B -ntp -Prabbitmq test -Dtest='*RabbitMqIntegrationTest'` → `BUILD SUCCESS`, 1 de 1 en cada módulo (16 s cada una, con el contenedor). Suite normal: `mvn -B -ntp test` → `BUILD SUCCESS`, **258 pruebas** (13 + 8 + 8 + 119 + 27 + 83), 5 omitidas: las dos de humo de Postgres, la variante de seriales y las dos de RabbitMQ. Sin Docker y sin contenedores sobrantes.
+- **Afectaciones:** solo pruebas y `pom.xml` (un perfil y una dependencia de prueba); ningún código de producción, contrato ni dato. La primera vez se descarga la imagen de RabbitMQ.
+- **Lo que mostró la lectura del código, sin probar todavía (candidatos para R2 a R4):**
+  1. **Reintentos distintos.** Company-management, al fallar, deja el evento pendiente con espera creciente (5 s por intento, tope de 300 s). Inventario no espera: lo reintenta en cada ciclo, siempre con los 50 más antiguos, de modo que un grupo de eventos que fallen siempre taparía a los demás.
+  2. **Cola de company-management.** Se une con `#` al exchange compartido, así que también recibiría los eventos de inventario; no tiene consumidor ni tope de tamaño o de vida, y podría crecer sin límite. Es una hipótesis: hay que verla con las dos aplicaciones sobre el mismo broker.
+  3. **Tipo de contenido.** Se publica una cadena de texto, por lo que se espera `text/plain` y no `application/json`; no se comprobó ni se contrastó con el AsyncAPI (R4).
+  4. **Transacción larga.** `publishPending` es transaccional y espera hasta 5 s la confirmación de cada evento (hasta 50): con un broker lento podría retener una conexión de la base de datos durante minutos (R3). Después de ERR-015 pesa más.
+- **Sin verificar:** la caída y el regreso del broker, sin pérdida ni duplicados (R2); la espera de la transacción (R3); el contraste con el AsyncAPI (R4); que el CI corra estas pruebas (hoy se omiten allí, porque no hay un job con el perfil); y la versión de RabbitMQ de producción, que no se conoce.
+- **Pendiente:** R2 a R4 y el job de CI.
 
 ---
 
