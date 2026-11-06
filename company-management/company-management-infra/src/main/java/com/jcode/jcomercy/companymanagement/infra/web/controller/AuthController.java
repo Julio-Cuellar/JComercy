@@ -32,6 +32,7 @@ public class AuthController {
     private final PasswordHasher passwordHasher;
     private final RefreshTokenSpringDataRepository refreshTokens;
     private final PasswordResetTokenSpringDataRepository resetTokens;
+    private final com.jcode.jcomercy.companymanagement.infra.mail.AccessMailer accessMailer;
     private final long expirationMilliseconds;
 
     public AuthController(
@@ -40,8 +41,10 @@ public class AuthController {
         PasswordHasher passwordHasher,
         RefreshTokenSpringDataRepository refreshTokens,
         PasswordResetTokenSpringDataRepository resetTokens,
+        com.jcode.jcomercy.companymanagement.infra.mail.AccessMailer accessMailer,
         @org.springframework.beans.factory.annotation.Value("${security.jwt.expiration-ms:3600000}") long expirationMilliseconds
     ) {
+        this.accessMailer = accessMailer;
         this.tokenService = tokenService;
         this.accountRepository = accountRepository;
         this.passwordHasher = passwordHasher;
@@ -102,6 +105,8 @@ public class AuthController {
         if (account != null) {
             String token = randomToken();
             resetTokens.save(PasswordResetTokenJpaEntity.create(hash(token), account.getPublicAccountId(), Instant.now().plusSeconds(900)));
+            // El código solo viaja en el correo: no se devuelve en la respuesta ni se escribe en el registro (ERR-029).
+            accessMailer.sendPasswordRecovery(account.getOwner().getEmail(), token);
             log.info("Solicitud de recuperación procesada accountId={}", account.getPublicAccountId());
         }
         else log.info("Solicitud de recuperación procesada sin revelar si el correo existe");

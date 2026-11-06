@@ -24,6 +24,17 @@ spring:
     schema:
       introspection:
         enabled: false
+  # Solo se usa con jcomercy.mail.mode=smtp. El servidor, el usuario y la contraseña se indican con las variables de entorno
+  # SPRING_MAIL_HOST, SPRING_MAIL_USERNAME y SPRING_MAIL_PASSWORD (no se escriben aquí: sin host no se crea el cliente de
+  # correo, y con mode=smtp eso impide arrancar en vez de fallar al primer correo).
+  mail:
+    port: ${SPRING_MAIL_PORT:587}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     # RabbitMQ expone 5673 en el host; 5672 es el puerto interno del contenedor.
@@ -37,6 +48,16 @@ spring:
     connection-timeout: 5s
     requested-heartbeat: 10s
     channel-rpc-timeout: 10s
+
+jcomercy:
+  # Dirección pública de la aplicación: los enlaces de los correos (recuperar contraseña, activar acceso) apuntan aquí.
+  public-url: ${JCOMERCY_PUBLIC_URL:http://localhost:3000}
+  mail:
+    # disabled: sin servidor de correo, el envío falla a la vista (por defecto).
+    # smtp: entrega al servidor de spring.mail.*; sin servidor, el sistema no arranca.
+    # recording: guarda los correos en memoria, solo para pruebas y trabajo local; en producción nadie recibiría nada.
+    mode: ${JCOMERCY_MAIL_MODE:disabled}
+    from: ${JCOMERCY_MAIL_FROM:no-responder@jcomercy.com}
 
 security:
   jwt:

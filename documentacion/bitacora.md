@@ -53,7 +53,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-026 | Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola | RESUELTO (BIT-041 el punto 3; BIT-044 los puntos 1 y 2) |
 | ERR-027 | La cola de company-management, unida con `#`, recibía también los eventos de inventario | RESUELTO (BIT-041) |
 | ERR-028 | La primera ejecución del despachador programado resucita filas del Outbox que una prueba acaba de borrar | RESUELTO (BIT-043) |
-| ERR-029 | La recuperación de contraseña genera su código pero no lo entrega por ningún medio | ABIERTO |
+| ERR-029 | La recuperación de contraseña genera su código pero no lo entrega por ningún medio | RESUELTO (BIT-053) |
 
 ---
 
@@ -971,6 +971,23 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Las personas se listan en memoria** (por empresa), igual que las membresías.
   - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
 
+### BIT-053 · El sistema manda correos: puerto, adaptadores y recuperación de contraseña (M4)
+
+- **Qué se hizo:** `MailPort` y tres adaptadores elegidos por `jcomercy.mail.mode`: `smtp` (entrega a un servidor SMTP con `spring-boot-starter-mail`), `recording` (guarda en memoria, para pruebas y trabajo local) y `disabled` (por defecto: falla a la vista en vez de tirar el correo). La recuperación de contraseña ya entrega su código por correo (ERR-029, resuelto).
+- **Cómo se hizo:**
+  - **RED (por compilación):** `MailAdaptersTest`, `PasswordRecoveryMailIntegrationTest` y `PasswordRecoveryMailFailureIntegrationTest` no compilaban porque `MailPort` y los adaptadores no existían.
+  - **GREEN:** 12 pruebas, 12 de 12: 8 de adaptadores y elección de modo, 3 de la recuperación con correo y 1 con el servidor de correo caído.
+  - **Qué comprueban:** el correo llega con el asunto «Cambia tu contraseña de JComercy» y un enlace `{jcomercy.public-url}/recuperar-contrasena?codigo=…` de 15 minutos; el enlace cambia la contraseña, con la nueva se entra y con la vieja no, y no sirve dos veces; dos peticiones dan enlaces distintos; el correo en mayúsculas encuentra la misma cuenta; un correo que no existe recibe 202 y no se le manda nada; si el servidor de correo falla, la respuesta sigue siendo 202; el correo no lleva el identificador de la cuenta ni la contraseña; el error del SMTP no cita al destinatario; con `mode=smtp` y sin servidor el sistema no arranca.
+  - **Diseño:** `AccessMailer` arma el correo y lo manda después de confirmar la transacción que guardó el código, en otro hilo: así el enlace funciona al abrirlo y pedir la recuperación de una cuenta que existe no tarda más que la de una que no. Un fallo se anota en el registro sin el código ni el destinatario. El código solo viaja en el correo: no se devuelve en la respuesta ni se escribe en el registro. `application.yml` documenta los modos; `SPRING_MAIL_HOST`, `SPRING_MAIL_USERNAME` y `SPRING_MAIL_PASSWORD` se pasan por variable de entorno y no se escriben ahí. Las pruebas usan `recording` desde su `application.properties`.
+  - **Mutaciones temporales (script, 5), todas detectadas y revertidas, con la huella de cada archivo igual a la de antes:** M1 el enlace usa otro nombre de parámetro → caen 2; M2 la recuperación no manda el correo → cae 1 y falla 1 por error; M3 el SMTP no pone remitente → cae 1; M4 el error del SMTP se deja pasar sin traducir → cae 1; M5 el modo por defecto deja de ser `disabled` → cae 1.
+  - **Suite de company-management:** 172 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Afectaciones:** dependencia nueva `spring-boot-starter-mail`. Claves nuevas en `application.yml`: `jcomercy.public-url`, `jcomercy.mail.mode`, `jcomercy.mail.from` y `spring.mail.*`. **Despliegue:** sin `JCOMERCY_MAIL_MODE=smtp` y un servidor de correo, la recuperación de contraseña responde 202 pero no entrega nada y deja un error en el registro. Es el modo por defecto a propósito.
+- **Sin verificar:**
+  - **El envío real por SMTP:** no hay servidor de correo elegido y no se probó contra uno; el adaptador solo se probó con un `JavaMailSender` simulado. Hace falta el servidor, el usuario y un remitente verificado.
+  - **La pantalla del enlace:** `/recuperar-contrasena` no existe en el frontend, que es una maqueta; el enlace apunta a una dirección que todavía no atiende.
+  - **Correos perdidos:** si el hilo de envío falla, o el proceso se detiene entre confirmar y enviar, el correo no se reintenta. Quien lo pidió puede pedirlo otra vez.
+  - Las invitaciones usarán el mismo puerto en M5, con un envío que sí informa su resultado.
+
 ---
 
 ## Errores
@@ -1236,9 +1253,10 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 
 ### ERR-029 · La recuperación de contraseña genera su código pero no lo entrega por ningún medio
 
-- **Estado:** ABIERTO. Visto al leer `AuthController` para el plan de BIT-049.
+- **Estado:** RESUELTO el 2026-11-07 (BIT-053). Visto al leer `AuthController` para el plan de BIT-049.
 - **De qué trata:** `POST /api/v1/auth/password-recovery` crea un código aleatorio, guarda solo su huella y responde 202; el código original no se devuelve, no se envía y no se escribe en ningún registro. El módulo no tiene ningún envío de correo. Quien pide recuperar su contraseña nunca recibe el código que necesita para confirmarla.
 - **Cuándo se manifiesta:** siempre que una persona real intenta recuperar su contraseña. Las pruebas no lo ven porque pueden leer la huella de la base.
 - **Cómo mitigarlo:** mientras no se resuelva, un cambio de contraseña solo puede hacerse con acceso directo a la base de datos.
 - **Sin verificar:** se concluyó leyendo el código y buscando clases de correo; no se probó con un cliente real.
-- **Cómo se resolverá:** M4 de BIT-049 introduce un puerto de correo y la recuperación pasa a usarlo.
+- **Cómo se resolvió:** BIT-053 introduce `MailPort` y la recuperación manda el código en un correo con un enlace de un solo uso. Las pruebas leen el correo, usan el enlace para cambiar la contraseña, entran con la nueva y comprueban que el enlace no sirve dos veces.
+- **Lo que no cubre:** el envío real por SMTP no se probó contra un servidor de correo (ver BIT-053).
