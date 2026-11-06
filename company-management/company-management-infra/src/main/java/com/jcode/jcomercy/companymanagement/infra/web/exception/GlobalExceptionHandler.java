@@ -67,6 +67,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 
+    @ExceptionHandler(com.jcode.jcomercy.companymanagement.domain.exception.ConflictException.class)
+    public ResponseEntity<ProblemDetails> handleStateConflict(
+        com.jcode.jcomercy.companymanagement.domain.exception.ConflictException ex, HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/conflict",
+            "Conflicto de Estado",
+            HttpStatus.CONFLICT.value(),
+            ex.getMessage(),
+            request.getRequestURI(),
+            "CONFLICT"
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
+    }
+
     @ExceptionHandler(DomainRuleViolationException.class)
     public ResponseEntity<ProblemDetails> handleUnprocessable(DomainRuleViolationException ex, HttpServletRequest request) {
         ProblemDetails problem = ProblemDetails.of(

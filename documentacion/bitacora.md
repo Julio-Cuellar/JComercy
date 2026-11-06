@@ -933,6 +933,25 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Afectaciones:** los roles `COMPANY_ADMIN`, `BRANCH_MANAGER` y `STAFF` tienen un permiso más, y el token de un miembro lo lleva. El contrato OpenAPI ya declaraba estas rutas; no cambió.
 - **Sin verificar:** los adaptadores solo corrieron sobre H2 (la suite con `-Ppostgres` se corre en M8). El contrato define `permissionsVersion` y la versión de los permisos no existe, así que no se publica. La consulta de permisos de otra persona (`GET /effective-permissions/{userId}`) no se hizo. El filtro por rol se aplica en memoria, no en SQL: sirve para el tamaño de un equipo de empresa pequeña, no para decenas de miles de membresías.
 
+### BIT-051 · Roles propios de la empresa: crear, editar, desactivar y borrar (M2)
+
+- **Qué se hizo:** cuatro rutas de escritura sobre `/api/v1/companies/{publicCompanyId}/roles`: `POST` (crear, con `Idempotency-Key`), `PATCH /{id}` (cambiar permisos, con `If-Match` opcional), `POST /{id}/deactivation` y `DELETE /{id}?confirmation=true` (borrado lógico). Emiten `role.created`, `role.updated`, `role.deactivated` y `role.deleted`, que el AsyncAPI ya declaraba.
+- **Cómo se hizo:**
+  - **RED:** `CustomRolesIntegrationTest` (11 pruebas) contra el código sin esas rutas → 11 de 11 fallan con 405, la causa buscada.
+  - **GREEN:** misma clase → 11 de 11; con `MembershipsReadIntegrationTest` (7), `RequiredPermissionsContractTest` (2), `OpenApiContractTest` (2) y `OutboxEventsContractIntegrationTest` (1, ampliada con los cuatro eventos de roles) pasan. Para el contrato OpenAPI se añadieron las respuestas 400 y 415 de «crear rol» y «editar rol» en `openapi-company-management-v1.yaml`.
+  - **Reglas:** el nombre no se repite en la empresa (sin distinguir mayúsculas) ni coincide con un rol del sistema → 409; solo se da un permiso que quien actúa tiene (`Permissions.grants` con su permiso efectivo de hoy; al editar solo cuenta lo que se agrega) → 422; el comodín total `*` no se delega → 422; un permiso limitado por sucursal → 422 porque el modelo todavía no lo soporta; un permiso con formato inválido, nombre vacío o de más de 160 caracteres, o lista vacía → 400; los roles del sistema no se editan, desactivan ni borran → 422; el nombre de un rol no cambia → 422; un rol que alguna membresía todavía tiene (de cualquier estado) no se borra → 409.
+  - **Borrado lógico:** `RoleStatus.DELETED`. El rol se conserva en la base, desaparece de lista y consulta y su nombre se puede volver a usar. `EffectivePermissions` solo cuenta roles `ACTIVE`, así que desactivar o borrar quita los permisos en la siguiente petición (probado).
+  - **Código:** `RoleApplicationService` (con Outbox e idempotencia), `RoleController`, `Role.markDeleted`, `ConflictException` con su manejador (409), y el servicio de membresías ya ignora roles borrados al traducir nombres a identificadores.
+  - **Mutaciones temporales (script, 7), todas detectadas (cada una hizo fallar una prueba) y revertidas, con la huella de `RoleApplicationService` igual a la de antes:** M1 sin la regla «nadie da lo que no tiene», M2 se borra un rol en uso, M3 se ignora `If-Match`, M4 el nombre distingue mayúsculas, M5 el rol borrado sigue visible, M6 no sale `role.deleted`, M7 se permite el comodín `*`.
+  - **Suite de company-management:** 149 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Afectaciones:** `RoleStatus` gana un valor y los adaptadores lo guardan como texto; no hay migración porque la columna no tiene restricción. Los eventos de roles ya existían en el contrato y ahora se emiten.
+- **Sin verificar:**
+  - **Nombre repetido en paralelo:** la unicidad se comprueba en la aplicación, no con un índice (H2 no admite índices parciales), así que dos peticiones simultáneas con el mismo nombre podrían crear dos roles.
+  - **Descripción:** el contrato tiene `description` en el rol y no se guarda; llega y se descarta.
+  - **Permisos sin catálogo:** el formato se valida, pero no que el permiso exista, porque no hay catálogo sembrado.
+  - **Un rol borrado cuyo nombre se reutiliza:** las membresías guardan el rol por nombre. Como no se borra un rol en uso, no queda ninguna membresía apuntándole, pero es una fragilidad del modelo.
+  - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
+
 ---
 
 ## Errores

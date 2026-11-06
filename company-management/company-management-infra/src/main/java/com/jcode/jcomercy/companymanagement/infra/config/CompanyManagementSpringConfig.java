@@ -68,8 +68,12 @@ public class CompanyManagementSpringConfig {
     @Bean
     public com.jcode.jcomercy.companymanagement.application.service.RoleApplicationService roleApplicationService(
         com.jcode.jcomercy.companymanagement.domain.port.RoleRepositoryPort roleRepository,
-        CompanyRepositoryPort companyRepository
+        CompanyRepositoryPort companyRepository,
+        com.jcode.jcomercy.companymanagement.domain.port.MembershipRepositoryPort membershipRepository,
+        EventOutboxPort outboxPort,
+        IdempotencyRegistry idempotencyRegistry
     ) {
-        return new com.jcode.jcomercy.companymanagement.application.service.RoleApplicationService(roleRepository, companyRepository);
+        return new com.jcode.jcomercy.companymanagement.application.service.RoleApplicationService(
+            roleRepository, companyRepository, membershipRepository, outboxPort, idempotencyRegistry);
     }
 }

@@ -68,6 +68,14 @@ public class Role {
         this.updatedAt = Instant.now();
     }
 
+    public void markDeleted() {
+        if (isSystemRole) {
+            throw new DomainRuleViolationException("No se puede eliminar un rol del sistema.");
+        }
+        this.status = RoleStatus.DELETED;
+        this.updatedAt = Instant.now();
+    }
+
     // Getters
     public UUID getId() { return id; }
     public String getPublicRoleId() { return publicRoleId; }

@@ -10,6 +10,7 @@ import com.jcode.jcomercy.companymanagement.domain.model.assignment.BranchAssign
 import com.jcode.jcomercy.companymanagement.domain.model.membership.CompanyMembership;
 import com.jcode.jcomercy.companymanagement.domain.model.membership.MembershipStatus;
 import com.jcode.jcomercy.companymanagement.domain.model.role.Role;
+import com.jcode.jcomercy.companymanagement.domain.model.role.RoleStatus;
 import com.jcode.jcomercy.companymanagement.domain.port.CompanyRepositoryPort;
 import com.jcode.jcomercy.companymanagement.domain.port.MembershipRepositoryPort;
 import com.jcode.jcomercy.companymanagement.domain.port.RoleRepositoryPort;
@@ -127,7 +128,9 @@ public class MembershipApplicationService {
     private static Map<String, String> roleIdsByName(List<Role> visibleRoles) {
         Map<String, String> byName = new HashMap<>();
         for (Role role : visibleRoles) {
-            byName.putIfAbsent(role.getName(), role.getPublicRoleId());
+            if (role.getStatus() != RoleStatus.DELETED) {
+                byName.putIfAbsent(role.getName(), role.getPublicRoleId());
+            }
         }
         return byName;
     }

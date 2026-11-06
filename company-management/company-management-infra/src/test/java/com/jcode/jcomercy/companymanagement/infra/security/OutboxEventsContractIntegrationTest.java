@@ -42,6 +42,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -61,7 +63,8 @@ class OutboxEventsContractIntegrationTest {
 
     /** Los eventos que se emiten en esta prueba y el contrato debe cubrir. */
     private static final Set<String> EMITTED = Set.of("account.created", "account.suspended", "company.created",
-        "company.activated", "branch.created", "branch.activated");
+        "company.activated", "branch.created", "branch.activated", "role.created", "role.updated", "role.deactivated",
+        "role.deleted");
 
     private record Sent(String routingKey, Message message) { }
 
@@ -114,6 +117,19 @@ class OutboxEventsContractIntegrationTest {
         String branch = world.createBranch(company, companyBearer, "MATRIZ");
         world.activateBranch(company, branch, companyBearer);
         world.activateCompany(company, companyBearer);
+        // Los cuatro eventos de roles: crear, editar, desactivar y borrar un rol propio.
+        String cashier = createRole(company, companyBearer, "Cajero del contrato");
+        mockMvc.perform(patch("/api/v1/companies/{company}/roles/{role}", company, cashier)
+                .header("Authorization", companyBearer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Cajero del contrato\",\"permissions\":[{\"permissionCode\":\"sales.read\"},{\"permissionCode\":\"sales.cancel\"}]}"))
+            .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/companies/{company}/roles/{role}/deactivation", company, cashier)
+                .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString()))
+            .andExpect(status().isOk());
+        String disposable = createRole(company, companyBearer, "Rol desechable del contrato");
+        mockMvc.perform(delete("/api/v1/companies/{company}/roles/{role}?confirmation=true", company, disposable)
+                .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString()))
+            .andExpect(status().isNoContent());
         RestWorld.Person other = world.register();
         suspendAccount(other.accountId(), world.login(other.email()));
 
@@ -151,6 +167,16 @@ class OutboxEventsContractIntegrationTest {
             soft.assertThat(sequences.get(i)).as("sequence del evento %d frente al anterior (%s)", i, sequences).isGreaterThan(sequences.get(i - 1));
         }
         soft.assertAll();
+    }
+
+    private String createRole(String company, String bearer, String name) throws Exception {
+        String response = mockMvc.perform(post("/api/v1/companies/{company}/roles", company)
+                .header("Authorization", bearer).header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"" + name + "\",\"permissions\":[{\"permissionCode\":\"sales.read\"}]}"))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(response).get("roleId").asText();
     }
 
     // ---- Contraste con el contrato ----
