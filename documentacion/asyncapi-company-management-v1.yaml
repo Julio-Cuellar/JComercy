@@ -1407,6 +1407,7 @@ components:
           example: 3
         sequence:
           type: integer
+          description: Número creciente que company-management asigna al registrar cada evento, en el orden de registro. Puede tener huecos y no garantiza el orden de confirmación entre transacciones concurrentes; sirve para ordenar y para descartar repetidos.
           example: 105
         occurredAt:
           type: string
@@ -1427,6 +1428,8 @@ components:
           example: acc_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
         companyId:
           type: string
+          nullable: true
+          description: Nulo en los eventos de cuenta, que ocurren antes de que exista una empresa.
           example: com_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
         branchId:
           type: string
@@ -1473,8 +1476,12 @@ components:
           type: string
         name:
           type: string
-        ownerUserId:
+        ownerPersonId:
           type: string
+          description: Identificador de la persona dueña de la cuenta (no el de un usuario).
+        reason:
+          type: string
+          description: Motivo de la suspensión; solo en account.suspended.
         status:
           type: string
           enum:
@@ -1491,8 +1498,9 @@ components:
           type: string
         tradeName:
           type: string
-        taxId:
+        rfc:
           type: string
+          description: RFC de la empresa, el mismo nombre que usa la API REST.
         status:
           type: string
           enum:
@@ -1513,6 +1521,9 @@ components:
           type: string
         name:
           type: string
+        type:
+          type: string
+          description: Tipo de sucursal (por ejemplo MATRIZ o SUCURSAL).
         isHeadOffice:
           type: boolean
         status:

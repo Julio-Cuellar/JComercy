@@ -93,7 +93,7 @@ class OutboxDispatcherConnectionIntegrationTest {
 
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         for (int i = 0; i < 3; i++) {
-            eventOutbox.recordEvent("account.created", "1.0", 1L, i, "company_management", "cor_slow_" + i, null,
+            eventOutbox.recordEvent("account.created", "1.0", 1L, "company_management", "cor_slow_" + i, null,
                 "acc_slow_" + suffix + "_" + i, "com_slow", null, "usr_slow", Map.of("n", i));
         }
         List<OutboxEventJpaEntity> events = outbox.findAll().stream()
@@ -135,7 +135,7 @@ class OutboxDispatcherConnectionIntegrationTest {
     void anEventTheBrokerNeverConfirmsKeepsAReadableError() {
         dispatcher.publishPending(); // deja al día lo que otras pruebas hayan dejado pendiente
         String accountId = "acc_silent_" + UUID.randomUUID().toString().substring(0, 8);
-        eventOutbox.recordEvent("account.created", "1.0", 1L, 0, "company_management", "cor_silent", null,
+        eventOutbox.recordEvent("account.created", "1.0", 1L, "company_management", "cor_silent", null,
             accountId, "com_slow", null, "usr_slow", Map.of("n", 0));
         OutboxEventJpaEntity event = outbox.findAll().stream()
             .filter(candidate -> accountId.equals(candidate.getAccountId()))

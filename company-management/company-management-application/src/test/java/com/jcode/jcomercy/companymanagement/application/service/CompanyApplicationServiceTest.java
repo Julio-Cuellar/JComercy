@@ -29,7 +29,7 @@ class CompanyApplicationServiceTest {
     }
 
     private static EventOutboxPort noOpOutbox() {
-        return (eventType, schemaVersion, aggregateVersion, sequence, producerModule, correlationId,
+        return (eventType, schemaVersion, aggregateVersion, producerModule, correlationId,
                 causationId, accountId, companyId, branchId, actorUserId, dataPayload) -> { };
     }
 

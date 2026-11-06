@@ -48,8 +48,8 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-021 | Con un broker colgado, un ciclo del despachador se bloquea minutos y el evento puede publicarse dos veces | ABIERTO |
 | ERR-022 | Inventario reintenta siempre los 50 eventos pendientes más antiguos: si fallan, los nuevos no se intentan | ABIERTO |
 | ERR-023 | Company-management publicaba solo el `data` de cada evento, no el sobre (`EventEnvelope`) que exige el AsyncAPI | RESUELTO (BIT-040) |
-| ERR-024 | Valores del sobre que no significan lo que el contrato dice: `accountId` o `companyId` vacíos y `sequence` constante | ABIERTO |
-| ERR-025 | El `data` de tres eventos no usa los nombres que declara el contrato (`ownerPersonId`, `rfc`, falta `isHeadOffice`) | ABIERTO |
+| ERR-024 | Valores del sobre que no significan lo que el contrato dice: `accountId` o `companyId` vacíos y `sequence` constante | RESUELTO (BIT-042) |
+| ERR-025 | El `data` de tres eventos no usa los nombres que declara el contrato (`ownerPersonId`, `rfc`, falta `isHeadOffice`) | RESUELTO (BIT-042) |
 | ERR-026 | Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola | ABIERTO (el punto 3, la cola, quedó RESUELTO en BIT-041) |
 | ERR-027 | La cola de company-management, unida con `#`, recibía también los eventos de inventario | RESUELTO (BIT-041) |
 
@@ -757,6 +757,29 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Sin verificar:** que otro entorno (no el de pruebas) tenga colas con otros nombres o enlaces propios; el enlace heredado solo se quita de la cola configurada.
 - **Pendiente del plan:** F2 a F7 (sobre y contrato de company-management, despachadores, sobre común e inventario, `uk_stock_identity`, CI de RabbitMQ y cierre).
 
+### BIT-042 · El sobre de company-management dice la verdad y el data usa los nombres del contrato (fase 2 del plan de errores)
+
+- **Qué se hizo:** la prueba de contrato de R4 pasó de exigir que los campos estén presentes a exigir su contenido, y con eso se corrigieron ERR-024 y ERR-025: `accountId` y `companyId` ya no salen vacíos, `sequence` ya no es una constante, y el `data` de cuenta, empresa y sucursal usa nombres que el contrato declara.
+- **Cómo se hizo:**
+  - **Prueba reforzada** (`OutboxEventsContractIntegrationTest`): un campo obligatorio solo puede ser nulo si el contrato lo declara `nullable`; los textos obligatorios no pueden estar en blanco; los eventos de cuenta llevan `companyId` nulo; todo nombre del `data` debe estar en las propiedades del esquema del contrato; `branch.created` lleva `isHeadOffice` booleano; y `sequence` crece en el orden de creación de los eventos.
+  - **RED, medido:** `Expecting not blank but was: ""` 10 veces (los `accountId` de las sucursales y los `companyId` de las cuentas), 8 comprobaciones booleanas en falso (`companyId` nulo en cuenta, `isHeadOffice`), y campos del `data` que el contrato no declara: `ownerPersonId` (cuatro veces), `rfc` (dos), `reason` (dos) y `type`, `domicilio` y `phoneNumber` (dos). La comprobación de `sequence` se verificó con la mutación M3 de abajo.
+  - **Corrección del código:**
+    - `AccountApplicationService`: los eventos de cuenta publican `companyId` nulo.
+    - `BranchApplicationService`: los eventos de sucursal toman el `accountId` de su empresa; `branch.created` publica `isHeadOffice` y deja de publicar `domicilio` (solo llevaba la calle) y `phoneNumber`.
+    - `EventOutboxPort.recordEvent` deja de recibir `sequence`; `JpaOutboxAdapter` lo toma de una secuencia de la base de datos (`SELECT nextval(...)`, que funciona igual en H2 y en PostgreSQL).
+    - Migración **V025**: `company_id` de `outbox_event` admite nulo (y las cadenas vacías pendientes pasan a nulo), recupera el `account_id` de los eventos de sucursal pendientes que lo tenían vacío, y crea `company_management.outbox_event_sequence`.
+  - **Corrección del contrato** (`asyncapi-company-management-v1.yaml`): `companyId` del sobre es `nullable` con su explicación; `sequence` documenta su significado (creciente por orden de registro, con huecos, sin garantía de orden de confirmación); `AccountData` usa `ownerPersonId` (la persona dueña, no un usuario) y declara `reason`; `CompanyData` usa `rfc`, como la API REST; `BranchData` declara `type`. Siguen 67 canales, 62 mensajes y 76 esquemas.
+  - **GREEN:** `mvn -B -ntp -pl company-management/company-management-infra -am test` → `BUILD SUCCESS` (13 + 8 + 8 + 128 pruebas, 6 omitidas). `... -Ppostgres,rabbitmq test` → `BUILD SUCCESS`, **128 de 128** en company-management, ninguna omitida, sobre PostgreSQL y RabbitMQ reales.
+  - **Pruebas unitarias ajustadas:** los dos puertos falsos de `BranchApplicationServiceTest` y `CompanyApplicationServiceTest` pierden el argumento `sequence`, y el repositorio falso de empresas de la primera devuelve una empresa de la cuenta `acc_owner` (el servicio ahora la consulta al registrar el evento).
+  - **Mutaciones temporales** (script en el área de trabajo, archivos restaurados, huellas iguales): `companyId` vacío en `account.created`, `accountId` vacío en `branch.created`, `sequence` constante y `branch.created` sin `isHeadOffice` con `domicilio` de vuelta. **Las cuatro hacen caer la prueba de contrato.**
+- **Afectaciones:**
+  - **Eventos publicados:** cambian los nombres en `account.created` (sigue `ownerPersonId`, ahora declarado), `company.created` (`rfc`, declarado), `branch.created` (sin `domicilio` ni `phoneNumber`, con `isHeadOffice`) y la cabecera AMQP `companyId` de los eventos de cuenta es nula. No hay consumidores.
+  - **Contrato:** ver arriba; `companyId` nulo en el sobre es un cambio visible para quien genere clientes a partir del AsyncAPI.
+  - **Datos:** V025 cambia una columna y crea una secuencia. Las filas existentes conservan su `sequence` antiguo (1 o 2), así que no es comparable con el nuevo.
+  - **Código:** cambia la firma del puerto `EventOutboxPort`.
+- **Sin verificar:** el `UPDATE` de V025 que recupera el `account_id` de eventos pendientes no se probó con filas reales (las bases de prueba parten vacías); solo se comprobó que la migración corre en H2 y PostgreSQL. La suite completa de los dos módulos se corre en el cierre (F7).
+- **Pendiente del plan:** F3 a F7.
+
 ---
 
 ## Errores
@@ -971,19 +994,23 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 
 ### ERR-024 · Valores del sobre que no significan lo que el contrato dice
 
-- **Estado:** ABIERTO. Visto al preparar la prueba de R4, por lectura del código; **requiere una decisión**.
+- **Estado:** RESUELTO el 2026-11-06 (BIT-042). Visto al preparar la prueba de R4, por lectura del código.
 - **De qué trata:** tres cosas. (1) Los eventos de sucursal salen con `accountId` vacío (`""`), y los de cuenta con `companyId` vacío; el contrato marca los dos como obligatorios. En una cuenta recién creada la empresa aún no existe, así que ahí quien debería cambiar es el contrato, que tendría que admitir `companyId` nulo; en las sucursales, en cambio, el `accountId` se podría resolver desde la empresa. (2) `sequence` vale siempre `1` en los eventos de creación y `2` en los de activación o suspensión: es una constante, no una secuencia. El contrato no define qué debe contar. (3) `aggregateVersion` sí es la versión real de la entidad.
 - **Cuándo se manifiesta:** en todos los eventos `branch.*`, `account.*` y, para `sequence`, en los seis tipos. La prueba de contrato no lo ve porque exige que el campo esté presente, no que tenga contenido.
 - **Cómo mitigarlo:** un consumidor no debe fiarse de `accountId` ni de `companyId` vacíos, ni de `sequence`.
 - **Para resolverlo (decisión):** hacer opcional `companyId` en los eventos de cuenta, resolver el `accountId` de las sucursales, y definir `sequence` (por ejemplo, por agregado) o dejar de publicarlo.
+- **Cómo se resolvió:** `companyId` nulo y declarado `nullable` en los eventos de cuenta (migración V025), `accountId` de las sucursales tomado de su empresa, y `sequence` tomado de una secuencia de la base de datos con su significado documentado en el AsyncAPI. Verificado con `OutboxEventsContractIntegrationTest` reforzada y cuatro mutaciones.
+- **Lo que no cubre:** `sequence` no garantiza el orden de confirmación entre transacciones concurrentes ni está libre de huecos; no se publica un `sequence` por agregado.
 
 ### ERR-025 · El `data` de tres eventos no usa los nombres que declara el contrato
 
-- **Estado:** ABIERTO. Visto al preparar la prueba de R4; **requiere una decisión**.
+- **Estado:** RESUELTO el 2026-11-06 (BIT-042). Visto al preparar la prueba de R4.
 - **De qué trata:** `account.created` envía `ownerPersonId` y el contrato declara `ownerUserId`; `company.created` envía `rfc` y el contrato declara `taxId`; `branch.created` no envía `isHeadOffice` y sí `type`, `domicilio` y `phoneNumber`, que el contrato no declara. Ninguna de esas propiedades es obligatoria en el contrato, y los datos extra están permitidos, por eso la prueba de R4 no lo exige.
 - **Cuándo se manifiesta:** en esos tres eventos. Un consumidor hecho a partir del AsyncAPI no encontraría `ownerUserId`, `taxId` ni `isHeadOffice`.
 - **Cómo mitigarlo:** documentar los nombres reales; por ahora no hay consumidores.
 - **Para resolverlo (decisión):** cambiar el contrato o el código. `rfc` es un dato fiscal de México y `taxId` es genérico; `ownerPersonId` es el id de la persona dueña y no el de un usuario.
+- **Cómo se resolvió:** el contrato adopta `ownerPersonId` y `rfc` (el nombre que usa la API REST) y declara `type` y `reason`; el código publica `isHeadOffice` y deja de publicar `domicilio` y `phoneNumber`. Verificado con la prueba de contrato, que ahora exige que todo campo del `data` esté declarado.
+- **Lo que no cubre:** la prueba solo contrasta los seis tipos de evento que el módulo emite.
 
 ### ERR-026 · Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola
 

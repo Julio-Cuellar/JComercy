@@ -5,7 +5,6 @@ public interface EventOutboxPort {
         String eventType,
         String schemaVersion,
         long aggregateVersion,
-        long sequence,
         String producerModule,
         String correlationId,
         String causationId,

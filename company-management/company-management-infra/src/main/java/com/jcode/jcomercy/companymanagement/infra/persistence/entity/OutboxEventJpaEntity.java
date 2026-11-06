@@ -41,7 +41,7 @@ public class OutboxEventJpaEntity {
     @Column(name = "account_id", nullable = false, length = 64)
     private String accountId;
 
-    @Column(name = "company_id", nullable = false, length = 64)
+    @Column(name = "company_id", length = 64)
     private String companyId;
 
     @Column(name = "branch_id", length = 64)
