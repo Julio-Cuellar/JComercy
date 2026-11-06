@@ -864,6 +864,7 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Que funcione en un runner de GitHub.** Las pruebas de broker caído y colgado usan `rabbitmqctl stop_app` y `docker pause` sobre el contenedor; `docker pause` necesita el congelador de cgroups del runner. La primera corrida en GitHub lo dirá. Si falla por el entorno, se registrará como error y se acotará esa clase, no se desactivará el job.
   - La duración real del job en GitHub (los 25 min son una estimación con margen).
 - **Pendiente del plan:** F7, la verificación final.
+- **Verificado después (PR 7, 2026-11-06):** el job corrió en GitHub y pasó; el detalle está en BIT-048.
 
 ### BIT-047 · Cierre del plan de errores del Outbox y los eventos (fase 7)
 
@@ -894,6 +895,19 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Migraciones sobre datos reales:** V025, V010 y V011 solo se corrieron sobre bases que parten vacías; la V011 falla a propósito si ya hay saldos duplicados.
   - **Estabilidad:** la prueba de contrato de company-management ya tuvo una falla intermitente (BIT-040) y la prueba de fallos del despachador otra (ERR-028, resuelta). Tres corridas completas seguidas con el código final pasaron; no demuestran que no vuelva a aparecer.
   - **Fuera del plan:** el frente de roles y membresías no se empezó.
+- **Verificado después (PR 7, 2026-11-06):** lo de «CI en GitHub» ya no está pendiente; ver BIT-048. El resto de los pendientes sigue igual.
+
+### BIT-048 · El job `rabbitmq` corrió en GitHub y pasó; el PR 7 se fusionó antes de que terminara
+
+- **Qué se hizo:** limpieza tras la fusión del PR 7 (`bb58585`, 2026-11-06 19:52:40 UTC): `main` local actualizado, rama local `fix/outbox-contratos-colas` borrada y este registro de lo que mostró la primera corrida del CI en GitHub. No cambia código.
+- **Cómo se hizo:** se consultó la corrida del PR con `gh run view` y `gh pr view`.
+  - **Resultado:** `test`, `postgres` y `rabbitmq` terminaron en `SUCCESS`. En `rabbitmq`: 16 + 8 + 8 + 131 + 27 + 95 = **285 pruebas, 0 fallos, 0 errores, 0 omitidas**, `BUILD SUCCESS`, 3 min 24 s de Maven. Con eso queda comprobado en un runner de GitHub que `docker pause` y `rabbitmqctl stop_app` funcionan, que era lo sin verificar de BIT-046.
+  - **Duración en frío** (de 19:50:06 UTC): `test` 113 s, `postgres` 137 s, `rabbitmq` 216 s (19:53:42), muy por debajo de los 25 min del límite.
+  - **El push a `main`** del commit de fusión también pasó (corrida 42283476265).
+- **Dato que corrijo:** el PR se fusionó a las 19:52:40 y `rabbitmq` terminó a las 19:53:42, **unos 62 s después**. Es decir, se fusionó con ese job todavía en curso, y yo lo di por verde sin mirar la hora. Pasó, pero la fusión no esperó al resultado. Es lo que evitaría marcar `rabbitmq` como verificación requerida.
+- **Afectaciones:** ninguna en código, contratos ni datos. Solo cambia el estado de BIT-046 y BIT-047, que ya no tienen el CI sin verificar.
+- **Sigue pendiente:** la versión de PostgreSQL de producción (V011 exige 15 o más), marcar `rabbitmq` como verificación requerida (decisión de quien administra el repositorio) y el resto de lo anotado en BIT-047.
+- **Sin tocar, por si son tuyas:** las ramas locales `contracts-v1`, `feat/pruebas-postgres`, `feat/pruebas-rabbitmq` y `feat/token-por-empresa` siguen existiendo; no se comprobó si están fusionadas.
 
 ---
 
