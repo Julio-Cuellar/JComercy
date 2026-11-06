@@ -37,7 +37,11 @@ public class PostgresTestDatabase implements ApplicationContextInitializer<Confi
 
     private static synchronized PostgreSQLContainer<?> database() {
         if (container == null) {
-            container = new PostgreSQLContainer<>(IMAGE);
+            // Cada contexto de Spring que el caché de pruebas conserva (hasta 32) guarda su propio pool de conexiones, y
+            // las pruebas con configuración propia crean contextos aparte: con las 100 conexiones que trae PostgreSQL por
+            // defecto, la suite se quedaba sin ellas («too many clients already», ERR-030). fsync=off es lo que ya traía
+            // el contenedor de Testcontainers; hay que repetirlo porque el comando se reemplaza completo.
+            container = new PostgreSQLContainer<>(IMAGE).withCommand("postgres", "-c", "fsync=off", "-c", "max_connections=500");
             container.start();
         }
         return container;

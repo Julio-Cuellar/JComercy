@@ -54,6 +54,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-027 | La cola de company-management, unida con `#`, recibía también los eventos de inventario | RESUELTO (BIT-041) |
 | ERR-028 | La primera ejecución del despachador programado resucita filas del Outbox que una prueba acaba de borrar | RESUELTO (BIT-043) |
 | ERR-029 | La recuperación de contraseña genera su código pero no lo entrega por ningún medio | RESUELTO (BIT-053) |
+| ERR-030 | Con PostgreSQL real, la suite de company-management se queda sin conexiones («too many clients already») | RESUELTO (BIT-057) |
 
 ---
 
@@ -1053,6 +1054,40 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Cambiar el rol de una persona activa** (`PATCH /memberships/{id}`) sigue sin hacerse.
   - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
 
+### BIT-057 · Cierre del frente de roles y membresías con alta de empleados por RH (M8)
+
+- **Qué se hizo:** verificación final de las etapas M0 a M7 (BIT-049 a BIT-056) en la rama `feat/roles-membresias`, con un commit por etapa. Se encontró y resolvió un error de las pruebas con PostgreSQL real (ERR-030).
+- **Cómo se hizo:**
+  - **Suite normal** (`mvn -B -ntp test`) → `BUILD SUCCESS`, **358 pruebas** (16 + 8 + 8 + 204 + 27 + 95), 13 omitidas (las de broker y PostgreSQL reales: 6 en company-management y 7 en inventario), sin Docker.
+  - **Suite con PostgreSQL 16 y RabbitMQ 3.13 reales** (`mvn -B -ntp -Ppostgres,rabbitmq test`) → la primera corrida **falló**: 7 errores en `OutboxDispatcherConnectionIntegrationTest`, `OutboxRabbitMqIntegrationTest` y `GraphQlOpenModeIntegrationTest`, por `too many clients already` (ERR-030), y los módulos de inventario no llegaron a correr. Con `max_connections=500` en el contenedor de pruebas, la segunda corrida completa pasó: `BUILD SUCCESS`, **358 de 358**, ninguna omitida. Sin contenedores de pruebas sobrantes.
+  - **Lo que esto verifica por primera vez sobre PostgreSQL:** las migraciones `V026` a `V030`, los cuatro adaptadores con SQL directo que se escribieron (membresías y asignaciones, roles, perfiles de empleado e invitaciones, con sus lecturas de `OffsetDateTime` y `UUID`), y los índices únicos por empresa.
+  - **AsyncAPI:** no necesitó cambios. Los 14 tipos de evento que este frente emite (`role.*`, `membership.*`, `membership.invitation.*`, `branch-assignment.*`) ya estaban declarados, y `OutboxEventsContractIntegrationTest` los comprueba contra el contrato con sus flujos reales. Los eventos de invitación se publican con los datos de la membresía que el contrato define, sin identificador de membresía (todavía no existe) y sin datos personales.
+- **Resumen por etapa:**
+
+  | Etapa | Entrada | Qué entrega | Pruebas nuevas | Mutaciones |
+  |---|---|---|---|---|
+  | M0 | BIT-049 | Plan, diagramas y ERR-029 | (documentación) | |
+  | M1 | BIT-050 | Ver membresías, roles y mis permisos | 7 | 4 |
+  | M2 | BIT-051 | Roles propios de la empresa | 11 | 7 |
+  | M3 | BIT-052 | Perfil de empleado por RH | 11 | 8 |
+  | M4 | BIT-053 | Correo y recuperación de contraseña | 12 | 5 |
+  | M5 | BIT-054 | Invitación y activación del acceso | 15 | 12 |
+  | M6 | BIT-055 | Sucursales de una persona | 9 | 11 |
+  | M7 | BIT-056 | Suspender, reactivar y revocar | 8 | 8 |
+
+- **Afectaciones:** migraciones `V026` a `V030` en company-management; dependencia `spring-boot-starter-mail`; rutas nuevas en el contrato OpenAPI; el rol `COMPANY_ADMIN` ganó `employees.*`, `assignments.*`, `operations.*`, `operational_context.select` y `effective_permissions.read_own`. Con el modo de correo por defecto (`disabled`), la recuperación de contraseña y las invitaciones no entregan nada hasta configurar `JCOMERCY_MAIL_MODE=smtp`.
+- **Pendiente y sin verificar (nada de esto se oculta):**
+  - **Correo real:** el envío por SMTP no se probó contra ningún servidor; falta elegir el servicio, el remitente verificado y la dirección pública de la aplicación (`JCOMERCY_PUBLIC_URL`).
+  - **Pantallas:** el frontend sigue siendo una maqueta. No existen `/activar-acceso` ni `/recuperar-contrasena`, a donde apuntan los enlaces de los correos, ni pantallas para registrar equipo, roles ni sucursales.
+  - **Inventario** valida el token por su cuenta y no revisa la membresía: una persona suspendida o revocada sigue usándolo hasta que su token venza (una hora por defecto).
+  - **Cambiar el rol de una persona ya activa** (`PATCH /memberships/{id}`), **roles y permisos por sucursal**, y la **consulta de los permisos de otra persona** no se hicieron.
+  - **Recontratar** a una persona revocada no tiene salida (restricción de una sola membresía por empresa y usuario).
+  - **Una cuenta de empleado puede crear empresas propias:** nada lo impide hoy; las rutas de empresas no distinguen el tipo de cuenta.
+  - **Condiciones de carrera:** el nombre único de un rol, la última sucursal activa de una persona y el código de una invitación se comprueban en la aplicación, sin bloqueo; dos peticiones simultáneas podrían saltarse las dos primeras reglas.
+  - **Sin límite de intentos** en las rutas públicas de invitación y recuperación.
+  - **Datos personales:** RFC y CURP se guardan en claro en `employee_profile`; no hay cifrado en reposo ni política de retención.
+  - **Estabilidad:** la suite de company-management pasó completa al cerrar cada etapa (M1 a M7), la de todos los módulos pasó al cerrar, y la que usa servicios reales pasó en su segunda corrida (la primera falló por ERR-030). Eso no demuestra que no haya fallas intermitentes.
+
 ---
 
 ## Errores
@@ -1325,3 +1360,12 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Sin verificar:** se concluyó leyendo el código y buscando clases de correo; no se probó con un cliente real.
 - **Cómo se resolvió:** BIT-053 introduce `MailPort` y la recuperación manda el código en un correo con un enlace de un solo uso. Las pruebas leen el correo, usan el enlace para cambiar la contraseña, entran con la nueva y comprueban que el enlace no sirve dos veces.
 - **Lo que no cubre:** el envío real por SMTP no se probó contra un servidor de correo (ver BIT-053).
+
+### ERR-030 · Con PostgreSQL real, la suite de company-management se queda sin conexiones
+
+- **Estado:** RESUELTO el 2026-11-07 (BIT-057). Visto al correr `mvn -B -ntp -Ppostgres,rabbitmq test` como cierre de BIT-049 (M8).
+- **De qué trata:** el contenedor de PostgreSQL de las pruebas usa el máximo por defecto, 100 conexiones, y cada contexto de Spring que el caché de pruebas conserva (hasta 32) guarda su propio pool de 10. Las pruebas de M1 a M7 añadieron clases con configuración propia (correo caído, límite de reenvío), cada una con su contexto, y la suma pasó de 100: `PSQLException: FATAL: sorry, too many clients already`. Fallaron 7 pruebas de tres clases que arrancan su contexto tarde (`OutboxDispatcherConnectionIntegrationTest`, `OutboxRabbitMqIntegrationTest` y `GraphQlOpenModeIntegrationTest`), por error al crear el contexto y no por una aserción. La suite normal, con H2, pasaba entera, así que solo lo habría descubierto el job `postgres` del CI.
+- **Cuándo se manifiesta:** solo con `-Ppostgres`, y solo cuando el módulo tiene tantos contextos distintos que sus pools juntos pasan de 100 conexiones.
+- **Cómo mitigarlo:** correr las clases afectadas por separado.
+- **Cómo se resolvió:** `PostgresTestDatabase` arranca el contenedor con `max_connections=500` (y repite `fsync=off`, porque el comando se reemplaza completo). No se redujo el tamaño de los pools porque varias pruebas de concurrencia dependen de tener conexiones disponibles. La suite completa con `-Ppostgres,rabbitmq` pasó después: 358 de 358.
+- **Lo que no cubre:** el límite sigue existiendo, solo está más lejos: 500 conexiones alcanzan para los 32 contextos que el caché conserva con pools de 10. Si el módulo crece mucho más, o se sube el tamaño del caché, habrá que revisarlo.

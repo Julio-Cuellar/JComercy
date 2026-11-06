@@ -25,17 +25,21 @@
 
 ## Etapas
 
-| Etapa | Qué entrega |
-|---|---|
-| M0 | Estos diagramas y el registro del error de la recuperación de contraseña (ERR-029). |
-| M1 | Ver membresías (con filtros y paginación), roles y mis permisos efectivos. |
-| M2 | Roles propios de la empresa: crear, editar, desactivar. Los del sistema no se tocan. |
-| M3 | Perfil de empleado por RH. Permiso `employees.*`. |
-| M4 | Puerto de correo con adaptador SMTP y adaptador de prueba. La recuperación de contraseña pasa a usarlo. |
-| M5 | Invitación y activación: consultar, activar, reenviar, cancelar. |
-| M6 | Asignaciones por sucursal: listar, crear, cambiar, retirar. |
-| M7 | Suspender, reactivar y revocar. |
-| M8 | Cierre: suites completas, AsyncAPI al día, bitácora y PR. |
+Las nueve etapas están hechas. El detalle de cada una (pruebas, mutaciones, lo que no se verificó) está en la bitácora.
+
+| Etapa | Qué entrega | Bitácora |
+|---|---|---|
+| M0 | Estos diagramas y el registro del error de la recuperación de contraseña (ERR-029). | BIT-049 |
+| M1 | Ver membresías (con filtros y paginación), roles y mis permisos efectivos. | BIT-050 |
+| M2 | Roles propios de la empresa: crear, editar, desactivar y borrar. Los del sistema no se tocan. | BIT-051 |
+| M3 | Perfil de empleado por RH. Permiso `employees.*`. | BIT-052 |
+| M4 | Puerto de correo con adaptador SMTP y adaptador de prueba. La recuperación de contraseña pasa a usarlo. | BIT-053 |
+| M5 | Invitación y activación: consultar, activar, reenviar, cancelar. | BIT-054 |
+| M6 | Asignaciones por sucursal: listar, crear, cambiar, quitar. | BIT-055 |
+| M7 | Suspender, reactivar y revocar. | BIT-056 |
+| M8 | Cierre: suites completas con PostgreSQL y RabbitMQ reales, bitácora y PR. | BIT-057 |
+
+Quedó sin hacer, a propósito: cambiar el rol de una persona ya activa, roles y permisos por sucursal, consultar los permisos de otra persona, y las pantallas del frontend (incluidas las de los enlaces de los correos).
 
 ## 1. Alta por RH y envío del enlace
 
