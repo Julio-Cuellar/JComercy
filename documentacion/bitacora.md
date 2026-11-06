@@ -865,6 +865,36 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - La duración real del job en GitHub (los 25 min son una estimación con margen).
 - **Pendiente del plan:** F7, la verificación final.
 
+### BIT-047 · Cierre del plan de errores del Outbox y los eventos (fase 7)
+
+- **Qué se hizo:** verificación final del plan de siete fases que cerró los errores abiertos de los frentes de PostgreSQL y RabbitMQ (BIT-041 a BIT-046), en la rama `fix/outbox-contratos-colas`, con un commit por fase.
+- **Cómo se hizo:**
+  - **Suite normal** (`mvn -B -ntp test`), dos corridas seguidas con el código final → `BUILD SUCCESS` las dos, **285 pruebas** (16 + 8 + 8 + 131 + 27 + 95), 13 omitidas (las de broker real y las de PostgreSQL), sin Docker.
+  - **Suite real** (`mvn -B -ntp -Ppostgres,rabbitmq test`) → `BUILD SUCCESS`, **285 de 285**, ninguna omitida, 3 min 32 s, sobre PostgreSQL 16 y RabbitMQ 3.13 reales. Sin contenedores de pruebas sobrantes (se comprobó con `docker ps -a` tras dejar actuar al limpiador de Testcontainers).
+  - **Estado de los errores:** ningún error queda `ABIERTO` en el índice (28 filas, 28 entradas).
+- **Qué cerró cada fase:**
+
+  | Fase | Entrada | Errores |
+  |---|---|---|
+  | 1 | BIT-041 | ERR-027 (la cola de company-management recibía los eventos de inventario; hipótesis de BIT-038 confirmada) y el punto 3 de ERR-026 |
+  | 2 | BIT-042 | ERR-024 y ERR-025 |
+  | 3 | BIT-043 | ERR-021, ERR-022, ERR-028 y el orden de company-management de BIT-038 |
+  | 4 | BIT-044 | ERR-026 (puntos 1 y 2) |
+  | 5 | BIT-045 | el hueco de nulos de `uk_stock_identity` (cierra lo que ERR-017 dejó anotado) |
+  | 6 | BIT-046 | el CI sin pruebas de broker real |
+
+- **Afectaciones:** las de cada entrada, y en conjunto: contratos de eventos nuevos y corregidos (`asyncapi-company-management-v1.yaml`, `asyncapi-inventory-v1.yaml`), migraciones `V025` de company-management y `V009`, `V010` y `V011` de inventario, `EventEnvelope` en `jcomercy-core`, y un job más en el CI.
+- **Pendiente y sin verificar (nada de esto se oculta):**
+  - **PostgreSQL de producción:** la V011 exige 15 o más; el repositorio no declara la versión de producción. Por confirmar.
+  - **CI en GitHub:** el job `rabbitmq` no se ha ejecutado todavía en un runner de GitHub (BIT-046); la primera corrida verificará `docker pause` y `rabbitmqctl stop_app` allí. La rama aún no se ha subido.
+  - **Rama protegida:** marcar `rabbitmq` como verificación requerida es una decisión de la persona dueña del repositorio.
+  - **Eventos de inventario:** salen sin `accountId`, `aggregateVersion` ni `causationId` hasta que el JWT traiga la cuenta y el puerto reciba la versión del agregado; la prueba de contrato no genera `inventory.stock.movement`.
+  - **Eventos que siempre fallan:** siguen reintentándose cada vez más espaciado (hasta 300 s), sin tope de intentos ni cola de eventos muertos.
+  - **Duplicados:** siguen siendo la garantía «al menos una vez»; ninguna fase los elimina.
+  - **Migraciones sobre datos reales:** V025, V010 y V011 solo se corrieron sobre bases que parten vacías; la V011 falla a propósito si ya hay saldos duplicados.
+  - **Estabilidad:** la prueba de contrato de company-management ya tuvo una falla intermitente (BIT-040) y la prueba de fallos del despachador otra (ERR-028, resuelta). Tres corridas completas seguidas con el código final pasaron; no demuestran que no vuelva a aparecer.
+  - **Fuera del plan:** el frente de roles y membresías no se empezó.
+
 ---
 
 ## Errores
