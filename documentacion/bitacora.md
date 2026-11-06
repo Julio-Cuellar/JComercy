@@ -1012,6 +1012,26 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Un correo que no sale por un fallo del proceso** entre confirmar y enviar queda en `PENDING`, sin reintento automático; RH puede reenviar.
   - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
 
+### BIT-055 · Sucursales de una persona: listar, agregar, suspender y quitar (M6)
+
+- **Qué se hizo:** cuatro rutas bajo `/api/v1/companies/{publicCompanyId}/memberships/{membershipId}/assignments`: `GET` (lista), `POST` (agregar, con `Idempotency-Key`), `PATCH /{id}` (suspender o reactivar, con `If-Match` opcional) y `DELETE /{id}` (quitar, con `Idempotency-Key`). Emiten `branch-assignment.created`, `.updated` y `.revoked`, que el AsyncAPI ya declaraba. La activación de acceso de M5 ahora también emite `branch-assignment.created` por cada sucursal que crea (antes no lo hacía).
+- **Cómo se hizo:**
+  - **RED:** `BranchAssignmentsIntegrationTest` (9 pruebas) contra el código sin esas rutas → 9 de 9 fallan con 404, la causa buscada.
+  - **GREEN:** misma clase → 9 de 9, con M1, M5, `RestOwnershipIntegrationTest` y las pruebas de contrato en verde. `OutboxEventsContractIntegrationTest` se amplió con agregar, suspender y quitar una sucursal y comprueba los tres eventos contra el AsyncAPI.
+  - **Reglas:** la sucursal debe existir en la empresa → 422; una sucursal repetida → 409; no se agregan a una membresía revocada → 422; **los roles son de la persona, no de cada sucursal**: pedir roles distintos de los que ya tiene, o permisos sueltos, se rechaza con 422 explicándolo (el contrato prevé roles por sucursal y el modelo todavía no los distingue); la sucursal de una asignación no se cambia (se quita y se agrega la otra) → 422; estado inválido o ausente → 400; versión vieja en `If-Match` → 409.
+  - **La última sucursal:** una persona con la membresía activa no se queda sin su última sucursal activa (ni suspendiéndola ni quitándola) → 409 con la instrucción de suspender su membresía en su lugar. Con la membresía suspendida o revocada sí se puede. El contrato habla de validar operaciones pendientes y sesiones activas; no hay módulo de operaciones, así que esta es la regla que se aplicó.
+  - **Retirar sin borrar:** `AssignmentStatus.REMOVED`. La fila se conserva, desaparece de la lista, del detalle de la membresía, del filtro por sucursal y del token, y volver a agregar esa sucursal reutiliza la misma fila. Suspender o quitar saca la sucursal del token en la siguiente entrada a la empresa (probado).
+  - **Permisos:** `V030` da `assignments.*` a `COMPANY_ADMIN`; sin eso la administración no podía usar las rutas.
+  - **Código:** `AssignmentApplicationService`, `BranchAssignmentController`, `AssignmentDto`, `AssignmentEvents` (lo comparten M5 y M6), `BranchAssignment.remove` y `restore`. En el contrato, `AssignmentRequest` ya no exige `roleIds` y `Assignment` gana `version`; se añadieron 400, 415 y 422 a las operaciones con cuerpo.
+  - **Mutaciones temporales (script, 11), todas detectadas y revertidas, con la huella de cada archivo igual a la de antes:** M1 se quita la última sucursal activa, M2 la regla también bloquea a una persona suspendida, M3 se admite una sucursal repetida, M4 se agrega a una membresía revocada, M5 se aceptan roles por sucursal, M6 la lista muestra las retiradas, M7 se cambia la sucursal de una asignación, M8 se ignora `If-Match`, M9 el evento de retirar cambia de nombre → caen 2, M10 el filtro por sucursal cuenta las retiradas, M11 el evento de retirar publica estado.
+  - **Suite de company-management:** 196 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Afectaciones:** `AssignmentStatus` gana `REMOVED` (la columna no tiene restricción, no hay migración de estructura). `COMPANY_ADMIN` tiene un permiso más. Cambios en el contrato OpenAPI. La lista de asignaciones no se pagina: una persona tiene tantas como sucursales.
+- **Sin verificar:**
+  - **Roles y permisos por sucursal** quedan sin implementar (el modelo guarda los roles en la membresía).
+  - **Cambiar los roles de una persona ya activa** (`PATCH /memberships/{id}` del contrato) no se hizo: no estaba en el plan. Hoy, para cambiar el rol hay que revocar y volver a registrar.
+  - **Dos peticiones simultáneas** que quiten las dos últimas sucursales activas de una persona podrían saltarse la regla: se comprueba en la aplicación, sin bloqueo de la fila.
+  - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
+
 ---
 
 ## Errores

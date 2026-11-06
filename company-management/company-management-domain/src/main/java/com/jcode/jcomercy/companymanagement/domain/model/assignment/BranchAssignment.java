@@ -41,6 +41,21 @@ public class BranchAssignment {
         this.updatedAt = Instant.now();
     }
 
+    /** Retira la sucursal de la persona. No se borra: queda guardada como retirada. */
+    public void remove() {
+        this.status = AssignmentStatus.REMOVED;
+        this.updatedAt = Instant.now();
+    }
+
+    /** Vuelve a dar una sucursal que se había retirado, con el estado que se pida. */
+    public void restore(AssignmentStatus newStatus) {
+        if (status != AssignmentStatus.REMOVED || newStatus == AssignmentStatus.REMOVED) {
+            throw new com.jcode.jcomercy.companymanagement.domain.exception.DomainRuleViolationException("Solo se puede volver a dar una sucursal que fue retirada.");
+        }
+        this.status = newStatus;
+        this.updatedAt = Instant.now();
+    }
+
     // Getters
     public UUID getId() { return id; }
     public String getPublicAssignmentId() { return publicAssignmentId; }

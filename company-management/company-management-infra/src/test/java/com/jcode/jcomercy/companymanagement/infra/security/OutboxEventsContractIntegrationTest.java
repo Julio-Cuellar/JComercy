@@ -66,7 +66,7 @@ class OutboxEventsContractIntegrationTest {
     private static final Set<String> EMITTED = Set.of("account.created", "account.suspended", "company.created",
         "company.activated", "branch.created", "branch.activated", "role.created", "role.updated", "role.deactivated",
         "role.deleted", "membership.invitation.created", "membership.invitation.accepted", "membership.invitation.revoked",
-        "membership.created");
+        "membership.created", "branch-assignment.created", "branch-assignment.updated", "branch-assignment.revoked");
 
     private record Sent(String routingKey, Message message) { }
 
@@ -142,6 +142,20 @@ class OutboxEventsContractIntegrationTest {
             .andExpect(status().isNoContent());
         ObjectNode cancelled = registerEmployee(company, companyBearer, branch);
         mockMvc.perform(delete("/api/v1/companies/{company}/employees/{employee}/invitation", company, cancelled.get("employeeId").asText())
+                .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString()))
+            .andExpect(status().isNoContent());
+        // Los eventos de las sucursales de una persona: agregar una, suspenderla y quitarla.
+        String membershipOfActivated = jdbc.queryForObject("SELECT membership_public_id FROM company_management.employee_profile WHERE public_employee_id=?",
+            String.class, activated.get("employeeId").asText());
+        String secondBranch = world.createBranch(company, companyBearer, "SUCURSAL");
+        String assignment = objectMapper.readTree(mockMvc.perform(post("/api/v1/companies/{company}/memberships/{membership}/assignments", company, membershipOfActivated)
+                .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"branchId\":\"" + secondBranch + "\"}"))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).get("assignmentId").asText();
+        mockMvc.perform(patch("/api/v1/companies/{company}/memberships/{membership}/assignments/{assignment}", company, membershipOfActivated, assignment)
+                .header("Authorization", companyBearer).contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SUSPENDED\"}"))
+            .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/v1/companies/{company}/memberships/{membership}/assignments/{assignment}", company, membershipOfActivated, assignment)
                 .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString()))
             .andExpect(status().isNoContent());
         RestWorld.Person other = world.register();

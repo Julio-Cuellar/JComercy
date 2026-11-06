@@ -301,7 +301,8 @@ class EmployeeActivationIntegrationTest {
         send(HttpMethod.DELETE, "/employees/" + cancelledId + "/invitation", ownerToken, null, UUID.randomUUID().toString()).andExpect(status().isNoContent());
 
         List<String> types = jdbc.queryForList("SELECT event_type FROM company_management.outbox_event WHERE company_id=?", String.class, company);
-        assertThat(types).contains("membership.invitation.created", "membership.created", "membership.invitation.accepted", "membership.invitation.revoked");
+        assertThat(types).contains("membership.invitation.created", "membership.created", "membership.invitation.accepted",
+            "membership.invitation.revoked", "branch-assignment.created");
 
         String everything = String.join("\n", jdbc.queryForList("SELECT payload_json FROM company_management.outbox_event", String.class));
         for (ObjectNode person : List.of(body, cancelled)) {

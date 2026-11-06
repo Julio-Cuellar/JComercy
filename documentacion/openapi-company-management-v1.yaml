@@ -3483,6 +3483,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Assignment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -3491,6 +3495,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
       x-required-permission: assignments.create
   /api/v1/companies/{publicCompanyId}/memberships/me/operational-contexts:
     parameters:
@@ -3918,6 +3924,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Assignment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -3926,6 +3936,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
     delete:
       tags:
       - Companies
@@ -4413,6 +4425,7 @@ components:
           type: string
         roleIds:
           type: array
+          description: Los roles de la persona (no hay roles distintos por sucursal).
           items:
             type: string
         status:
@@ -4420,6 +4433,8 @@ components:
           enum:
           - ACTIVE
           - SUSPENDED
+        version:
+          type: integer
     WebhookSubscriptionRequest:
       type: object
       required:
@@ -5197,16 +5212,18 @@ components:
       type: object
       required:
       - branchId
-      - roleIds
       properties:
         branchId:
           type: string
+          description: Al cambiar una asignación (PATCH) debe ser la misma sucursal; no se puede mover.
         roleIds:
           type: array
+          description: Opcional. Los roles son de la persona, no de cada sucursal; si se mandan deben ser los que ya tiene.
           items:
             type: string
         permissions:
           type: array
+          description: Opcional y todavía sin uso; mandar permisos por sucursal se rechaza con 422.
           items:
             type: string
         status:

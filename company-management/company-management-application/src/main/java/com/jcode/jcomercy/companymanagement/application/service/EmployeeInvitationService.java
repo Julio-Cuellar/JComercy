@@ -184,7 +184,8 @@ public class EmployeeInvitationService {
         }
         CompanyMembership membership = memberships.saveMembership(CompanyMembership.create(companyId, accountId, roleNames));
         for (String branchId : profile.getBranchIds()) {
-            memberships.saveAssignment(BranchAssignment.create(membership.getPublicMembershipId(), branchId));
+            BranchAssignment assignment = memberships.saveAssignment(BranchAssignment.create(membership.getPublicMembershipId(), branchId));
+            AssignmentEvents.record(outbox, "branch-assignment.created", assignment, company, accountId, correlationId, true);
         }
         profile.activate(accountId, membership.getPublicMembershipId());
         employees.save(profile);

@@ -93,6 +93,19 @@ public class CompanyManagementSpringConfig {
     }
 
     @Bean
+    public com.jcode.jcomercy.companymanagement.application.service.AssignmentApplicationService assignmentApplicationService(
+        com.jcode.jcomercy.companymanagement.domain.port.MembershipRepositoryPort membershipRepository,
+        BranchRepositoryPort branchRepository,
+        CompanyRepositoryPort companyRepository,
+        com.jcode.jcomercy.companymanagement.domain.port.RoleRepositoryPort roleRepository,
+        EventOutboxPort outboxPort,
+        IdempotencyRegistry idempotencyRegistry
+    ) {
+        return new com.jcode.jcomercy.companymanagement.application.service.AssignmentApplicationService(
+            membershipRepository, branchRepository, companyRepository, roleRepository, outboxPort, idempotencyRegistry);
+    }
+
+    @Bean
     public com.jcode.jcomercy.companymanagement.application.service.EmployeeInvitationService employeeInvitationService(
         com.jcode.jcomercy.companymanagement.domain.port.EmployeeInvitationRepositoryPort invitationRepository,
         com.jcode.jcomercy.companymanagement.domain.port.EmployeeProfileRepositoryPort employeeRepository,

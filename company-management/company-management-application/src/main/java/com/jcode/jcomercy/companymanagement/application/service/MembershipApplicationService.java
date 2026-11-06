@@ -83,6 +83,7 @@ public class MembershipApplicationService {
         Map<String, String> roleIdByName = roleIdsByName(roles.findByPublicCompanyIdOrSystem(companyId));
         List<MembershipDetailDto.AssignmentSummary> assignments = memberships
             .findAssignmentsByPublicMembershipId(membershipId).stream()
+            .filter(assignment -> assignment.getStatus() != AssignmentStatus.REMOVED)
             .map(assignment -> new MembershipDetailDto.AssignmentSummary(assignment.getPublicAssignmentId(),
                 assignment.getPublicBranchId(), assignment.getStatus().name()))
             .toList();
@@ -104,7 +105,7 @@ public class MembershipApplicationService {
     private Set<String> membershipsAssignedTo(String companyId, String branchId) {
         Set<String> ids = new HashSet<>();
         for (BranchAssignment assignment : memberships.findAssignmentsByPublicCompanyId(companyId)) {
-            if (assignment.getPublicBranchId().equals(branchId)) {
+            if (assignment.getPublicBranchId().equals(branchId) && assignment.getStatus() != AssignmentStatus.REMOVED) {
                 ids.add(assignment.getPublicMembershipId());
             }
         }
