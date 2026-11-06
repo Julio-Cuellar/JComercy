@@ -835,6 +835,22 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - Las pruebas de broker real con la prueba de filas antiguas se corren en el cierre (F7).
 - **Pendiente del plan:** F5 a F7. La migración de `uk_stock_identity` será la V011 de inventario.
 
+### BIT-045 · La base de datos ya no admite dos saldos de la misma mercancía sin lote ni serie (fase 5 del plan de errores)
+
+- **Qué se hizo:** la restricción `uk_stock_identity` de `inventory.stock_balance` pasa a `UNIQUE NULLS NOT DISTINCT`, de modo que dos saldos con la misma identidad y lote y serie nulos chocan en la propia base de datos y no solo por el bloqueo de la ubicación en el código. Cierra lo que ERR-017 dejó anotado como «lo que no cubre».
+- **Cómo se hizo:**
+  - **Prueba** (`StockIdentityUniquenessIntegrationTest`, en la suite normal y con `-Ppostgres`): recibe mercancía de un producto sin seguimiento por REST, y luego inserta **por SQL**, sin pasar por la aplicación, un segundo saldo copiando el primero. Otra prueba comprueba que un saldo con otro lote sí se admite (no es un falso positivo).
+  - **RED, medido en las dos bases:** H2 y PostgreSQL 16 aceptaron el segundo saldo (`Expecting code to raise a throwable`). La prueba del otro lote ya pasaba.
+  - **Migración V011:** quita `uk_stock_identity` y la vuelve a crear con `UNIQUE NULLS NOT DISTINCT` sobre las mismas seis columnas. **H2 2.2.224 la acepta** (también comprobado a mano antes con un `CREATE TABLE`); PostgreSQL pide la versión **15 o más**. El comentario de la migración trae la consulta para encontrar saldos duplicados antes de migrar. Si ya existen, la migración falla a propósito.
+  - **GREEN:** `mvn -B -ntp test` → `BUILD SUCCESS`, **285 pruebas** (16 + 8 + 8 + 131 + 27 + 95), 13 omitidas. `mvn -B -ntp -Ppostgres,rabbitmq test` → `BUILD SUCCESS`, **285 de 285**, ninguna omitida, sobre PostgreSQL y RabbitMQ reales. `InventoryMigrationTest` y las pruebas de concurrencia de stock siguen pasando.
+  - **Mutación:** la propia ausencia de la migración es el RED medido arriba; no se hizo otra mutación.
+- **Afectaciones:**
+  - **Despliegue:** exige **PostgreSQL 15 o más**. El repositorio no declara la versión de producción (no hay docker-compose) y las pruebas usan la 16: **queda por confirmar que producción cumple**. Si no, la alternativa es un índice único sobre `coalesce(lot_id, '')` y `coalesce(serial_number, '')`, solo para PostgreSQL, con migraciones distintas por motor.
+  - **Datos:** la migración falla si ya hay saldos duplicados.
+  - **Código:** ninguno; el bloqueo de la ubicación se conserva como defensa en profundidad (evita además que dos movimientos simultáneos se pisen).
+- **Sin verificar:** la migración sobre una base con datos reales; solo se corrió sobre bases que parten vacías.
+- **Pendiente del plan:** F6 (CI de RabbitMQ) y F7.
+
 ---
 
 ## Errores
@@ -991,7 +1007,7 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cuándo se manifiesta:** al recibir a la vez, por primera vez, un producto sin lote ni serie en un mismo lugar. Reproducido con 8 entradas simultáneas: **8 saldos** y las 8 respondieron 201. Una entrada posterior respondió **500** con `NonUniqueResultException: Query did not return a unique result: 8 results were returned` (visto en H2). Por el código, lo mismo ocurriría con salidas y ajustes, que usan la misma búsqueda; no se probó.
 - **Cómo mitigarlo:** mientras no estaba resuelto, no recibir a la vez el primer lote de un producto en un lugar. Con saldos ya duplicados, hay que unirlos a mano en la base.
 - **Cómo se resolvió:** el movimiento bloquea primero la fila de la ubicación (`WarehouseLocationRepositoryPort.findByIdForUpdate`) y después busca o crea el saldo, de modo que dos movimientos en un mismo lugar van en fila. Verificado con `StockConcurrencyIntegrationTest` en las dos bases, y con mutaciones: sin ese bloqueo, la prueba de primera entrada vuelve a fallar (BIT-035).
-- **Lo que no cubre:** el bloqueo está en el código y no en la base de datos: la restricción sigue sin proteger por sí sola. Cerrarlo pide una migración (`UNIQUE NULLS NOT DISTINCT`, PostgreSQL 15 o superior) y revisar si ya hay saldos duplicados. Se hizo mientras no hay datos de clientes. Pone en fila los movimientos de una misma ubicación; no se midió el costo.
+- **Lo que no cubre (cerrado después, en BIT-045, con la V011 de inventario):** el bloqueo está en el código y no en la base de datos: la restricción sigue sin proteger por sí sola. Cerrarlo pide una migración (`UNIQUE NULLS NOT DISTINCT`, PostgreSQL 15 o superior) y revisar si ya hay saldos duplicados. Se hizo mientras no hay datos de clientes. Pone en fila los movimientos de una misma ubicación; no se midió el costo.
 
 ### ERR-018 · Los seriales de una empresa nueva, pedidos a la vez, fallan con 500 salvo una petición
 
