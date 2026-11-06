@@ -144,9 +144,13 @@ class InventoryOutboxRabbitMqIntegrationTest {
                 InventoryOutboxEventJpaEntity stored = find(companyId);
                 assertThat(stored.getStatus()).as("estado del evento de %s con el broker caído", companyId).isEqualTo("PENDING");
                 assertThat(stored.getPublishedAt()).isNull();
-                assertThat(stored.getRetryCount()).isGreaterThanOrEqualTo(1);
-                assertThat(stored.getLastError()).isNotBlank();
             }
+            // Con el broker caído el ciclo se corta en el primer evento (ERR-021): ese cuenta el intento y guarda el error;
+            // los demás ni se intentan, así que al volver el broker siguen en orden.
+            InventoryOutboxEventJpaEntity head = find(companies.get(0));
+            assertThat(head.getRetryCount()).isGreaterThanOrEqualTo(1);
+            assertThat(head.getLastError()).isNotBlank();
+            assertThat(find(companies.get(1)).getRetryCount()).isZero();
         } finally {
             brokerUp();
         }
@@ -187,11 +191,13 @@ class InventoryOutboxRabbitMqIntegrationTest {
         }
         assertThat(find(warmUp).getStatus()).isEqualTo("PUBLISHED");
 
-        // Un solo evento: con varios, la segunda publicación se queda bloqueada hasta que el cliente da la conexión por
-        // muerta por falta de latidos (unos 130 s, medido en BIT-039), y la prueba tardaría minutos.
+        // Dos eventos: antes de ERR-021 la segunda publicación se quedaba bloqueada hasta que el cliente daba la conexión
+        // por muerta (unos 130 s, medido en BIT-039). Ahora el ciclo se corta en el primer fallo y termina en segundos.
         String pending = "cmp_rmq_" + UUID.randomUUID().toString().substring(0, 8);
+        String second = "cmp_rmq_" + UUID.randomUUID().toString().substring(0, 8);
         outboxPort.publish("inventory.stock.received", pending, "br_rmq_1", "user_rmq", "cor_rmq_p", Map.of("quantity", 1));
-        List<String> companies = List.of(pending);
+        outboxPort.publish("inventory.stock.received", second, "br_rmq_1", "user_rmq", "cor_rmq_q", Map.of("quantity", 2));
+        List<String> companies = List.of(pending, second);
 
         brokerFrozen();
         long started = System.nanoTime();
@@ -202,15 +208,17 @@ class InventoryOutboxRabbitMqIntegrationTest {
         }
         long seconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);
 
-        // El evento espera 5 s una confirmación que no llega: si tardó menos, el broker no estaba colgado.
-        assertThat(seconds).as("segundos que tardó el ciclo con el broker colgado").isGreaterThanOrEqualTo(4);
+        // El primer evento espera 5 s una confirmación que no llega: si tardó menos, el broker no estaba colgado. Y el
+        // ciclo termina ahí: el segundo no espera otra vez ni se queda bloqueado.
+        assertThat(seconds).as("segundos que tardó el ciclo con el broker colgado").isBetween(4L, 30L);
         for (String companyId : companies) {
             InventoryOutboxEventJpaEntity stored = find(companyId);
             assertThat(stored.getStatus()).as("estado del evento de %s con el broker colgado", companyId).isEqualTo("PENDING");
             assertThat(stored.getPublishedAt()).isNull();
-            assertThat(stored.getRetryCount()).isGreaterThanOrEqualTo(1);
-            assertThat(stored.getLastError()).as("error guardado con el broker colgado").isNotBlank();
         }
+        assertThat(find(pending).getRetryCount()).isGreaterThanOrEqualTo(1);
+        assertThat(find(pending).getLastError()).as("error guardado con el broker colgado").isNotBlank();
+        assertThat(find(second).getRetryCount()).as("el segundo evento ni se intentó").isZero();
 
         long deadline = System.currentTimeMillis() + 60_000;
         while (System.currentTimeMillis() < deadline

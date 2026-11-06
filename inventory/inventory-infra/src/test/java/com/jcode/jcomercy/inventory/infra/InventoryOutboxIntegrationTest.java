@@ -49,7 +49,7 @@ class InventoryOutboxIntegrationTest {
                 Map.of("productId", "prod-1", "quantity", 50)
         );
 
-        List<InventoryOutboxEventJpaEntity> pending = outboxRepository.findTop50ByStatusOrderByCreatedAtAsc("PENDING");
+        List<InventoryOutboxEventJpaEntity> pending = outboxRepository.findDispatchable(java.time.Instant.now(), org.springframework.data.domain.Pageable.ofSize(50));
         assertThat(pending).hasSize(1);
 
         InventoryOutboxEventJpaEntity event = pending.get(0);

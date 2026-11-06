@@ -54,6 +54,9 @@ public class InventoryOutboxEventJpaEntity {
     @Column(name = "last_error", columnDefinition = "TEXT")
     private String lastError;
 
+    @Column(name = "next_retry_at")
+    private Instant nextRetryAt;
+
     protected InventoryOutboxEventJpaEntity() {}
 
     public InventoryOutboxEventJpaEntity(UUID id, UUID eventId, String eventType, String schemaVersion,
@@ -89,14 +92,29 @@ public class InventoryOutboxEventJpaEntity {
     public int getRetryCount() { return retryCount; }
     public String getLastError() { return lastError; }
 
+    public Instant getNextRetryAt() { return nextRetryAt; }
+
     public void markPublished() {
         this.status = "PUBLISHED";
         this.publishedAt = Instant.now();
         this.lastError = null;
+        this.nextRetryAt = null;
     }
 
+    /** El broker rechazó el evento o no se pudo armar: espera 5 s por intento (hasta 300 s) antes de volver a intentarlo. */
     public void markFailed(String error) {
         this.retryCount++;
         this.lastError = error;
+        this.nextRetryAt = Instant.now().plusSeconds(Math.min(300, 5L * retryCount));
+    }
+
+    /**
+     * El broker no respondió (caído, sin confirmar): cuenta el intento y deja el evento listo para el siguiente ciclo. Sin
+     * espera propia: el ciclo ya se cortó, y esperar solo lo sacaría de orden frente a los que vienen detrás.
+     */
+    public void markBrokerUnavailable(String error) {
+        this.retryCount++;
+        this.lastError = error;
+        this.nextRetryAt = null;
     }
 }

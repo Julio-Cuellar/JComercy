@@ -7,6 +7,7 @@ import com.jcode.jcomercy.companymanagement.infra.persistence.entity.OutboxEvent
 import com.jcode.jcomercy.companymanagement.infra.persistence.repository.OutboxSpringDataRepository;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -85,6 +86,13 @@ class OutboxRabbitMqIntegrationTest {
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
+    @BeforeEach
+    void emptyTheOutbox() {
+        // La base de datos de pruebas se comparte entre clases. Con el ciclo que se corta ante un broker caído, un evento
+        // pendiente de otra clase puesto delante se llevaría el único intento del ciclo.
+        outbox.deleteAll();
+    }
+
     @Test
     @DisplayName("Un evento del Outbox llega a la cola del broker real con su identificador, su clave, sus cabeceras y modo persistente")
     void anOutboxEventReachesTheRealBrokerWithItsEnvelope() throws Exception {
@@ -146,10 +154,14 @@ class OutboxRabbitMqIntegrationTest {
                 OutboxEventJpaEntity stored = outbox.findById(event.getId()).orElseThrow();
                 assertThat(stored.getStatus()).as("estado de %s con el broker caído", event.getEventId()).isEqualTo("PENDING");
                 assertThat(stored.getPublishedAt()).isNull();
-                assertThat(stored.getRetryCount()).isGreaterThanOrEqualTo(1);
-                assertThat(stored.getErrorMessage()).isNotBlank();
-                assertThat(stored.getNextRetryAt()).isNotNull();
             }
+            // Con el broker caído el ciclo se corta en el primer evento (ERR-021): ese cuenta el intento y guarda el error,
+            // sin espera propia; los demás ni se intentan, así que al volver el broker siguen en orden.
+            OutboxEventJpaEntity head = outbox.findById(events.get(0).getId()).orElseThrow();
+            assertThat(head.getRetryCount()).isGreaterThanOrEqualTo(1);
+            assertThat(head.getErrorMessage()).isNotBlank();
+            assertThat(head.getNextRetryAt()).isNull();
+            assertThat(outbox.findById(events.get(1).getId()).orElseThrow().getRetryCount()).isZero();
         } finally {
             brokerUp();
         }
@@ -188,9 +200,9 @@ class OutboxRabbitMqIntegrationTest {
         }
         assertThat(statusOf(warmUp)).isEqualTo("PUBLISHED");
 
-        // Un solo evento: con varios, la segunda publicación se queda bloqueada hasta que el cliente da la conexión por
-        // muerta por falta de latidos (unos 130 s, medido en BIT-039), y la prueba tardaría minutos.
-        List<OutboxEventJpaEntity> events = List.of(eventOf(registerAccount()));
+        // Dos eventos: antes de ERR-021 la segunda publicación se quedaba bloqueada hasta que el cliente daba la conexión
+        // por muerta (unos 130 s, medido en BIT-039). Ahora el ciclo se corta en el primer fallo y termina en segundos.
+        List<OutboxEventJpaEntity> events = List.of(eventOf(registerAccount()), eventOf(registerAccount()));
 
         brokerFrozen();
         long started = System.nanoTime();
@@ -201,15 +213,18 @@ class OutboxRabbitMqIntegrationTest {
         }
         long seconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);
 
-        // El evento espera 5 s una confirmación que no llega: si tardó menos, el broker no estaba colgado.
-        assertThat(seconds).as("segundos que tardó el ciclo con el broker colgado").isGreaterThanOrEqualTo(4);
+        // El primer evento espera 5 s una confirmación que no llega: si tardó menos, el broker no estaba colgado. Y el
+        // ciclo termina ahí: el segundo no espera otra vez ni se queda bloqueado.
+        assertThat(seconds).as("segundos que tardó el ciclo con el broker colgado").isBetween(4L, 30L);
         for (OutboxEventJpaEntity event : events) {
             OutboxEventJpaEntity stored = outbox.findById(event.getId()).orElseThrow();
             assertThat(stored.getStatus()).as("estado de %s con el broker colgado", event.getEventId()).isEqualTo("PENDING");
             assertThat(stored.getPublishedAt()).isNull();
-            assertThat(stored.getRetryCount()).isGreaterThanOrEqualTo(1);
-            assertThat(stored.getErrorMessage()).as("error guardado con el broker colgado").isNotBlank();
         }
+        OutboxEventJpaEntity head = outbox.findById(events.get(0).getId()).orElseThrow();
+        assertThat(head.getRetryCount()).isGreaterThanOrEqualTo(1);
+        assertThat(head.getErrorMessage()).as("error guardado con el broker colgado").isNotBlank();
+        assertThat(outbox.findById(events.get(1).getId()).orElseThrow().getRetryCount()).as("el segundo evento ni se intentó").isZero();
 
         long deadline = System.currentTimeMillis() + 60_000;
         while (System.currentTimeMillis() < deadline && events.stream().anyMatch(event -> !"PUBLISHED".equals(statusOf(event)))) {

@@ -4,23 +4,30 @@ import com.jcode.jcomercy.inventory.infra.persistence.entity.InventoryOutboxEven
 import com.jcode.jcomercy.inventory.infra.persistence.repository.InventoryOutboxEventSpringDataRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Component
 @ConditionalOnProperty(name = "outbox.publisher.enabled", havingValue = "true", matchIfMissing = true)
 public class InventoryOutboxDispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(InventoryOutboxDispatcher.class);
+
+    private static final int BATCH_SIZE = 50;
 
     private final InventoryOutboxEventSpringDataRepository repository;
     private final RabbitTemplate rabbitTemplate;
@@ -45,7 +52,8 @@ public class InventoryOutboxDispatcher {
             return;
         }
 
-        List<InventoryOutboxEventJpaEntity> events = repository.findTop50ByStatusOrderByCreatedAtAsc("PENDING");
+        // Los listos, del más antiguo al más nuevo: los que esperan su reintento no ocupan sitio (ERR-022).
+        List<InventoryOutboxEventJpaEntity> events = repository.findDispatchable(Instant.now(), Pageable.ofSize(BATCH_SIZE));
         if (events.isEmpty()) {
             return;
         }
@@ -76,12 +84,42 @@ public class InventoryOutboxDispatcher {
                 log.info("Evento Outbox de Inventario publicado eventId={} eventType={} exchange={}",
                         event.getEventId(), event.getEventType(), exchange);
             } catch (Exception ex) {
-                event.markFailed(describe(ex));
+                if (ex instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                boolean brokerUnavailable = isBrokerUnavailable(ex);
+                if (brokerUnavailable) {
+                    event.markBrokerUnavailable(describe(ex));
+                } else {
+                    event.markFailed(describe(ex));
+                }
                 log.error("Error publicando evento Outbox de Inventario eventId={} eventType={} retryCount={}",
                         event.getEventId(), event.getEventType(), event.getRetryCount(), ex);
+                repository.save(event);
+                if (brokerUnavailable) {
+                    // Seguir con los demás solo sumaría esperas por evento y los sacaría de orden (ERR-021): se reintenta
+                    // desde el primero en el siguiente ciclo.
+                    log.warn("El broker no responde: se corta el ciclo y los eventos restantes quedan para el siguiente");
+                    return;
+                }
+                continue;
             }
             repository.save(event);
         }
+    }
+
+    /**
+     * Un broker caído o que no confirma (conexión rechazada, tiempo agotado, canal roto) afecta a todos los eventos por
+     * igual; un rechazo del broker, en cambio, es solo de ese evento.
+     */
+    private static boolean isBrokerUnavailable(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof AmqpException || cause instanceof TimeoutException
+                    || cause instanceof IOException || cause instanceof InterruptedException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** El texto que queda guardado cuando falla un evento. Una espera agotada no trae mensaje, y sin él nadie sabría por qué el evento sigue pendiente. */

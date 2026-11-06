@@ -17,6 +17,10 @@ servers:
       `account.created`; el canal `events/account/created` es su nombre lógico. El mensaje lleva el sobre `EventEnvelope`
       como cuerpo JSON (`application/json`), es persistente y trae su `eventId` como `messageId` AMQP. Los eventos se
       entregan al menos una vez, así que quien los consuma debe descartar los repetidos por ese identificador.
+      El orden de entrega no está garantizado, porque un evento más nuevo puede llegar antes que otro más antiguo cuyo envío
+      se reintentó, así que quien necesite orden debe usar `sequence` y `aggregateVersion` del sobre. Los eventos de
+      company-management llegan a la cola `jcomercy.events.pending`, enlazada por familia de evento (`account.#`,
+      `company.#`, `branch.#`, ...), no por `#`, porque el exchange lo comparte inventario.
   webSockets:
     url: wss://ws.jcomercy.com/ws/v1
     protocol: wss

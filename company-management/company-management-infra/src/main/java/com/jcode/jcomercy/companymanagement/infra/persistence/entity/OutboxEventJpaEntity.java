@@ -141,5 +141,12 @@ public class OutboxEventJpaEntity {
     public Instant getUpdatedAt() { return updatedAt; }
 
     public void markPublished() { status = "PUBLISHED"; publishedAt = Instant.now(); updatedAt = Instant.now(); errorMessage = null; }
+    /** El broker rechazó el evento o no se pudo armar: espera 5 s por intento (hasta 300 s) antes de volver a intentarlo. */
     public void markFailed(String message) { status = "PENDING"; retryCount++; errorMessage = message; nextRetryAt = Instant.now().plusSeconds(Math.min(300, 5L * retryCount)); updatedAt = Instant.now(); }
+
+    /**
+     * El broker no respondió (caído, sin confirmar): cuenta el intento y deja el evento listo para el siguiente ciclo. Sin
+     * espera propia: el ciclo ya se cortó, y esperar solo lo sacaría de orden frente a los que vienen detrás.
+     */
+    public void markBrokerUnavailable(String message) { status = "PENDING"; retryCount++; errorMessage = message; nextRetryAt = null; updatedAt = Instant.now(); }
 }

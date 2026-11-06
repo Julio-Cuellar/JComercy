@@ -45,13 +45,14 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-018 | Los seriales de una empresa nueva, pedidos a la vez, fallan con 500 salvo una petición | RESUELTO (BIT-035) |
 | ERR-019 | El despachador del Outbox espera al broker dentro de una sola transacción: retiene una conexión de la base de datos y los eventos ya confirmados no se ven como publicados hasta el final del ciclo | RESUELTO (BIT-039) |
 | ERR-020 | El error guardado de un evento que el broker no confirma es nulo, y nadie sabe por qué sigue pendiente | RESUELTO (BIT-039) |
-| ERR-021 | Con un broker colgado, un ciclo del despachador se bloquea minutos y el evento puede publicarse dos veces | ABIERTO |
-| ERR-022 | Inventario reintenta siempre los 50 eventos pendientes más antiguos: si fallan, los nuevos no se intentan | ABIERTO |
+| ERR-021 | Con un broker colgado, un ciclo del despachador se bloquea minutos y el evento puede publicarse dos veces | RESUELTO (BIT-043; los duplicados son inherentes) |
+| ERR-022 | Inventario reintenta siempre los 50 eventos pendientes más antiguos: si fallan, los nuevos no se intentan | RESUELTO (BIT-043) |
 | ERR-023 | Company-management publicaba solo el `data` de cada evento, no el sobre (`EventEnvelope`) que exige el AsyncAPI | RESUELTO (BIT-040) |
 | ERR-024 | Valores del sobre que no significan lo que el contrato dice: `accountId` o `companyId` vacíos y `sequence` constante | RESUELTO (BIT-042) |
 | ERR-025 | El `data` de tres eventos no usa los nombres que declara el contrato (`ownerPersonId`, `rfc`, falta `isHeadOffice`) | RESUELTO (BIT-042) |
 | ERR-026 | Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola | ABIERTO (el punto 3, la cola, quedó RESUELTO en BIT-041) |
 | ERR-027 | La cola de company-management, unida con `#`, recibía también los eventos de inventario | RESUELTO (BIT-041) |
+| ERR-028 | La primera ejecución del despachador programado resucita filas del Outbox que una prueba acaba de borrar | RESUELTO (BIT-043) |
 
 ---
 
@@ -780,6 +781,34 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Sin verificar:** el `UPDATE` de V025 que recupera el `account_id` de eventos pendientes no se probó con filas reales (las bases de prueba parten vacías); solo se comprobó que la migración corre en H2 y PostgreSQL. La suite completa de los dos módulos se corre en el cierre (F7).
 - **Pendiente del plan:** F3 a F7.
 
+### BIT-043 · El despachador corta el ciclo cuando el broker no responde, espera tras un rechazo y saca los eventos en orden (fase 3 del plan de errores)
+
+- **Qué se hizo:** los dos despachadores del Outbox distinguen dos clases de fallo. Un broker que no responde (caído, sin confirmar, conexión rota) **corta el ciclo**: el evento que falló cuenta el intento y los demás quedan intactos para el siguiente. Un rechazo del broker o un evento que no se puede armar **espera** (5 s por intento, hasta 300 s) y el ciclo sigue. Con eso se resuelven ERR-021, ERR-022 y el orden de company-management anotado en BIT-038.
+- **Cómo se hizo:**
+  - **Pruebas nuevas, sin Docker:** `OutboxDispatcherFailureHandlingIntegrationTest` (company-management) e `InventoryOutboxDispatcherFailureHandlingIntegrationTest` (inventario), con un `RabbitTemplate` falso que responde evento por evento como la prueba indica: confirma, lanza un `AmqpConnectException` o rechaza.
+  - **RED, medido:** company-management sacó los dos eventos listos en orden invertido (esperado el antiguo y luego el nuevo, salió al revés) y siguió intentando los demás tras un fallo del broker; inventario siguió tras el fallo y, con 51 eventos y los 50 más antiguos rechazados, el segundo ciclo **no intentó el 51.º**. La prueba de «el rechazo espera y el ciclo sigue» ya pasaba: queda como guardia.
+  - **Corrección:**
+    - Una sola consulta de eventos listos, `findDispatchable`, en los dos repositorios: pendientes que nunca fallaron o con la espera vencida, del más antiguo al más nuevo, de 50 en 50. Sustituye a las dos consultas de company-management (primero los nuevos y luego los reintentos) y a la de inventario (siempre los 50 más antiguos).
+    - Entidades: `markBrokerUnavailable` cuenta el intento y guarda el error **sin espera propia** (así el evento que falló sigue siendo el primero del siguiente ciclo y el orden se conserva); `markFailed` conserva la espera. Inventario gana la columna `next_retry_at` (migración **V009**, con su índice).
+    - Despachadores: un fallo se clasifica recorriendo la cadena de causas (`AmqpException`, `TimeoutException`, `IOException` o interrupción es «el broker no responde»; un `JsonProcessingException`, que también es `IOException`, o un rechazo es «solo ese evento»); ante el primero se guarda el evento y se sale del ciclo.
+    - `application.yml` de los dos módulos: `connection-timeout: 5s`, `requested-heartbeat: 10s` y `channel-rpc-timeout: 10s`, para que un broker colgado se note en segundos. **No se aisló el efecto de estos tres por separado:** lo que sí se midió es que el ciclo con el broker colgado termina entre 4 y 30 s (el límite de la prueba), frente a los 134 s de BIT-039.
+  - **Pruebas con broker real, ajustadas** (R2 y R3 de los dos módulos): con el broker caído solo el primer evento cuenta el intento (y en company-management queda sin `nextRetryAt`); los otros dos ni se intentan y, al volver el broker, salen todos, una vez y en orden de creación. R3 pasa a **dos eventos**, con el ciclo acotado a 30 s, y el segundo no se intenta. La prueba de company-management vacía la tabla del Outbox antes de cada prueba (con el corte, un evento ajeno puesto delante se llevaría el único intento del ciclo).
+  - **Una falla que encontré yo:** la prueba nueva de company-management falló solo en la suite completa (`Expected size: 3 but was: 9`). El despachador programado de cada contexto de Spring hace su primera ejecución **al arrancar, en otro hilo**; con la base compartida leía eventos viejos y, cuando la prueba los borraba, los volvía a guardar y **resucitaba las filas** (ERR-028). Se resolvió con un retraso inicial configurable (`outbox.publisher.initial-delay-ms`, 0 por defecto, una hora en las pruebas). Dos corridas completas siguientes pasaron.
+  - **GREEN:** `mvn -B -ntp test` → `BUILD SUCCESS`, **278 pruebas** (13 + 8 + 8 + 131 + 27 + 91), 13 omitidas, dos veces seguidas. `mvn -B -ntp -Ppostgres,rabbitmq test` → `BUILD SUCCESS`, **278 de 278**, ninguna omitida, sobre PostgreSQL y RabbitMQ reales.
+  - **Mutaciones temporales** (script en el área de trabajo, archivos restaurados, huellas iguales): seguir el ciclo tras un fallo del broker (en cada módulo), inventario sin espera tras un rechazo, company-management con orden descendente, y tratar todo fallo como broker caído. **Las cinco hacen caer la prueba esperada.**
+  - **AsyncAPI:** la descripción del servidor documenta que el orden de entrega no está garantizado (usar `sequence` y `aggregateVersion`) y que la cola de company-management se enlaza por familia de evento. Siguen 67 canales, 62 mensajes y 76 esquemas.
+- **Afectaciones:**
+  - **Semántica del ciclo:** con el broker caído, ya no todos los eventos de un ciclo cuentan un intento: solo el primero. `retry_count` de los demás no sube mientras dure la caída.
+  - **Orden:** un evento más nuevo todavía puede salir antes que uno más antiguo **que espera tras un rechazo** (no tras una caída del broker); por eso el contrato pide ordenar por `sequence`.
+  - **Datos:** V009 añade `next_retry_at` a `inventory.outbox_event`.
+  - **Configuración:** nuevos tiempos del cliente de RabbitMQ en los dos `application.yml`; nueva propiedad `outbox.publisher.initial-delay-ms`.
+  - **Duplicados:** no desaparecen; siguen siendo la garantía «al menos una vez».
+- **Sin verificar:**
+  - Un broker congelado **antes** de abrir la conexión, y un ciclo de 50 eventos con el broker colgado.
+  - El efecto individual de cada tiempo del cliente.
+  - Que el corte se comporte igual con latencias de red reales (solo se simuló con `docker pause` y con un falso).
+- **Pendiente del plan:** F4 a F7. Las migraciones de inventario se renumeran: la V009 es de esta fase, y el plan usará la V010 para la `sequence` y la V011 para `uk_stock_identity`.
+
 ---
 
 ## Errores
@@ -967,21 +996,24 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 
 ### ERR-021 · Con un broker colgado, un ciclo del despachador se bloquea minutos y el evento puede publicarse dos veces
 
-- **Estado:** ABIERTO. Medido en la fase R3 (BIT-039), en los dos módulos; **requiere una decisión**.
+- **Estado:** RESUELTO el 2026-11-06 (BIT-043), salvo los duplicados, que son inherentes a la garantía «al menos una vez». Medido en la fase R3 (BIT-039), en los dos módulos.
 - **De qué trata:** si el broker no responde pero la conexión sigue abierta, el primer evento espera los 5 s de la confirmación y falla; la publicación siguiente se queda bloqueada hasta que el cliente da la conexión por muerta (unos 130 s, medidos con dos eventos). Como el ciclo procesa hasta 50 eventos en serie, **ningún evento sale mientras tanto**, aunque el broker se recupere a mitad. Además, un evento cuyo envío sí llegó al broker pero no se confirmó a tiempo se reintenta y **queda duplicado**: se vio dos veces en la cola.
 - **Cuándo se manifiesta:** con un broker colgado, no caído: proceso congelado, red cortada sin cierre de conexión o sobrecarga. Reproducido con `docker pause`: dos eventos, 134 a 135 s, uno de ellos duplicado.
 - **Cómo mitigarlo:** vigilar los eventos `PENDING` con reintentos; los consumidores, que hoy no existen, tendrán que descartar mensajes repetidos por su identificador (`messageId`).
 - **Para resolverlo (decisión):** (B) cortar el ciclo en el primer fallo de confirmación o de conexión; cambia la semántica, porque los eventos siguientes no cuentan un intento ese ciclo, y la prueba de caída de R2 supone que un ciclo marca todos como fallados. (C) acortar los tiempos del cliente: `spring.rabbitmq.connection-timeout`, `requested-heartbeat` y los tiempos de canal, con el costo de más reconexiones. (D) las dos. Los duplicados no desaparecen con ninguna: son la garantía «al menos una vez».
-- **Lo que no se midió:** un broker congelado antes de abrir la conexión, y un ciclo de 50 eventos.
+- **Cómo se resolvió:** el ciclo se corta en el primer fallo del broker (caído, sin confirmar o conexión rota) y el cliente da por muerta una conexión colgada en segundos (`connection-timeout`, `requested-heartbeat` y `channel-rpc-timeout`). Verificado con las pruebas de fallos de cada módulo, las de broker real (R2 y R3, ahora con dos eventos y un ciclo acotado a 30 s) y mutaciones.
+- **Lo que no cubre:** los duplicados (siguen siendo «al menos una vez»), el efecto individual de cada tiempo del cliente, un broker congelado antes de abrir la conexión y un ciclo de 50 eventos.
 
 ### ERR-022 · Inventario reintenta siempre los 50 eventos pendientes más antiguos: si fallan, los nuevos no se intentan
 
-- **Estado:** ABIERTO. Visto en la fase R3 (BIT-039); **requiere una decisión**.
+- **Estado:** RESUELTO el 2026-11-06 (BIT-043). Visto en la fase R3 (BIT-039).
 - **De qué trata:** `InventoryOutboxDispatcher` toma `findTop50ByStatusOrderByCreatedAtAsc("PENDING")` y `markFailed` no programa ninguna espera, así que cada ciclo reintenta los mismos 50 más antiguos. Si esos 50 fallan siempre, los eventos más nuevos nunca llegan a intentarse. Company-management no tiene el problema porque espera 5 s por intento (hasta 300 s) antes de reintentar.
 - **Cuándo se manifiesta:** visto en una corrida completa de pruebas con la base compartida: la prueba de caída de R2 de inventario dejó sus eventos con 0 intentos tras un despacho, y en ese mismo ciclo fallaban eventos de almacenes de otras clases. No se contó el total de pendientes, pero es la explicación que encaja. En producción ocurriría si hay 50 o más eventos que fallan por una causa que no sea el broker.
 - **Cómo mitigarlo:** vigilar los eventos con `retry_count` alto y retirarlos a mano de la cola.
 - **Para resolverlo (decisión):** ordenar por reintentos y luego por antigüedad, que no necesita migración pero altera el orden de publicación; o agregar `next_retry_at` con espera creciente, como company-management, que sí necesita una migración de `inventory.outbox_event`.
 - **Mientras tanto:** la prueba de R2 de inventario parte de una tabla vacía para no depender de esto.
+- **Cómo se resolvió:** columna `next_retry_at` (V009) con la misma espera que company-management, y una consulta de eventos listos que no cuenta los que esperan. Verificado con una prueba de 51 eventos (los 50 más antiguos rechazados no tapan al 51.º) y una mutación sin espera.
+- **Lo que no cubre:** un evento que siempre falla sigue reintentándose cada vez más espaciado (hasta 300 s) sin límite de intentos ni cola de eventos muertos.
 
 ### ERR-023 · Company-management publicaba solo el `data` de cada evento, no el sobre que exige el AsyncAPI
 
@@ -1028,3 +1060,12 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cómo mitigarlo:** mientras no se resolvió, la cola no tenía consumidor, así que solo crecía; bastaba purgarla.
 - **Cómo se resolvió:** enlaces por familia de eventos de company-management, configurables, y limpieza del enlace `#` heredado en cada conexión. Verificado con `EventRoutingRabbitMqIntegrationTest` y `EventBindingsContractIntegrationTest`.
 - **Lo que no cubre:** los mensajes de inventario que ya estuvieran en la cola de un broker existente no se purgan.
+
+### ERR-028 · La primera ejecución del despachador programado resucita filas del Outbox que una prueba acaba de borrar
+
+- **Estado:** RESUELTO el 2026-11-06 (BIT-043). Visto al correr la suite completa con la prueba nueva de fallos del despachador.
+- **De qué trata:** `@Scheduled` ejecuta el despachador de cada contexto de Spring una vez al arrancar, en otro hilo, aunque el intervalo se haya diferido una hora. Con la base de pruebas compartida, ese primer ciclo leía eventos viejos y, cuando una prueba los borraba, los guardaba de vuelta (un `save` de una entidad con identificador existente vuelve a insertar la fila). La prueba veía eventos que no había creado.
+- **Cuándo se manifiesta:** al arrancar el contexto de una clase de prueba que borra la tabla del Outbox, mientras queden eventos de otras clases. Solo en la suite completa (`Expected size: 3 but was: 9`); sola, la clase pasaba.
+- **Cómo mitigarlo:** correr la clase aislada.
+- **Cómo se resolvió:** el despachador de company-management lee `outbox.publisher.initial-delay-ms` (0 por defecto, igual que antes) y el `application.properties` de pruebas lo pone en una hora. Dos corridas completas seguidas pasaron; dos pasadas no demuestran que no vuelva a aparecer.
+- **Lo que no cubre:** el despachador de inventario ya está apagado en las pruebas (`outbox.publisher.enabled=false`), así que no tiene el problema.
