@@ -1,6 +1,8 @@
 package com.jcode.jcomercy.companymanagement.infra.web.controller;
 
 import com.jcode.jcomercy.companymanagement.application.dto.EffectivePermissionsDto;
+import com.jcode.jcomercy.companymanagement.application.dto.LifecycleDto;
+import com.jcode.jcomercy.companymanagement.application.service.MembershipLifecycleService;
 import com.jcode.jcomercy.companymanagement.application.dto.MembershipDetailDto;
 import com.jcode.jcomercy.companymanagement.application.dto.MembershipSummaryDto;
 import com.jcode.jcomercy.companymanagement.application.dto.PageDto;
@@ -12,6 +14,8 @@ import com.jcode.jcomercy.core.authorization.Permissions;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,11 +31,53 @@ import java.util.TreeSet;
 public class MembershipController {
 
     private final MembershipApplicationService memberships;
+    private final MembershipLifecycleService lifecycle;
     private final EffectivePermissions effectivePermissions;
 
-    public MembershipController(MembershipApplicationService memberships, EffectivePermissions effectivePermissions) {
+    public MembershipController(MembershipApplicationService memberships, MembershipLifecycleService lifecycle,
+                                EffectivePermissions effectivePermissions) {
         this.memberships = memberships;
+        this.lifecycle = lifecycle;
         this.effectivePermissions = effectivePermissions;
+    }
+
+    /** Suspende el acceso de la persona; se puede reactivar. Corta el acceso en la siguiente petición. */
+    @PostMapping("/{membershipId}/suspension")
+    @RequiresPermission(value = "memberships.suspend", action = "suspender el acceso de una persona")
+    public ResponseEntity<LifecycleDto> suspend(
+        @PathVariable String publicCompanyId,
+        @PathVariable String membershipId,
+        @RequestHeader(value = "Idempotency-Key", required = true) String idempotencyKey,
+        Principal principal,
+        @RequestHeader(value = "X-Correlation-Id", required = false) String correlationId
+    ) {
+        return ResponseEntity.ok(lifecycle.suspend(publicCompanyId, membershipId, actor(principal), correlationId, idempotencyKey));
+    }
+
+    /** Devuelve el acceso a una persona suspendida. */
+    @PostMapping("/{membershipId}/reactivation")
+    @RequiresPermission(value = "memberships.reactivate", action = "reactivar el acceso de una persona")
+    public ResponseEntity<LifecycleDto> reactivate(
+        @PathVariable String publicCompanyId,
+        @PathVariable String membershipId,
+        @RequestHeader(value = "Idempotency-Key", required = true) String idempotencyKey,
+        Principal principal,
+        @RequestHeader(value = "X-Correlation-Id", required = false) String correlationId
+    ) {
+        return ResponseEntity.ok(lifecycle.reactivate(publicCompanyId, membershipId, actor(principal), correlationId, idempotencyKey));
+    }
+
+    /** Revoca el acceso de la persona, de forma definitiva. */
+    @PostMapping("/{membershipId}/revocation")
+    @RequiresPermission(value = "memberships.revoke", action = "revocar el acceso de una persona")
+    public ResponseEntity<LifecycleDto> revoke(
+        @PathVariable String publicCompanyId,
+        @PathVariable String membershipId,
+        @RequestHeader(value = "Idempotency-Key", required = true) String idempotencyKey,
+        Principal principal,
+        @RequestHeader(value = "X-Correlation-Id", required = false) String correlationId
+    ) {
+        return ResponseEntity.ok(lifecycle.revoke(publicCompanyId, membershipId, actor(principal), correlationId, idempotencyKey));
     }
 
     @GetMapping

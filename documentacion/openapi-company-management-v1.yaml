@@ -3352,6 +3352,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
       x-required-permission: memberships.suspend
   /api/v1/companies/{publicCompanyId}/memberships/{membershipId}/reactivation:
     parameters:
@@ -3428,6 +3430,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
       x-required-permission: memberships.revoke
   /api/v1/companies/{publicCompanyId}/memberships/{membershipId}/assignments:
     parameters:

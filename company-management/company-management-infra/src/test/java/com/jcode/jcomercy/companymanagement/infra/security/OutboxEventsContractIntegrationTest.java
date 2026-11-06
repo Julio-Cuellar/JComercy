@@ -66,7 +66,8 @@ class OutboxEventsContractIntegrationTest {
     private static final Set<String> EMITTED = Set.of("account.created", "account.suspended", "company.created",
         "company.activated", "branch.created", "branch.activated", "role.created", "role.updated", "role.deactivated",
         "role.deleted", "membership.invitation.created", "membership.invitation.accepted", "membership.invitation.revoked",
-        "membership.created", "branch-assignment.created", "branch-assignment.updated", "branch-assignment.revoked");
+        "membership.created", "branch-assignment.created", "branch-assignment.updated", "branch-assignment.revoked",
+        "membership.suspended", "membership.reactivated", "membership.revoked");
 
     private record Sent(String routingKey, Message message) { }
 
@@ -158,6 +159,12 @@ class OutboxEventsContractIntegrationTest {
         mockMvc.perform(delete("/api/v1/companies/{company}/memberships/{membership}/assignments/{assignment}", company, membershipOfActivated, assignment)
                 .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString()))
             .andExpect(status().isNoContent());
+        // Los eventos del acceso de una persona: suspenderlo, reactivarlo y revocarlo.
+        for (String action : List.of("suspension", "reactivation", "revocation")) {
+            mockMvc.perform(post("/api/v1/companies/{company}/memberships/{membership}/{action}", company, membershipOfActivated, action)
+                    .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString()))
+                .andExpect(status().isOk());
+        }
         RestWorld.Person other = world.register();
         suspendAccount(other.accountId(), world.login(other.email()));
 

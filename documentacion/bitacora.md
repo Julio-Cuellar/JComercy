@@ -1032,6 +1032,27 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Dos peticiones simultáneas** que quiten las dos últimas sucursales activas de una persona podrían saltarse la regla: se comprueba en la aplicación, sin bloqueo de la fila.
   - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
 
+### BIT-056 · Suspender, reactivar y revocar el acceso de una persona (M7)
+
+- **Qué se hizo:** tres rutas `POST` bajo `/api/v1/companies/{publicCompanyId}/memberships/{membershipId}`: `/suspension`, `/reactivation` y `/revocation`, con `Idempotency-Key`. Responden `LifecycleResponse` del contrato (`id`, `status`, `changedAt`, `correlationId`) y emiten `membership.suspended`, `membership.reactivated` y `membership.revoked`, que el AsyncAPI ya declaraba.
+- **Cómo se hizo:**
+  - **RED:** `MembershipLifecycleIntegrationTest` (8 pruebas) contra el código sin esas rutas → 8 de 8 fallan con 404, la causa buscada.
+  - **GREEN:** misma clase → 8 de 8 a la primera, con `OutboxEventsContractIntegrationTest` (ampliada con suspender, reactivar y revocar a una persona y comprobando los tres eventos contra el AsyncAPI), `RequiredPermissionsContractTest`, `OpenApiContractTest`, `RestOwnershipIntegrationTest` y M1 en verde.
+  - **Efecto inmediato (probado):** al suspender, el token de empresa que la persona ya tenía responde 403 en la siguiente petición, no puede volver a entrar a la empresa y la empresa desaparece de su lista de accesos; al reactivar, el mismo token vuelve a servir. Funciona porque cada petición revisa la membresía en la base de datos.
+  - **Reglas:** solo se suspende a quien está activo y solo se reactiva a quien está suspendido → 409 en otro caso; revocar sirve desde activa o suspendida, es definitivo (después no se puede suspender, reactivar ni revocar → 409) y exige registrar a la persona otra vez; **nadie se suspende ni se revoca a sí mismo** → 422, para no quedarse fuera de la empresa sin poder deshacerlo; la membresía de otra empresa o inexistente → 404; repetir la clave de idempotencia no repite el efecto ni el evento (probado). Los permisos son `memberships.suspend`, `.reactivate` y `.revoke`, que `COMPANY_ADMIN` ya tiene por `memberships.*`.
+  - **Eventos:** `MembershipData` del contrato (membresía, empresa, persona, roles y estado nuevo), sin correo ni datos personales (probado).
+  - **Código:** `MembershipLifecycleService`, `LifecycleDto` y las tres rutas en `MembershipController`. `CompanyMembership` ya tenía `suspend`, `reactivate` y `revoke`, pero nada los llamaba. En el contrato se añadió 422 a suspender y revocar.
+  - **Mutaciones temporales (script, 8), todas detectadas y revertidas, con la huella de cada archivo igual a la de antes:** M1 se permite suspenderse a sí mismo, M2 se suspende a quien no está activo → caen 2, M3 se reactiva a quien no está suspendido → caen 2, M4 se revoca dos veces, M5 el evento de reactivar cambia de nombre → caen 2, M6 se actúa sobre la membresía de otra empresa, M7 el cambio no se guarda → caen 6, M8 la ruta de revocar exige otro permiso que el contrato.
+  - **Suite de company-management:** 204 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Afectaciones:** ninguna tabla ni migración nueva. Rutas nuevas en el contrato OpenAPI ya existentes (se completó la respuesta 422).
+- **Sin verificar:**
+  - **Inventario:** valida el token por su cuenta y no revisa la membresía, así que una persona suspendida o revocada sigue pudiendo usar inventario hasta que su token venza (una hora por defecto). No se tocó inventario en este frente.
+  - **Los canales en vivo y el contexto operativo** que menciona el contrato (cerrar WebSockets, invalidar contextos) no existen todavía en este módulo.
+  - **Motivo y confirmación:** el contrato de suspensión habla de un `reasonCode` y una confirmación; la ruta del contrato para la membresía no declara cuerpo y no se guardó ningún motivo.
+  - **Revocar y volver a invitar:** la restricción de una sola membresía por empresa y usuario impide dar de alta otra vez a una persona revocada (409 al activar); reactivar una revocada no existe por diseño, y falta una salida para recontratar.
+  - **Cambiar el rol de una persona activa** (`PATCH /memberships/{id}`) sigue sin hacerse.
+  - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
+
 ---
 
 ## Errores
