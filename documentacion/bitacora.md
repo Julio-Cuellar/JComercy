@@ -851,6 +851,20 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Sin verificar:** la migración sobre una base con datos reales; solo se corrió sobre bases que parten vacías.
 - **Pendiente del plan:** F6 (CI de RabbitMQ) y F7.
 
+### BIT-046 · El CI corre las pruebas con PostgreSQL y RabbitMQ reales (fase 6 del plan de errores)
+
+- **Qué se hizo:** nuevo job `rabbitmq` en `.github/workflows/ci.yml`, en paralelo a `test` y `postgres`, que corre toda la suite con `mvn -B -ntp -Ppostgres,rabbitmq test`. Hasta ahora las pruebas del Outbox contra un broker real se omitían en el CI, así que un verde no decía nada sobre el broker.
+- **Cómo se hizo:**
+  - Job calcado del de `postgres`: Java 21 Temurin con caché de Maven, versión de Docker, la suite y la subida de los reportes de pruebas si algo falla (`surefire-reports-rabbitmq`). `timeout-minutes: 25`, porque cada clase con broker real levanta su contenedor (35 a 45 s medidos en local) y las de broker colgado esperan confirmaciones. Usa `-Ppostgres,rabbitmq` porque es la combinación que se verificó en local (285 de 285, BIT-045) y la de producción.
+  - **Comprobado en local:** el YAML carga y define los tres jobs; los mismos comandos pasan con Docker 29.8.2 (`mvn -B -ntp -Ppostgres,rabbitmq test` → 285 de 285, ninguna omitida).
+- **Afectaciones:**
+  - **CI:** una verificación más por pull request; no alarga la corrida porque va en paralelo, pero será la más lenta de las tres.
+  - **Rama protegida:** para que el PR no pueda fusionarse con ese job en rojo, hay que marcar `rabbitmq` como verificación requerida en la configuración del repositorio en GitHub. Eso lo decide la persona dueña del repositorio; no se tocó.
+- **Sin verificar:**
+  - **Que funcione en un runner de GitHub.** Las pruebas de broker caído y colgado usan `rabbitmqctl stop_app` y `docker pause` sobre el contenedor; `docker pause` necesita el congelador de cgroups del runner. La primera corrida en GitHub lo dirá. Si falla por el entorno, se registrará como error y se acotará esa clase, no se desactivará el job.
+  - La duración real del job en GitHub (los 25 min son una estimación con margen).
+- **Pendiente del plan:** F7, la verificación final.
+
 ---
 
 ## Errores
