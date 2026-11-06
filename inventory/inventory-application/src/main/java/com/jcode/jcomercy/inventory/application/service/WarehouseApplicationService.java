@@ -82,7 +82,7 @@ public class WarehouseApplicationService {
         log.info("Almacén persistido id={} publicWarehouseId={} companyId={} branchId={}", saved.id(),
                 saved.publicWarehouseId(), saved.companyId(), saved.branchId());
         if (outboxPort != null) {
-            outboxPort.publish("warehouse.created", saved.companyId(), saved.branchId(), command.actorUserId(), null,
+            outboxPort.publish("inventory.warehouse.created", saved.companyId(), saved.branchId(), command.actorUserId(), null,
                     java.util.Map.of("warehouseId", saved.id().toString(), "publicWarehouseId", saved.publicWarehouseId(), "code", saved.code(), "name", saved.name()));
         }
         return saved;
@@ -126,7 +126,7 @@ public class WarehouseApplicationService {
         var activated = warehouseRepository.save(warehouse.activate());
         log.info("Almacén activado warehouseId={} companyId={}", activated.id(), activated.companyId());
         if (outboxPort != null) {
-            outboxPort.publish("warehouse.activated", activated.companyId(), activated.branchId(), actorUserId, null,
+            outboxPort.publish("inventory.warehouse.activated", activated.companyId(), activated.branchId(), actorUserId, null,
                     java.util.Map.of("warehouseId", activated.id().toString(), "publicWarehouseId", activated.publicWarehouseId(), "status", activated.status().name()));
         }
         return activated;

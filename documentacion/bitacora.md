@@ -50,7 +50,8 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-023 | Company-management publicaba solo el `data` de cada evento, no el sobre (`EventEnvelope`) que exige el AsyncAPI | RESUELTO (BIT-040) |
 | ERR-024 | Valores del sobre que no significan lo que el contrato dice: `accountId` o `companyId` vacíos y `sequence` constante | ABIERTO |
 | ERR-025 | El `data` de tres eventos no usa los nombres que declara el contrato (`ownerPersonId`, `rfc`, falta `isHeadOffice`) | ABIERTO |
-| ERR-026 | Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola | ABIERTO |
+| ERR-026 | Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola | ABIERTO (el punto 3, la cola, quedó RESUELTO en BIT-041) |
+| ERR-027 | La cola de company-management, unida con `#`, recibía también los eventos de inventario | RESUELTO (BIT-041) |
 
 ---
 
@@ -738,6 +739,24 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - Que las pruebas con RabbitMQ real y la de contrato corran en el CI: las de contrato sí (sin Docker); las de broker real se omiten allí.
 - **Pendiente:** el job de CI para las pruebas con RabbitMQ real; las decisiones de ERR-021, ERR-022, ERR-024, ERR-025 y ERR-026; y el PR que cierra el frente de RabbitMQ.
 
+### BIT-041 · Las colas reciben solo lo suyo y los eventos de almacén llegan a la de inventario (fase 1 del plan de errores)
+
+- **Qué se hizo:** se confirmó con un broker real la hipótesis de BIT-038 (la cola de company-management unida con `#` recibía también los eventos de inventario, ERR-027) y el punto 3 de ERR-026 (los eventos de almacén no llegaban a la cola de inventario). Se corrigieron los dos.
+- **Cómo se hizo:**
+  - **Pruebas con RabbitMQ real** (`-Prabbitmq`): `EventRoutingRabbitMqIntegrationTest` (company-management) e `InventoryEventRoutingRabbitMqIntegrationTest` (inventario). La de company-management deja primero en el broker la topología anterior (la cola con su enlace `#`), como la tendría un despliegue ya existente, y luego arranca la aplicación.
+  - **RED, medido:** company-management: `Expecting empty but was: ["inventory.stock.issued", "inventory.warehouse.created"]`, es decir, **la hipótesis era cierta**. Inventario: crear y activar un almacén por REST y despachar dejó la cola de inventario sin los dos eventos (fallo de `containsExactly("inventory.warehouse.created", "inventory.warehouse.activated")`).
+  - **Corrección en company-management:** `RabbitMqOutboxConfig` declara un enlace por familia de eventos (`account.#`, `billing.#`, `branch.#`, `branch-addon.#`, `branch-assignment.#`, `company.#`, `effective-permissions.#`, `membership.#`, `operation.#`, `operational-context.#`, `platform-user-limit.#`, `role.#`, `subscription.#`: los prefijos de los canales del AsyncAPI), configurables con `outbox.rabbit.staging-bindings`. Un `ConnectionListener` quita el enlace `#` heredado en cada conexión, porque un broker que ya tenía la cola lo conserva aunque el código deje de declararlo.
+  - **Corrección en inventario:** `WarehouseApplicationService` publica `inventory.warehouse.created` e `inventory.warehouse.activated`, que sí cubre el patrón `inventory.#` de la cola. Se actualizó `WarehouseEventActorIntegrationTest` y las menciones en `diagramas-modulo-inventory.md` y `modelo-datos-warehouse.md`. La orden de trabajo histórica `orden-trabajo-inventory-siguiente-etapa.md` conserva los nombres antiguos a propósito.
+  - **Prueba guardia sin Docker** (`EventBindingsContractIntegrationTest`, suite normal): todo evento que el AsyncAPI declara (canal `events/x/y` = clave `x.y`) debe coincidir con algún enlace de la cola, y la cola no puede enlazarse con `#`, `*` ni recibir `inventory.*`. Un evento nuevo en el contrato sin su prefijo hace fallar la prueba.
+  - **GREEN:** `mvn -B -ntp -Prabbitmq test -Dtest='*EventRoutingRabbitMqIntegrationTest,EventBindingsContractIntegrationTest,WarehouseEventActorIntegrationTest,*OutboxRabbitMqIntegrationTest'` → `BUILD SUCCESS` (company-management 7 de 7, inventario 6 de 6). Suite normal: `mvn -B -ntp test` → `BUILD SUCCESS`, **273 pruebas** (13 + 8 + 8 + 128 + 27 + 89), 13 omitidas (las de broker real y las de PostgreSQL), sin Docker.
+  - **Mutaciones temporales** (script en el área de trabajo, archivo restaurado, huella igual): sin limpiar el enlace heredado cae la prueba de eventos de inventario; sin el prefijo `membership` caen la guardia y la de eventos propios; con `#` de nuevo caen tres.
+- **Afectaciones:**
+  - **Contrato de eventos de inventario:** las claves de almacén cambian de `warehouse.*` a `inventory.warehouse.*`. No hay consumidores.
+  - **Despliegue:** en un broker existente, company-management quita el enlace `#` de su cola al conectarse; los mensajes de inventario que ya estaban en esa cola se quedan allí, sin consumidor.
+  - **Mantenimiento:** una familia nueva de eventos de company-management necesita su prefijo en `outbox.rabbit.staging-bindings`; la prueba guardia lo exige.
+- **Sin verificar:** que otro entorno (no el de pruebas) tenga colas con otros nombres o enlaces propios; el enlace heredado solo se quita de la cola configurada.
+- **Pendiente del plan:** F2 a F7 (sobre y contrato de company-management, despachadores, sobre común e inventario, `uk_stock_identity`, CI de RabbitMQ y cierre).
+
 ---
 
 ## Errores
@@ -968,8 +987,17 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 
 ### ERR-026 · Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola
 
-- **Estado:** ABIERTO. Visto en la fase R4, por lectura del código; **requiere una decisión**.
+- **Estado:** ABIERTO. Visto en la fase R4, por lectura del código; **requiere una decisión**. **El punto 3 se resolvió en BIT-041** (los eventos de almacén ahora son `inventory.warehouse.*` y llegan a la cola); medido con un broker real.
 - **De qué trata:** (1) No existe un AsyncAPI de inventario. (2) Inventario publica un sobre propio (`eventId`, `eventType`, `schemaVersion`, `occurredAt`, `correlationId`, `companyId`, `branchId`, `actorUserId` y `data`) que no es el de company-management: le faltan `accountId`, `aggregateVersion`, `sequence` y `producerModule`. Los dos módulos publican en el mismo exchange, así que un consumidor tendría que entender dos formas. Además, el despachador de inventario no fija el tipo de contenido. (3) Los eventos `warehouse.created` y `warehouse.activated` se publican con una clave que no coincide con el patrón de la cola de inventario (`inventory.#`), de modo que no llegarían a ella. Esto último no se probó con el broker, y hoy no hay consumidores.
 - **Cuándo se manifiesta:** al conectar a un consumidor, no antes.
 - **Cómo mitigarlo:** por ahora, no consumir eventos de inventario sin revisar su forma real.
 - **Para resolverlo (decisión):** escribir el AsyncAPI de inventario, acordar un sobre común (por ejemplo, en `jcomercy-core`) y renombrar los eventos de almacén con el prefijo `inventory.`, o ampliar el patrón de la cola.
+
+### ERR-027 · La cola de company-management, unida con `#`, recibía también los eventos de inventario
+
+- **Estado:** RESUELTO el 2026-11-06 (BIT-041). Era una hipótesis de BIT-038 y R1; la prueba con broker real la confirmó.
+- **De qué trata:** los dos módulos publican en el exchange compartido `jcomercy.events`. La cola `jcomercy.events.pending` de company-management se unía con `#`, que recibe todas las claves, así que acumulaba también `inventory.*` y `warehouse.*`.
+- **Cuándo se manifiesta:** con las dos aplicaciones sobre el mismo broker. Medido: `inventory.stock.issued` e `inventory.warehouse.created` llegaron a esa cola.
+- **Cómo mitigarlo:** mientras no se resolvió, la cola no tenía consumidor, así que solo crecía; bastaba purgarla.
+- **Cómo se resolvió:** enlaces por familia de eventos de company-management, configurables, y limpieza del enlace `#` heredado en cada conexión. Verificado con `EventRoutingRabbitMqIntegrationTest` y `EventBindingsContractIntegrationTest`.
+- **Lo que no cubre:** los mensajes de inventario que ya estuvieran en la cola de un broker existente no se purgan.

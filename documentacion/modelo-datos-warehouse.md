@@ -357,7 +357,7 @@ Exchange: `jcomercy.events`.
 
 Consume: `company.created`, `branch.created`, `branch.activated`.
 
-Publica: `warehouse.created`, `warehouse.activated`, `inventory.stock.received`, `inventory.stock.issued`, `inventory.stock.adjusted`, `inventory.stock.reserved`, `inventory.transfer.requested`, `inventory.transfer.dispatched`, `inventory.transfer.received`, `inventory.kit.breakdown.posted`, `inventory.kit.breakdown.cancelled`.
+Publica: `inventory.warehouse.created`, `inventory.warehouse.activated`, `inventory.stock.received`, `inventory.stock.issued`, `inventory.stock.adjusted`, `inventory.stock.reserved`, `inventory.transfer.requested`, `inventory.transfer.dispatched`, `inventory.transfer.received`, `inventory.kit.breakdown.posted`, `inventory.kit.breakdown.cancelled`.
 
 Envelope mínimo:
 
