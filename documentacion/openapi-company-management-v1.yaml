@@ -2776,6 +2776,137 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
       x-required-permission: roles.deactivate
+  /api/v1/companies/{publicCompanyId}/employees:
+    parameters:
+    - $ref: '#/components/parameters/PublicCompanyId'
+    get:
+      tags:
+      - Companies
+      summary: Listar a las personas registradas por RH
+      operationId: listEmployees
+      parameters:
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - PENDING_ACTIVATION
+          - ACTIVE
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/After'
+      responses:
+        '200':
+          description: Personas registradas, con sus datos personales
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeePage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-required-permission: employees.read
+    post:
+      tags:
+      - Companies
+      summary: Registrar a una persona del equipo
+      description: RH registra los datos, el rol y las sucursales de la persona. Queda pendiente de activar su acceso. Si el correo o el RFC ya pertenecen a otra cuenta responde 409 sin decir cuál chocó.
+      operationId: registerEmployee
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+      responses:
+        '201':
+          description: Persona registrada, pendiente de activar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+      x-required-permission: employees.create
+  /api/v1/companies/{publicCompanyId}/employees/{employeeId}:
+    parameters:
+    - $ref: '#/components/parameters/PublicCompanyId'
+    - name: employeeId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: emp_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+    get:
+      tags:
+      - Companies
+      summary: Consultar a una persona registrada por RH
+      operationId: getEmployee
+      responses:
+        '200':
+          description: La persona, con sus datos personales
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-required-permission: employees.read
+    patch:
+      tags:
+      - Companies
+      summary: Corregir los datos de una persona que aún no activa su acceso
+      operationId: correctEmployee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+      responses:
+        '200':
+          description: Persona corregida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+      x-required-permission: employees.update
   /api/v1/companies/{publicCompanyId}/effective-permissions/{userId}:
     parameters:
     - $ref: '#/components/parameters/PublicCompanyId'
@@ -4749,6 +4880,123 @@ components:
         version:
           type: integer
           minimum: 1
+    EmployeeRequest:
+      type: object
+      required:
+      - firstName
+      - lastName
+      - birthDate
+      - rfc
+      - curp
+      - phoneNumber
+      - email
+      - state
+      - address
+      - roleIds
+      - branchIds
+      properties:
+        firstName:
+          type: string
+          maxLength: 100
+        lastName:
+          type: string
+          maxLength: 160
+        birthDate:
+          type: string
+          format: date
+        rfc:
+          type: string
+          description: 12 o 13 caracteres, por ejemplo PEPJ850412AB1
+        curp:
+          type: string
+          description: 18 caracteres, por ejemplo PEPJ850412HDFRRN09
+        phoneNumber:
+          type: string
+          maxLength: 30
+        email:
+          type: string
+          format: email
+        state:
+          type: string
+          maxLength: 100
+        address:
+          type: string
+          maxLength: 500
+        roleIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        branchIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+    Employee:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        profileType:
+          type: string
+          enum:
+          - EMPLEADO
+        status:
+          type: string
+          enum:
+          - PENDING_ACTIVATION
+          - ACTIVE
+        firstName:
+          type: string
+        lastName:
+          type: string
+        birthDate:
+          type: string
+          format: date
+        rfc:
+          type: string
+        curp:
+          type: string
+        phoneNumber:
+          type: string
+        email:
+          type: string
+          format: email
+        state:
+          type: string
+        address:
+          type: string
+        roleIds:
+          type: array
+          items:
+            type: string
+        branchIds:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+    EmployeePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Employee'
+        page:
+          type: object
+          properties:
+            limit:
+              type: integer
+            nextCursor:
+              type: string
+              nullable: true
     MembershipPatchRequest:
       type: object
       minProperties: 1

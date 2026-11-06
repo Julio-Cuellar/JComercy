@@ -952,6 +952,25 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Un rol borrado cuyo nombre se reutiliza:** las membresías guardan el rol por nombre. Como no se borra un rol en uso, no queda ninguna membresía apuntándole, pero es una fragilidad del modelo.
   - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
 
+### BIT-052 · RH registra a las personas del equipo con sus datos, rol y sucursales (M3)
+
+- **Qué se hizo:** cuatro rutas bajo `/api/v1/companies/{publicCompanyId}/employees`: `POST` (registrar, con `Idempotency-Key`), `GET` (lista con `status`, `limit` y `after`), `GET /{id}` y `PATCH /{id}` (corregir mientras la persona no activa su acceso). El perfil guarda nombre, apellidos, fecha de nacimiento, RFC, CURP, teléfono, correo, estado, domicilio, los roles y las sucursales que RH eligió, y el tipo de perfil (`EMPLEADO`). Queda en `PENDING_ACTIVATION`. Todavía no se envía nada: el correo y la activación son M4 y M5.
+- **Cómo se hizo:**
+  - **RED:** `EmployeesIntegrationTest` (11 pruebas) contra el código sin esas rutas → 11 de 11 fallan con 404, la causa buscada.
+  - **GREEN:** misma clase → 11 de 11, con M1 (7), M2 (11) y las pruebas de contrato (4) en verde. Las rutas nuevas se documentaron en `openapi-company-management-v1.yaml` (cuatro operaciones y tres esquemas, con su `x-required-permission`).
+  - **Tablas y permisos:** `V028` crea `company_management.employee_profile` con índices únicos por empresa en RFC, correo y CURP (una persona puede trabajar en dos empresas). `V027` da `employees.*`, `operations.*` y `operational_context.select` a `COMPANY_ADMIN`: dar un rol exige tener todos sus permisos, y sin esos tres la administración no podía registrar a nadie con los roles STAFF ni BRANCH_MANAGER.
+  - **Reglas:** formato de RFC, CURP, correo y fecha, y campos obligatorios → 400; el RFC, el correo y la CURP no se repiten dentro de la empresa → 409; los roles deben existir en la empresa, estar activos y ser delegables por quien registra (todos sus permisos) → 422; el rol de dueño de la cuenta nunca se da → 422; las sucursales deben ser de la empresa → 422; si el correo es de una cuenta con otro RFC, o el RFC de una cuenta con otro correo, → 409 con un mensaje que no dice cuál dato chocó; si coinciden ambos, se admite (esa cuenta será su acceso); la persona dueña de la cuenta no se registra como empleada → 422.
+  - **Privacidad:** RFC, CURP y correo solo salen en las respuestas a quien tiene `employees.read`; no se escriben en el registro (el adaptador descarta el mensaje de la base de datos, que cita el valor repetido) ni en eventos (una prueba lee todos los eventos de la empresa); la lista de membresías no los trae. M3 no emite ningún evento.
+  - **Código:** `EmployeeProfile` (con `PersonalData`), `EmployeeProfileRepositoryPort`, `JdbcEmployeeProfileRepositoryAdapter`, `EmployeeApplicationService`, `EmployeeController`, `EmployeeInput`, `EmployeeDto`, y `PageCursor`, que sustituye la copia privada del cursor en `MembershipApplicationService`.
+  - **Mutaciones temporales (script, 8), todas detectadas y revertidas, con la huella de `EmployeeApplicationService` igual a la de antes:** M1 sin validar el RFC, M2 sin validar la CURP, M3 sin la regla de delegación, M4 un correo con otro RFC pasa, M5 la dueña de la cuenta se registra, M6 al corregir choca con sí mismo, M7 un perfil de otra empresa se ve, M8 se da el rol de dueño. Antes de lanzarlas se añadió a la prueba el caso del rol de dueño, que ninguna prueba cubría.
+  - **Suite de company-management:** 160 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Afectaciones:** `COMPANY_ADMIN` tiene tres permisos más, y el token de un miembro con ese rol los lleva. Rutas y esquemas nuevos en el contrato OpenAPI. El contrato no define empleados; esta API es nueva y los nombres de campo siguen los del resto del contrato.
+- **Sin verificar:**
+  - **El correo y el RFC contra cuentas existentes** se comprueban al registrar. Si alguien crea una cuenta con ese correo después, el choque aparecerá al activar (M5).
+  - **Fuga limitada de existencia:** un 409 de cuenta ajena frente a un 201 deja saber que ese par correo y RFC no coincide con una cuenta, aunque no cuál. Es parecido a lo que ya hace el registro de cuentas.
+  - **Las personas se listan en memoria** (por empresa), igual que las membresías.
+  - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
+
 ---
 
 ## Errores

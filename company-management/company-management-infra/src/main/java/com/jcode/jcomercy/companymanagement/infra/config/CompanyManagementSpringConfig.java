@@ -76,4 +76,17 @@ public class CompanyManagementSpringConfig {
         return new com.jcode.jcomercy.companymanagement.application.service.RoleApplicationService(
             roleRepository, companyRepository, membershipRepository, outboxPort, idempotencyRegistry);
     }
+
+    @Bean
+    public com.jcode.jcomercy.companymanagement.application.service.EmployeeApplicationService employeeApplicationService(
+        com.jcode.jcomercy.companymanagement.domain.port.EmployeeProfileRepositoryPort employeeRepository,
+        CompanyRepositoryPort companyRepository,
+        com.jcode.jcomercy.companymanagement.domain.port.RoleRepositoryPort roleRepository,
+        BranchRepositoryPort branchRepository,
+        AccountRepositoryPort accountRepository,
+        IdempotencyRegistry idempotencyRegistry
+    ) {
+        return new com.jcode.jcomercy.companymanagement.application.service.EmployeeApplicationService(
+            employeeRepository, companyRepository, roleRepository, branchRepository, accountRepository, idempotencyRegistry);
+    }
 }

@@ -15,9 +15,6 @@ import com.jcode.jcomercy.companymanagement.domain.port.CompanyRepositoryPort;
 import com.jcode.jcomercy.companymanagement.domain.port.MembershipRepositoryPort;
 import com.jcode.jcomercy.companymanagement.domain.port.RoleRepositoryPort;
 
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -52,7 +49,7 @@ public class MembershipApplicationService {
         requireCompany(companyId);
         MembershipStatus wantedStatus = parseStatus(status);
         int pageSize = pageSize(limit);
-        Cursor cursor = Cursor.decode(after);
+        PageCursor cursor = PageCursor.decode(after);
         List<Role> visibleRoles = roles.findByPublicCompanyIdOrSystem(companyId);
         String wantedRoleName = roleId == null ? null : visibleRoles.stream()
             .filter(role -> role.getPublicRoleId().equals(roleId)).map(Role::getName).findFirst().orElse(null);
@@ -60,7 +57,7 @@ public class MembershipApplicationService {
 
         List<CompanyMembership> matching = memberships.findMembershipsByPublicCompanyId(companyId).stream()
             .sorted(ORDER)
-            .filter(membership -> cursor == null || cursor.isBefore(membership))
+            .filter(membership -> cursor == null || cursor.isBefore(membership.getCreatedAt(), membership.getPublicMembershipId()))
             .filter(membership -> wantedStatus == null || membership.getStatus() == wantedStatus)
             .filter(membership -> roleId == null || (wantedRoleName != null && membership.getRoles().contains(wantedRoleName)))
             .filter(membership -> inBranch == null || inBranch.contains(membership.getPublicMembershipId()))
@@ -68,7 +65,11 @@ public class MembershipApplicationService {
 
         boolean hasMore = matching.size() > pageSize;
         List<CompanyMembership> pageItems = hasMore ? matching.subList(0, pageSize) : matching;
-        String next = hasMore ? Cursor.of(pageItems.get(pageItems.size() - 1)).encode() : null;
+        String next = null;
+        if (hasMore) {
+            CompanyMembership last = pageItems.get(pageItems.size() - 1);
+            next = new PageCursor(last.getCreatedAt(), last.getPublicMembershipId()).encode();
+        }
         Map<String, String> roleIdByName = roleIdsByName(visibleRoles);
         return new PageDto<>(pageItems.stream().map(membership -> summary(membership, roleIdByName)).toList(),
             new PageDto.Page(pageSize, next));
@@ -154,36 +155,5 @@ public class MembershipApplicationService {
             throw new InvalidRequestException("El límite debe estar entre 1 y " + MAX_LIMIT + ".");
         }
         return limit;
-    }
-
-    /** Dónde quedó la página anterior: la fecha de alta y el identificador de la última membresía vista. */
-    private record Cursor(Instant createdAt, String membershipId) {
-
-        static Cursor of(CompanyMembership membership) {
-            return new Cursor(membership.getCreatedAt(), membership.getPublicMembershipId());
-        }
-
-        String encode() {
-            return Base64.getUrlEncoder().withoutPadding()
-                .encodeToString((createdAt + "|" + membershipId).getBytes(StandardCharsets.UTF_8));
-        }
-
-        static Cursor decode(String text) {
-            if (text == null || text.isBlank()) {
-                return null;
-            }
-            try {
-                String[] parts = new String(Base64.getUrlDecoder().decode(text), StandardCharsets.UTF_8).split("\\|", 2);
-                return new Cursor(Instant.parse(parts[0]), parts[1]);
-            } catch (RuntimeException e) {
-                throw new InvalidRequestException("El cursor 'after' no es válido. Usa el nextCursor de la página anterior.");
-            }
-        }
-
-        /** Si la membresía viene después de donde quedó la página anterior. */
-        boolean isBefore(CompanyMembership membership) {
-            int byDate = membership.getCreatedAt().compareTo(createdAt);
-            return byDate > 0 || (byDate == 0 && membership.getPublicMembershipId().compareTo(membershipId) > 0);
-        }
     }
 }
