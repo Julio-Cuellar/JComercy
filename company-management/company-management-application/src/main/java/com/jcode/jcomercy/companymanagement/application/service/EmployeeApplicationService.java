@@ -51,10 +51,13 @@ public class EmployeeApplicationService {
     private final BranchRepositoryPort branches;
     private final AccountRepositoryPort accounts;
     private final IdempotencyRegistry idempotency;
+    private final EmployeeInvitationService invitations;
 
     public EmployeeApplicationService(EmployeeProfileRepositoryPort employees, CompanyRepositoryPort companies,
                                       RoleRepositoryPort roles, BranchRepositoryPort branches,
-                                      AccountRepositoryPort accounts, IdempotencyRegistry idempotency) {
+                                      AccountRepositoryPort accounts, IdempotencyRegistry idempotency,
+                                      EmployeeInvitationService invitations) {
+        this.invitations = Objects.requireNonNull(invitations);
         this.employees = Objects.requireNonNull(employees);
         this.companies = Objects.requireNonNull(companies);
         this.roles = Objects.requireNonNull(roles);
@@ -63,9 +66,13 @@ public class EmployeeApplicationService {
         this.idempotency = Objects.requireNonNull(idempotency);
     }
 
-    /** {@code actorCanGive} dice si quien registra tiene un permiso: nadie puede dar un rol con permisos que no tiene. */
+    /**
+     * Registra a la persona y le manda su invitación. {@code actorCanGive} dice si quien registra tiene un permiso: nadie
+     * puede dar un rol con permisos que no tiene.
+     */
     @Transactional
-    public EmployeeDto register(String companyId, EmployeeInput input, Predicate<String> actorCanGive, String idempotencyKey) {
+    public EmployeeDto register(String companyId, EmployeeInput input, Predicate<String> actorCanGive, String actorUserId,
+                                String correlationId, String idempotencyKey) {
         return idempotency.execute("employee.create:" + companyId, idempotencyKey, () -> {
             Company company = requireCompany(companyId);
             EmployeeProfile.PersonalData data = validated(input);
@@ -74,7 +81,8 @@ public class EmployeeApplicationService {
             checkInsideTheCompany(companyId, data, null);
             EmployeeProfile saved = employees.save(EmployeeProfile.register(companyId, ProfileType.EMPLEADO, data,
                 List.copyOf(new LinkedHashSet<>(input.roleIds())), List.copyOf(new LinkedHashSet<>(input.branchIds()))));
-            return EmployeeDto.fromDomain(saved);
+            invitations.issue(saved, company, actorUserId, correlationId);
+            return view(saved);
         });
     }
 
@@ -91,12 +99,17 @@ public class EmployeeApplicationService {
         checkAgainstOtherAccounts(company, data);
         checkInsideTheCompany(companyId, data, profile.getPublicEmployeeId());
         profile.correct(data, List.copyOf(new LinkedHashSet<>(input.roleIds())), List.copyOf(new LinkedHashSet<>(input.branchIds())));
-        return EmployeeDto.fromDomain(employees.save(profile));
+        return view(employees.save(profile));
     }
 
     public EmployeeDto get(String companyId, String employeeId) {
         requireCompany(companyId);
-        return EmployeeDto.fromDomain(find(companyId, employeeId));
+        return view(find(companyId, employeeId));
+    }
+
+    /** El perfil con el estado de su invitación más reciente. */
+    private EmployeeDto view(EmployeeProfile profile) {
+        return EmployeeDto.fromDomain(profile, invitations.summaryOf(profile));
     }
 
     public PageDto<EmployeeDto> list(String companyId, String status, Integer limit, String after) {
@@ -117,7 +130,7 @@ public class EmployeeApplicationService {
             EmployeeProfile last = pageItems.get(pageItems.size() - 1);
             next = new PageCursor(last.getCreatedAt(), last.getPublicEmployeeId()).encode();
         }
-        return new PageDto<>(pageItems.stream().map(EmployeeDto::fromDomain).toList(), new PageDto.Page(pageSize, next));
+        return new PageDto<>(pageItems.stream().map(this::view).toList(), new PageDto.Page(pageSize, next));
     }
 
     private Company requireCompany(String companyId) {

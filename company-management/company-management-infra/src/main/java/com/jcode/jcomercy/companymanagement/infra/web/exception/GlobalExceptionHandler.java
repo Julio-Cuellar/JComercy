@@ -81,6 +81,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
     }
 
+    @ExceptionHandler(com.jcode.jcomercy.companymanagement.domain.exception.AuthenticationRequiredException.class)
+    public ResponseEntity<ProblemDetails> handleAuthenticationRequired(
+        com.jcode.jcomercy.companymanagement.domain.exception.AuthenticationRequiredException ex, HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/authentication-required",
+            "Inicia Sesión",
+            HttpStatus.UNAUTHORIZED.value(),
+            ex.getMessage(),
+            request.getRequestURI(),
+            "AUTHENTICATION_REQUIRED"
+        );
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(problem);
+    }
+
     @ExceptionHandler(DomainRuleViolationException.class)
     public ResponseEntity<ProblemDetails> handleUnprocessable(DomainRuleViolationException ex, HttpServletRequest request) {
         ProblemDetails problem = ProblemDetails.of(

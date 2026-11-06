@@ -6,8 +6,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -51,26 +49,13 @@ public class AccessMailer {
 
             JComercy
             """.formatted(publicUrl, token));
-        afterCommit(() -> executor.execute(() -> {
+        AfterCommit.run(() -> executor.execute(() -> {
             try {
                 mail.send(message);
             } catch (RuntimeException e) {
                 log.error("No se pudo enviar el correo de recuperación de contraseña causa={}", e.getClass().getSimpleName());
             }
         }));
-    }
-
-    private static void afterCommit(Runnable task) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    task.run();
-                }
-            });
-        } else {
-            task.run();
-        }
     }
 
     @PreDestroy

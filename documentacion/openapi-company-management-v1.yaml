@@ -2907,6 +2907,125 @@ paths:
         '422':
           $ref: '#/components/responses/UnprocessableContent'
       x-required-permission: employees.update
+  /api/v1/companies/{publicCompanyId}/employees/{employeeId}/invitation:
+    parameters:
+    - $ref: '#/components/parameters/PublicCompanyId'
+    - name: employeeId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: emp_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+    post:
+      tags:
+      - Companies
+      summary: Reenviar la invitación a una persona que aún no activa su acceso
+      description: Manda un enlace nuevo y el anterior deja de servir. Hay un tiempo mínimo entre envíos.
+      operationId: resendEmployeeInvitation
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: La persona, con el estado de su nueva invitación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+      x-required-permission: employees.invite
+    delete:
+      tags:
+      - Companies
+      summary: Cancelar la invitación vigente de una persona
+      description: La persona sigue pendiente de activar su acceso y se le puede volver a invitar.
+      operationId: cancelEmployeeInvitation
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Invitación cancelada
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+      x-required-permission: employees.invite
+  /api/v1/employee-invitations/{code}:
+    parameters:
+    - name: code
+      in: path
+      required: true
+      description: Código del enlace que llegó por correo
+      schema:
+        type: string
+    get:
+      tags:
+      - Companies
+      summary: Ver a quién se invita antes de activar el acceso
+      description: Ruta pública. Un código vencido, usado, cancelado o inexistente responde 404 igual, sin decir por qué.
+      operationId: consultEmployeeInvitation
+      security: []
+      responses:
+        '200':
+          description: Nombre, empresa, roles y correo de la invitación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPreview'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/employee-invitations/{code}/acceptance:
+    parameters:
+    - name: code
+      in: path
+      required: true
+      description: Código del enlace que llegó por correo
+      schema:
+        type: string
+    post:
+      tags:
+      - Companies
+      summary: Activar el acceso con el enlace de la invitación
+      description: Quien no tiene cuenta manda la contraseña que eligió y se crea su cuenta. Quien ya la tiene inicia sesión con ella y manda el token de su cuenta; su contraseña no se toca. Crea la membresía y las sucursales en una sola operación.
+      operationId: acceptEmployeeInvitation
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptInvitationRequest'
+      responses:
+        '204':
+          description: Acceso activado
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
   /api/v1/companies/{publicCompanyId}/effective-permissions/{userId}:
     parameters:
     - $ref: '#/components/parameters/PublicCompanyId'
@@ -4974,6 +5093,8 @@ components:
           type: array
           items:
             type: string
+        invitation:
+          $ref: '#/components/schemas/InvitationSummary'
         createdAt:
           type: string
           format: date-time
@@ -4982,6 +5103,51 @@ components:
           format: date-time
         version:
           type: integer
+    InvitationSummary:
+      type: object
+      nullable: true
+      description: La invitación más reciente de la persona; nula si nunca tuvo una.
+      properties:
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACCEPTED
+          - CANCELLED
+          - EXPIRED
+        emailStatus:
+          type: string
+          enum:
+          - PENDING
+          - SENT
+          - FAILED
+        expiresAt:
+          type: string
+          format: date-time
+    InvitationPreview:
+      type: object
+      properties:
+        firstName:
+          type: string
+        companyName:
+          type: string
+        roleNames:
+          type: array
+          items:
+            type: string
+        email:
+          type: string
+          format: email
+        accountExists:
+          type: boolean
+          description: Si ese correo ya tiene cuenta; si es así debe iniciar sesión en vez de elegir contraseña.
+    AcceptInvitationRequest:
+      type: object
+      properties:
+        password:
+          type: string
+          minLength: 8
+          description: Solo para quien no tiene cuenta.
     EmployeePage:
       type: object
       properties:

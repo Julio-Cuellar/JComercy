@@ -84,9 +84,32 @@ public class CompanyManagementSpringConfig {
         com.jcode.jcomercy.companymanagement.domain.port.RoleRepositoryPort roleRepository,
         BranchRepositoryPort branchRepository,
         AccountRepositoryPort accountRepository,
-        IdempotencyRegistry idempotencyRegistry
+        IdempotencyRegistry idempotencyRegistry,
+        com.jcode.jcomercy.companymanagement.application.service.EmployeeInvitationService invitationService
     ) {
         return new com.jcode.jcomercy.companymanagement.application.service.EmployeeApplicationService(
-            employeeRepository, companyRepository, roleRepository, branchRepository, accountRepository, idempotencyRegistry);
+            employeeRepository, companyRepository, roleRepository, branchRepository, accountRepository, idempotencyRegistry,
+            invitationService);
+    }
+
+    @Bean
+    public com.jcode.jcomercy.companymanagement.application.service.EmployeeInvitationService employeeInvitationService(
+        com.jcode.jcomercy.companymanagement.domain.port.EmployeeInvitationRepositoryPort invitationRepository,
+        com.jcode.jcomercy.companymanagement.domain.port.EmployeeProfileRepositoryPort employeeRepository,
+        CompanyRepositoryPort companyRepository,
+        com.jcode.jcomercy.companymanagement.domain.port.RoleRepositoryPort roleRepository,
+        BranchRepositoryPort branchRepository,
+        AccountRepositoryPort accountRepository,
+        AccountApplicationService accountService,
+        com.jcode.jcomercy.companymanagement.domain.port.MembershipRepositoryPort membershipRepository,
+        EventOutboxPort outboxPort,
+        com.jcode.jcomercy.companymanagement.domain.port.InvitationDeliveryPort delivery,
+        IdempotencyRegistry idempotencyRegistry,
+        @org.springframework.beans.factory.annotation.Value("${jcomercy.invitations.resend-min-interval-seconds:60}") long resendMinIntervalSeconds
+    ) {
+        return new com.jcode.jcomercy.companymanagement.application.service.EmployeeInvitationService(
+            invitationRepository, employeeRepository, companyRepository, roleRepository, branchRepository, accountRepository,
+            accountService, membershipRepository, outboxPort, delivery, idempotencyRegistry,
+            java.time.Duration.ofSeconds(resendMinIntervalSeconds));
     }
 }

@@ -40,8 +40,8 @@ public class EmployeeProfile {
     private PersonalData data;
     private List<String> roleIds;
     private List<String> branchIds;
-    private final String accountPublicId;
-    private final String membershipPublicId;
+    private String accountPublicId;
+    private String membershipPublicId;
     private final Instant createdAt;
     private Instant updatedAt;
     private final long version;
@@ -81,6 +81,17 @@ public class EmployeeProfile {
         this.data = Objects.requireNonNull(newData);
         this.roleIds = List.copyOf(newRoleIds);
         this.branchIds = List.copyOf(newBranchIds);
+        this.updatedAt = Instant.now();
+    }
+
+    /** La persona activó su acceso: queda ligada a su cuenta y a su membresía en la empresa. */
+    public void activate(String accountPublicId, String membershipPublicId) {
+        if (status != EmployeeStatus.PENDING_ACTIVATION) {
+            throw new DomainRuleViolationException("Esta persona ya activó su acceso.");
+        }
+        this.accountPublicId = Objects.requireNonNull(accountPublicId);
+        this.membershipPublicId = Objects.requireNonNull(membershipPublicId);
+        this.status = EmployeeStatus.ACTIVE;
         this.updatedAt = Instant.now();
     }
 

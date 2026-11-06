@@ -4,6 +4,7 @@ import com.jcode.jcomercy.companymanagement.application.dto.EmployeeDto;
 import com.jcode.jcomercy.companymanagement.application.dto.EmployeeInput;
 import com.jcode.jcomercy.companymanagement.application.dto.PageDto;
 import com.jcode.jcomercy.companymanagement.application.service.EmployeeApplicationService;
+import com.jcode.jcomercy.companymanagement.application.service.EmployeeInvitationService;
 import com.jcode.jcomercy.companymanagement.domain.exception.UnauthorizedAccessException;
 import com.jcode.jcomercy.companymanagement.infra.security.EffectivePermissions;
 import com.jcode.jcomercy.companymanagement.infra.security.RequiresPermission;
@@ -11,6 +12,7 @@ import com.jcode.jcomercy.core.authorization.Permissions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,10 +35,13 @@ public class EmployeeController {
     private static final Logger log = LoggerFactory.getLogger(EmployeeController.class);
 
     private final EmployeeApplicationService employees;
+    private final EmployeeInvitationService invitations;
     private final EffectivePermissions effectivePermissions;
 
-    public EmployeeController(EmployeeApplicationService employees, EffectivePermissions effectivePermissions) {
+    public EmployeeController(EmployeeApplicationService employees, EmployeeInvitationService invitations,
+                              EffectivePermissions effectivePermissions) {
         this.employees = employees;
+        this.invitations = invitations;
         this.effectivePermissions = effectivePermissions;
     }
 
@@ -46,10 +51,13 @@ public class EmployeeController {
         @PathVariable String publicCompanyId,
         @RequestBody EmployeeInput request,
         @RequestHeader(value = "Idempotency-Key", required = true) String idempotencyKey,
-        Principal principal
+        Principal principal,
+        @RequestHeader(value = "X-Correlation-Id", required = false) String correlationId
     ) {
         String actor = actor(principal);
-        EmployeeDto created = employees.register(publicCompanyId, request, canGive(actor, publicCompanyId), idempotencyKey);
+        EmployeeDto registered = employees.register(publicCompanyId, request, canGive(actor, publicCompanyId), actor, correlationId, idempotencyKey);
+        // El correo sale al confirmar el alta: se vuelve a leer para que RH vea si salió o no.
+        EmployeeDto created = employees.get(publicCompanyId, registered.employeeId());
         log.info("Persona registrada employeeId={} companyId={} actor={}", created.employeeId(), publicCompanyId, actor);
         return ResponseEntity.created(URI.create("/api/v1/companies/" + publicCompanyId + "/employees/" + created.employeeId()))
             .header("ETag", "\"" + created.version() + "\"").body(created);
@@ -85,6 +93,39 @@ public class EmployeeController {
         EmployeeDto corrected = employees.correct(publicCompanyId, employeeId, request, canGive(actor, publicCompanyId));
         log.info("Datos de persona corregidos employeeId={} companyId={} actor={}", employeeId, publicCompanyId, actor);
         return ResponseEntity.ok().header("ETag", "\"" + corrected.version() + "\"").body(corrected);
+    }
+
+    /** Manda un enlace nuevo a una persona que aún no activa su acceso; el anterior deja de servir. */
+    @PostMapping("/{employeeId}/invitation")
+    @RequiresPermission(value = "employees.invite", action = "reenviar invitaciones")
+    public ResponseEntity<EmployeeDto> resendInvitation(
+        @PathVariable String publicCompanyId,
+        @PathVariable String employeeId,
+        @RequestHeader(value = "Idempotency-Key", required = true) String idempotencyKey,
+        Principal principal,
+        @RequestHeader(value = "X-Correlation-Id", required = false) String correlationId
+    ) {
+        String actor = actor(principal);
+        invitations.resend(publicCompanyId, employeeId, actor, correlationId, idempotencyKey);
+        log.info("Invitación reenviada employeeId={} companyId={} actor={}", employeeId, publicCompanyId, actor);
+        EmployeeDto employee = employees.get(publicCompanyId, employeeId);
+        return ResponseEntity.ok().header("ETag", "\"" + employee.version() + "\"").body(employee);
+    }
+
+    /** Cancela la invitación vigente; la persona sigue pendiente y se le puede volver a invitar. */
+    @DeleteMapping("/{employeeId}/invitation")
+    @RequiresPermission(value = "employees.invite", action = "cancelar invitaciones")
+    public ResponseEntity<Void> cancelInvitation(
+        @PathVariable String publicCompanyId,
+        @PathVariable String employeeId,
+        @RequestHeader(value = "Idempotency-Key", required = true) String idempotencyKey,
+        Principal principal,
+        @RequestHeader(value = "X-Correlation-Id", required = false) String correlationId
+    ) {
+        String actor = actor(principal);
+        invitations.cancel(publicCompanyId, employeeId, actor, correlationId, idempotencyKey);
+        log.info("Invitación cancelada employeeId={} companyId={} actor={}", employeeId, publicCompanyId, actor);
+        return ResponseEntity.noContent().build();
     }
 
     /** Un rol solo lo da quien tiene todos sus permisos hoy en esta empresa. */
