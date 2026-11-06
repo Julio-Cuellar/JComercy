@@ -57,13 +57,17 @@ public class InventoryOutboxEventJpaEntity {
     @Column(name = "next_retry_at")
     private Instant nextRetryAt;
 
+    @Column(name = "sequence", nullable = false)
+    private long sequence;
+
     protected InventoryOutboxEventJpaEntity() {}
 
     public InventoryOutboxEventJpaEntity(UUID id, UUID eventId, String eventType, String schemaVersion,
                                           String companyId, String branchId, String actorUserId,
                                           String correlationId, String payload, String status,
-                                          Instant createdAt) {
+                                          Instant createdAt, long sequence) {
         this.id = id;
+        this.sequence = sequence;
         this.eventId = eventId;
         this.eventType = eventType;
         this.schemaVersion = schemaVersion;
@@ -93,6 +97,7 @@ public class InventoryOutboxEventJpaEntity {
     public String getLastError() { return lastError; }
 
     public Instant getNextRetryAt() { return nextRetryAt; }
+    public long getSequence() { return sequence; }
 
     public void markPublished() {
         this.status = "PUBLISHED";

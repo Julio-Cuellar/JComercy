@@ -59,8 +59,11 @@ class InventoryOutboxIntegrationTest {
         assertThat(event.getActorUserId()).isEqualTo(actorUserId);
         assertThat(event.getCorrelationId()).isEqualTo(correlationId);
         assertThat(event.getStatus()).isEqualTo("PENDING");
-        assertThat(event.getPayload()).contains("\"schemaVersion\":\"1.0\"");
-        assertThat(event.getPayload()).contains("\"productId\":\"prod-1\"");
+        // El sobre lo arma el despachador con las columnas; en la fila queda la versión del esquema, el número de secuencia
+        // y solo el data (ERR-026).
+        assertThat(event.getSchemaVersion()).isEqualTo("1.0");
+        assertThat(event.getSequence()).isPositive();
+        assertThat(event.getPayload()).contains("\"productId\":\"prod-1\"").doesNotContain("eventId");
     }
 
     @Test

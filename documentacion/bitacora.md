@@ -50,7 +50,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-023 | Company-management publicaba solo el `data` de cada evento, no el sobre (`EventEnvelope`) que exige el AsyncAPI | RESUELTO (BIT-040) |
 | ERR-024 | Valores del sobre que no significan lo que el contrato dice: `accountId` o `companyId` vacíos y `sequence` constante | RESUELTO (BIT-042) |
 | ERR-025 | El `data` de tres eventos no usa los nombres que declara el contrato (`ownerPersonId`, `rfc`, falta `isHeadOffice`) | RESUELTO (BIT-042) |
-| ERR-026 | Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola | ABIERTO (el punto 3, la cola, quedó RESUELTO en BIT-041) |
+| ERR-026 | Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola | RESUELTO (BIT-041 el punto 3; BIT-044 los puntos 1 y 2) |
 | ERR-027 | La cola de company-management, unida con `#`, recibía también los eventos de inventario | RESUELTO (BIT-041) |
 | ERR-028 | La primera ejecución del despachador programado resucita filas del Outbox que una prueba acaba de borrar | RESUELTO (BIT-043) |
 
@@ -809,6 +809,32 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - Que el corte se comporte igual con latencias de red reales (solo se simuló con `docker pause` y con un falso).
 - **Pendiente del plan:** F4 a F7. Las migraciones de inventario se renumeran: la V009 es de esta fase, y el plan usará la V010 para la `sequence` y la V011 para `uk_stock_identity`.
 
+### BIT-044 · Un solo sobre de eventos para los dos módulos y el AsyncAPI de inventario (fase 4 del plan de errores)
+
+- **Qué se hizo:** inventario publica ahora el mismo sobre que company-management, armado por una sola clase de `jcomercy-core`, con `application/json`, y tiene su propio contrato (`asyncapi-inventory-v1.yaml`) con una prueba que lo contrasta con lo que de verdad emite. Con esto y BIT-041 se resuelve ERR-026 completo.
+- **Cómo se hizo:**
+  - **`EventEnvelope`** (`jcomercy-core`, `core/events`): un `record` con los 14 campos del sobre y `toBody()`, que los devuelve en un mapa ordenado; lo desconocido va como `null` explícito y no como campo ausente. Exige identificador, tipo, versión, módulo, correlación, fecha y contenido. Prueba `EventEnvelopeTest`: **RED por compilación** (la clase no existía) y **GREEN** con 3 pruebas. `OutboxDispatcher.envelopeOf` de company-management pasó a usarlo, sin cambiar lo que publica.
+  - **AsyncAPI de inventario** (`documentacion/asyncapi-inventory-v1.yaml`): 10 canales y 10 mensajes (`inventory.warehouse.created` y `activated`, `inventory.stock.received`, `issued`, `adjusted` y `movement`, e `inventory.reservation.created`, `released`, `committed` y `expired`), el sobre, y los esquemas de su `data`. Documenta que la cuenta y la versión del agregado salen nulas, que el orden no está garantizado (usar `sequence`) y que todo evento de inventario empieza por `inventory.`.
+  - **Prueba de contrato de inventario** (`InventoryOutboxEventsContractIntegrationTest`, sin Docker): conduce flujos REST reales (crear y activar un almacén, ubicación, producto, entrada, ajuste, reservar y liberar, reservar y confirmar, reservar con plazo y vencerla) y contrasta con el YAML lo mismo que la de company-management: canal declarado, tipo de contenido, campos obligatorios (nulos solo si el contrato los declara `nullable`), tipos, `occurredAt`, `eventId` = `messageId`, `eventType` = clave, `schemaVersion` = cabecera, `producerModule`, nombres del `data` declarados, estados dentro del enum y `sequence` creciente. Emite 9 de los 10 tipos del contrato (`inventory.stock.movement` no se genera por ningún flujo de la API).
+  - **RED, medido:** los eventos de inventario salían sin `sequence`, `producerModule`, `aggregateVersion`, `causationId` ni `accountId` en el cuerpo (220 comprobaciones en falso), con el cuerpo en texto plano y no JSON.
+  - **Corrección en inventario:**
+    - Migración **V010**: secuencia `inventory.outbox_event_sequence` y columna `sequence` (las filas anteriores llevan 0; numerarlas una a una recorrería toda la tabla).
+    - `InventoryOutboxAdapter` guarda solo el `data` en `payload` y toma el `sequence` de la secuencia; antes guardaba el sobre completo.
+    - `InventoryOutboxDispatcher` arma el sobre con `EventEnvelope` (módulo `inventory`, fecha = `created_at`, `accountId`, `causationId` y `aggregateVersion` nulos) y fija `application/json`. **Las filas anteriores a la V010, que guardaron el sobre completo, siguen saliendo**: de ellas se toma solo su `data`, para no anidar un sobre dentro de otro (prueba `aRowThatStoredTheWholeEnvelopeStillGoesOutWithItsData`).
+  - **Pruebas ajustadas:** `InventoryOutboxIntegrationTest` (la fila guarda versión, secuencia y solo el `data`) y la de broker real R1 de inventario (cuerpo = sobre, `application/json`, `eventId`, módulo, `sequence` y `data` igual al payload guardado).
+  - **GREEN:** `mvn -B -ntp test` → `BUILD SUCCESS`, **283 pruebas** (16 + 8 + 8 + 131 + 27 + 93), 13 omitidas, sin Docker. `mvn -B -ntp -Ppostgres,rabbitmq test` → `BUILD SUCCESS`, **282 de 282** (antes de añadir la prueba de filas antiguas), ninguna omitida, sobre PostgreSQL y RabbitMQ reales.
+  - **Mutaciones temporales** (script en el área de trabajo, archivos restaurados, huellas iguales): módulo equivocado, sin tipo de contenido, `sequence` constante, sin tratar las filas antiguas y un sobre que pierde `causationId`. **Las cinco hacen caer la prueba esperada** (la última, la de `jcomercy-core`; al fallar ese módulo, Maven no llegó a ejecutar los de abajo).
+- **Afectaciones:**
+  - **Eventos de inventario:** cambia el cuerpo (de «el sobre propio guardado» a `EventEnvelope`), el tipo de contenido (de texto plano a JSON) y se añaden `producerModule`, `sequence`, `aggregateVersion`, `causationId` y `accountId` (estos tres nulos). No hay consumidores.
+  - **Datos:** V010 añade una columna y una secuencia; `payload` de las filas nuevas es solo el `data`.
+  - **Código:** `jcomercy-core` gana `EventEnvelope`; la firma del constructor de la entidad de inventario gana `sequence`.
+  - **Contrato:** nuevo archivo; sin cambios en el de company-management.
+- **Sin verificar:**
+  - La prueba de contrato de inventario no cubre `inventory.stock.movement` ni una entrada directa de tipo salida (`/stock/issues`); cubre `inventory.stock.issued` solo por la confirmación de una reserva.
+  - `accountId`, `aggregateVersion` y `causationId` salen nulos en inventario: queda pendiente que el JWT traiga la cuenta y que el puerto reciba la versión del agregado.
+  - Las pruebas de broker real con la prueba de filas antiguas se corren en el cierre (F7).
+- **Pendiente del plan:** F5 a F7. La migración de `uk_stock_identity` será la V011 de inventario.
+
 ---
 
 ## Errores
@@ -1046,11 +1072,13 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 
 ### ERR-026 · Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola
 
-- **Estado:** ABIERTO. Visto en la fase R4, por lectura del código; **requiere una decisión**. **El punto 3 se resolvió en BIT-041** (los eventos de almacén ahora son `inventory.warehouse.*` y llegan a la cola); medido con un broker real.
+- **Estado:** RESUELTO el 2026-11-06 (BIT-041 el punto 3; BIT-044 los puntos 1 y 2). Visto en la fase R4, por lectura del código. El punto 3 se midió con un broker real: los eventos de almacén ahora son `inventory.warehouse.*` y llegan a la cola.
 - **De qué trata:** (1) No existe un AsyncAPI de inventario. (2) Inventario publica un sobre propio (`eventId`, `eventType`, `schemaVersion`, `occurredAt`, `correlationId`, `companyId`, `branchId`, `actorUserId` y `data`) que no es el de company-management: le faltan `accountId`, `aggregateVersion`, `sequence` y `producerModule`. Los dos módulos publican en el mismo exchange, así que un consumidor tendría que entender dos formas. Además, el despachador de inventario no fija el tipo de contenido. (3) Los eventos `warehouse.created` y `warehouse.activated` se publican con una clave que no coincide con el patrón de la cola de inventario (`inventory.#`), de modo que no llegarían a ella. Esto último no se probó con el broker, y hoy no hay consumidores.
 - **Cuándo se manifiesta:** al conectar a un consumidor, no antes.
 - **Cómo mitigarlo:** por ahora, no consumir eventos de inventario sin revisar su forma real.
 - **Para resolverlo (decisión):** escribir el AsyncAPI de inventario, acordar un sobre común (por ejemplo, en `jcomercy-core`) y renombrar los eventos de almacén con el prefijo `inventory.`, o ampliar el patrón de la cola.
+- **Cómo se resolvió:** `asyncapi-inventory-v1.yaml` con su prueba de contrato; `EventEnvelope` en `jcomercy-core` usado por los dos despachadores, con `application/json`; eventos de almacén renombrados a `inventory.warehouse.*`. Verificado con la prueba de contrato de inventario, la de enrutamiento con broker real y mutaciones.
+- **Lo que no cubre:** inventario publica `accountId`, `aggregateVersion` y `causationId` como nulos hasta que tenga de dónde tomarlos; la prueba de contrato no genera `inventory.stock.movement`.
 
 ### ERR-027 · La cola de company-management, unida con `#`, recibía también los eventos de inventario
 

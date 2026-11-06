@@ -3,6 +3,7 @@ package com.jcode.jcomercy.companymanagement.infra.outbox;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jcode.jcomercy.companymanagement.infra.persistence.entity.OutboxEventJpaEntity;
+import com.jcode.jcomercy.core.events.EventEnvelope;
 import com.jcode.jcomercy.companymanagement.infra.persistence.repository.OutboxSpringDataRepository;
 import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.core.MessageDeliveryMode;
@@ -15,9 +16,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -93,22 +92,12 @@ public class OutboxDispatcher {
      * correlación (ERR-023).
      */
     private String envelopeOf(OutboxEventJpaEntity event) throws JsonProcessingException {
-        Map<String, Object> envelope = new LinkedHashMap<>();
-        envelope.put("eventId", event.getEventId());
-        envelope.put("eventType", event.getEventType());
-        envelope.put("schemaVersion", event.getSchemaVersion());
-        envelope.put("aggregateVersion", event.getAggregateVersion());
-        envelope.put("sequence", event.getSequence());
-        envelope.put("occurredAt", event.getOccurredAt().toString());
-        envelope.put("producerModule", event.getProducerModule());
-        envelope.put("correlationId", event.getCorrelationId());
-        envelope.put("causationId", event.getCausationId());
-        envelope.put("accountId", event.getAccountId());
-        envelope.put("companyId", event.getCompanyId());
-        envelope.put("branchId", event.getBranchId());
-        envelope.put("actorUserId", event.getActorUserId());
-        envelope.put("data", objectMapper.readTree(event.getPayloadJson()));
-        return objectMapper.writeValueAsString(envelope);
+        // El mismo armador que usa inventario (jcomercy-core): una sola forma de sobre en el exchange compartido (ERR-026).
+        EventEnvelope envelope = new EventEnvelope(event.getEventId(), event.getEventType(), event.getSchemaVersion(),
+            event.getAggregateVersion(), event.getSequence(), event.getOccurredAt(), event.getProducerModule(),
+            event.getCorrelationId(), event.getCausationId(), event.getAccountId(), event.getCompanyId(), event.getBranchId(),
+            event.getActorUserId(), objectMapper.readTree(event.getPayloadJson()));
+        return objectMapper.writeValueAsString(envelope.toBody());
     }
 
     /** El texto que queda guardado cuando falla un evento. Una espera agotada no trae mensaje, y sin él nadie sabría por qué el evento sigue pendiente. */

@@ -86,7 +86,7 @@ class InventoryOutboxRabbitMqIntegrationTest {
 
     @Test
     @DisplayName("Un evento del Outbox llega a la cola del broker real con su identificador, su clave, sus cabeceras y modo persistente")
-    void anOutboxEventReachesTheRealBrokerWithItsEnvelope() {
+    void anOutboxEventReachesTheRealBrokerWithItsEnvelope() throws Exception {
         String companyId = "cmp_rmq_" + UUID.randomUUID().toString().substring(0, 8);
         outboxPort.publish("inventory.stock.received", companyId, "br_rmq_1", "user_rmq", "cor_rmq_1",
             Map.of("productId", "prod-1", "quantity", 50));
@@ -116,7 +116,14 @@ class InventoryOutboxRabbitMqIntegrationTest {
             .containsEntry("branchId", "br_rmq_1")
             .containsEntry("actorUserId", "user_rmq")
             .containsEntry("correlationId", "cor_rmq_1");
-        assertThat(new String(message.getBody(), StandardCharsets.UTF_8)).isEqualTo(event.getPayload());
+        // El cuerpo es el sobre del contrato (ERR-026): el payload guardado va como «data», con el identificador y la secuencia.
+        assertThat(properties.getContentType()).isEqualTo("application/json");
+        com.fasterxml.jackson.databind.JsonNode body = new com.fasterxml.jackson.databind.ObjectMapper()
+            .readTree(new String(message.getBody(), StandardCharsets.UTF_8));
+        assertThat(body.path("eventId").asText()).isEqualTo(event.getEventId().toString());
+        assertThat(body.path("producerModule").asText()).isEqualTo("inventory");
+        assertThat(body.path("sequence").asLong()).isEqualTo(event.getSequence());
+        assertThat(body.path("data")).isEqualTo(new com.fasterxml.jackson.databind.ObjectMapper().readTree(event.getPayload()));
     }
 
     /**

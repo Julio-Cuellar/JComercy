@@ -51,6 +51,7 @@ class InventoryOutboxDispatcherFailureHandlingIntegrationTest {
 
     @Autowired private InventoryOutboxPort outboxPort;
     @Autowired private InventoryOutboxEventSpringDataRepository outbox;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private InventoryOutboxDispatcher dispatcher;
 
@@ -115,6 +116,35 @@ class InventoryOutboxDispatcherFailureHandlingIntegrationTest {
 
         assertThat(attempts).as("segundo ciclo: el evento 51 se intenta").contains(id(last));
         assertThat(reload(last).getStatus()).isEqualTo("PUBLISHED");
+    }
+
+    @Test
+    @DisplayName("Una fila anterior a la V010, que guardó el sobre completo, sale con su data y sin anidar el sobre")
+    void aRowThatStoredTheWholeEnvelopeStillGoesOutWithItsData() throws Exception {
+        UUID eventId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO inventory.outbox_event (id, event_id, event_type, schema_version, company_id, branch_id, actor_user_id,
+                correlation_id, payload, status, created_at, retry_count)
+            VALUES (?, ?, 'inventory.stock.received', '1.0', 'cmp_old', 'br_old', 'user_old', 'cor_old', ?, 'PENDING', ?, 0)
+            """, UUID.randomUUID(), eventId,
+            "{\"eventId\":\"" + eventId + "\",\"eventType\":\"inventory.stock.received\",\"data\":{\"quantity\":3}}",
+            java.sql.Timestamp.from(java.time.Instant.now()));
+        List<String> bodies = new CopyOnWriteArrayList<>();
+        RabbitTemplate template = mock(RabbitTemplate.class);
+        doAnswer(invocation -> {
+            bodies.add(invocation.getArgument(2));
+            CorrelationData correlation = invocation.getArgument(4);
+            correlation.getFuture().complete(new CorrelationData.Confirm(true, null));
+            return null;
+        }).when(template).convertAndSend(anyString(), anyString(), any(Object.class), any(MessagePostProcessor.class), any(CorrelationData.class));
+
+        new InventoryOutboxDispatcher(outbox, template, EXCHANGE).publishPending();
+
+        assertThat(bodies).hasSize(1);
+        var body = new com.fasterxml.jackson.databind.ObjectMapper().readTree(bodies.get(0));
+        assertThat(body.path("data").toString()).as("el data del evento antiguo, sin el sobre anidado").isEqualTo("{\"quantity\":3}");
+        assertThat(body.path("sequence").asLong(-1)).as("las filas anteriores a la V010 llevan sequence 0").isZero();
+        assertThat(body.path("eventId").asText()).isEqualTo(eventId.toString());
     }
 
     private List<InventoryOutboxEventJpaEntity> record(int count) {
