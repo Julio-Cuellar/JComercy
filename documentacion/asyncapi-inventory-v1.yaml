@@ -1,0 +1,336 @@
+asyncapi: 2.6.0
+info:
+  title: JComercy Inventory Async API
+  version: 1.0.0
+  description: Eventos de integración que publica el módulo Inventory de JComercy. Comparte el exchange y el sobre
+    `EventEnvelope` con Company Management; este contrato describe solo lo que Inventory emite.
+  contact:
+    name: Equipo de Arquitectura JComercy
+    email: architecture@jcomercy.com
+defaultContentType: application/json
+servers:
+  eventBus:
+    url: rabbitmq.jcomercy.internal:5672
+    protocol: amqp
+    description: Bus de eventos de integración interno entre módulos de JComercy. Los eventos se publican en el exchange
+      `jcomercy.events` (tipo topic, durable) con la clave de enrutamiento igual al tipo de evento, por ejemplo
+      `inventory.stock.issued`; el canal `events/inventory/stock/issued` es su nombre lógico. Todos los eventos de
+      Inventory empiezan por `inventory.` y llegan a la cola `jcomercy.events.inventory.pending`, enlazada con
+      `inventory.#`. El mensaje lleva el sobre `EventEnvelope` como cuerpo JSON (`application/json`), es persistente y
+      trae su `eventId` como `messageId` AMQP. Los eventos se entregan al menos una vez, así que quien los consuma debe
+      descartar los repetidos por ese identificador. El orden de entrega no está garantizado, porque un evento más nuevo
+      puede llegar antes que otro más antiguo cuyo envío se reintentó, así que quien necesite orden debe usar
+      `sequence` del sobre. Inventory todavía no conoce la cuenta ni la versión del agregado, y los publica como nulos.
+channels:
+  events/inventory/warehouse/created:
+    description: Se creó un almacén.
+    publish:
+      message:
+        $ref: '#/components/messages/WarehouseCreated'
+  events/inventory/warehouse/activated:
+    description: Se activó un almacén.
+    publish:
+      message:
+        $ref: '#/components/messages/WarehouseActivated'
+  events/inventory/stock/received:
+    description: Entró mercancía a una ubicación.
+    publish:
+      message:
+        $ref: '#/components/messages/StockReceived'
+  events/inventory/stock/issued:
+    description: Salió mercancía de una ubicación, por una salida directa o al confirmar una reserva.
+    publish:
+      message:
+        $ref: '#/components/messages/StockIssued'
+  events/inventory/stock/adjusted:
+    description: Se ajustó el saldo de una ubicación, hacia arriba o hacia abajo.
+    publish:
+      message:
+        $ref: '#/components/messages/StockAdjusted'
+  events/inventory/stock/movement:
+    description: Otro movimiento de inventario que no es entrada, salida ni ajuste.
+    publish:
+      message:
+        $ref: '#/components/messages/StockMovement'
+  events/inventory/reservation/created:
+    description: Se apartó mercancía para una referencia.
+    publish:
+      message:
+        $ref: '#/components/messages/ReservationCreated'
+  events/inventory/reservation/released:
+    description: Se liberó una reserva y la mercancía volvió a estar disponible.
+    publish:
+      message:
+        $ref: '#/components/messages/ReservationReleased'
+  events/inventory/reservation/committed:
+    description: Se confirmó una reserva y la mercancía salió del almacén.
+    publish:
+      message:
+        $ref: '#/components/messages/ReservationCommitted'
+  events/inventory/reservation/expired:
+    description: Una reserva venció su plazo y se liberó sola.
+    publish:
+      message:
+        $ref: '#/components/messages/ReservationExpired'
+components:
+  messages:
+    WarehouseCreated:
+      name: inventory.warehouse.created
+      title: Almacén creado
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/WarehouseCreatedData'
+    WarehouseActivated:
+      name: inventory.warehouse.activated
+      title: Almacén activado
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/WarehouseActivatedData'
+    StockReceived:
+      name: inventory.stock.received
+      title: Entrada de mercancía
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/StockMovementData'
+    StockIssued:
+      name: inventory.stock.issued
+      title: Salida de mercancía
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/StockMovementData'
+    StockAdjusted:
+      name: inventory.stock.adjusted
+      title: Ajuste de saldo
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/StockMovementData'
+    StockMovement:
+      name: inventory.stock.movement
+      title: Otro movimiento de inventario
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/StockMovementData'
+    ReservationCreated:
+      name: inventory.reservation.created
+      title: Reserva creada
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ReservationData'
+    ReservationReleased:
+      name: inventory.reservation.released
+      title: Reserva liberada
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ReservationData'
+    ReservationCommitted:
+      name: inventory.reservation.committed
+      title: Reserva confirmada
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ReservationData'
+    ReservationExpired:
+      name: inventory.reservation.expired
+      title: Reserva vencida
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ReservationData'
+  schemas:
+    EventEnvelope:
+      type: object
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - aggregateVersion
+      - sequence
+      - occurredAt
+      - producerModule
+      - correlationId
+      - causationId
+      - accountId
+      - companyId
+      - branchId
+      - actorUserId
+      - data
+      properties:
+        eventId:
+          type: string
+          example: 7b0c1f2e-5d4a-4a52-9d52-0a8f5f3a4c11
+        eventType:
+          type: string
+          example: inventory.stock.issued
+        schemaVersion:
+          type: string
+          example: '1.0'
+        aggregateVersion:
+          type: integer
+          nullable: true
+          description: Inventory todavía no publica la versión del agregado; siempre es nulo.
+        sequence:
+          type: integer
+          description: Número creciente que Inventory asigna al registrar cada evento, en el orden de registro. Puede tener huecos y no garantiza el orden de confirmación entre transacciones concurrentes; sirve para ordenar y para descartar repetidos.
+          example: 105
+        occurredAt:
+          type: string
+          format: date-time
+          example: '2026-11-06T20:00:00Z'
+        producerModule:
+          type: string
+          example: inventory
+        correlationId:
+          type: string
+          example: cor_3f9a1c2b
+        causationId:
+          type: string
+          nullable: true
+          description: Inventory todavía no publica la causa; siempre es nulo.
+        accountId:
+          type: string
+          nullable: true
+          description: Inventory no conoce la cuenta; siempre es nulo.
+        companyId:
+          type: string
+          example: com_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        branchId:
+          type: string
+          nullable: true
+          description: Nulo en los eventos de un almacén que pertenece a la empresa y no a una sucursal.
+          example: brn_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        actorUserId:
+          type: string
+          description: La persona que hizo la operación, o SYSTEM cuando la hizo el propio sistema (por ejemplo, un vencimiento).
+          example: usr_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        data:
+          type: object
+    WarehouseCreatedData:
+      type: object
+      properties:
+        warehouseId:
+          type: string
+        publicWarehouseId:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+    WarehouseActivatedData:
+      type: object
+      properties:
+        warehouseId:
+          type: string
+        publicWarehouseId:
+          type: string
+        status:
+          type: string
+          enum:
+          - DRAFT
+          - ACTIVE
+          - INACTIVE
+    StockMovementData:
+      type: object
+      properties:
+        movementId:
+          type: string
+        publicMovementId:
+          type: string
+        productId:
+          type: string
+        warehouseId:
+          type: string
+        locationId:
+          type: string
+        type:
+          type: string
+          description: Tipo de movimiento, por ejemplo RECEIPT, ISSUE, ADJUSTMENT_IN o ADJUSTMENT_OUT.
+        quantity:
+          type: number
+        onHand:
+          type: number
+          description: Existencia del saldo después del movimiento.
+        referenceType:
+          type: string
+          description: Solo en las salidas que vienen de confirmar una reserva.
+        referenceId:
+          type: string
+          description: Solo en las salidas que vienen de confirmar una reserva.
+    ReservationData:
+      type: object
+      properties:
+        reservationId:
+          type: string
+        publicReservationId:
+          type: string
+        productId:
+          type: string
+        warehouseId:
+          type: string
+        locationId:
+          type: string
+        stockBalanceId:
+          type: string
+        quantity:
+          type: number
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - COMMITTED
+          - RELEASED
+          - EXPIRED
+        referenceType:
+          type: string
+        referenceId:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+          description: Solo si la reserva tiene plazo.
+        available:
+          type: number
+          description: Existencia disponible del producto en el almacén después de la operación.
+        reason:
+          type: string
+          description: Solo en reservation.released, si se indicó un motivo.
+        movementId:
+          type: string
+          description: Solo en reservation.committed; el movimiento de salida que generó.

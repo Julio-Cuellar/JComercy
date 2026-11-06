@@ -456,8 +456,8 @@ flowchart LR
 
 | Evento | Productor | Consumidores previstos |
 |---|---|---|
-| `warehouse.created` | Inventory | Almacenes, auditoría |
-| `warehouse.activated` | Inventory | Almacenes, módulos contratados |
+| `inventory.warehouse.created` | Inventory | Almacenes, auditoría |
+| `inventory.warehouse.activated` | Inventory | Almacenes, módulos contratados |
 | `inventory.stock.received` | Inventory | Compras, contabilidad, reportes |
 | `inventory.stock.issued` | Inventory | Ventas, contabilidad, reportes |
 | `inventory.stock.adjusted` | Inventory | Auditoría, contabilidad |

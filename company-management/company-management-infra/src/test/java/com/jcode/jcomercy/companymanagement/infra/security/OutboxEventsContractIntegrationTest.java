@@ -28,6 +28,8 @@ import org.yaml.snakeyaml.Yaml;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -139,6 +141,15 @@ class OutboxEventsContractIntegrationTest {
         for (Sent one : sent) {
             check(soft, contract, envelope, one);
         }
+        // «sequence» crece con el orden en que se registran los eventos (ERR-024): no es una constante.
+        List<Long> sequences = outbox.findAll().stream()
+            .filter(event -> mine.contains(event.getEventId()))
+            .sorted(Comparator.comparing(OutboxEventJpaEntity::getCreatedAt))
+            .map(OutboxEventJpaEntity::getSequence)
+            .toList();
+        for (int i = 1; i < sequences.size(); i++) {
+            soft.assertThat(sequences.get(i)).as("sequence del evento %d frente al anterior (%s)", i, sequences).isGreaterThan(sequences.get(i - 1));
+        }
         soft.assertAll();
     }
 
@@ -163,11 +174,23 @@ class OutboxEventsContractIntegrationTest {
         JsonNode body = objectMapper.readTree(new String(sent.message().getBody(), StandardCharsets.UTF_8));
         Map<String, Object> envelopeProperties = (Map<String, Object>) envelope.get("properties");
         for (String field : (List<String>) envelope.get("required")) {
-            soft.assertThat(body.hasNonNull(field)).as("%s: campo obligatorio «%s» en el cuerpo", type, field).isTrue();
-            if (body.hasNonNull(field)) {
-                String expectedType = String.valueOf(((Map<String, Object>) envelopeProperties.get(field)).get("type"));
-                soft.assertThat(typeOf(body.get(field))).as("%s: tipo de «%s»", type, field).isEqualTo(expectedType);
+            Map<String, Object> fieldSchema = (Map<String, Object>) envelopeProperties.get(field);
+            soft.assertThat(body.has(field)).as("%s: campo obligatorio «%s» en el cuerpo", type, field).isTrue();
+            // Un campo obligatorio puede ser nulo solo si el contrato lo declara «nullable»: presente no basta (ERR-024).
+            if (Boolean.TRUE.equals(fieldSchema.get("nullable")) && body.has(field) && body.get(field).isNull()) {
+                continue;
             }
+            soft.assertThat(body.hasNonNull(field)).as("%s: «%s» no es nulo", type, field).isTrue();
+            if (body.hasNonNull(field)) {
+                soft.assertThat(typeOf(body.get(field))).as("%s: tipo de «%s»", type, field).isEqualTo(String.valueOf(fieldSchema.get("type")));
+                if (body.get(field).isTextual()) {
+                    soft.assertThat(body.get(field).asText()).as("%s: «%s» con contenido", type, field).isNotBlank();
+                }
+            }
+        }
+        // La cuenta es de quien emite el evento siempre; la empresa solo falta en los eventos de cuenta, donde aún no existe.
+        if (type.startsWith("account.")) {
+            soft.assertThat(body.path("companyId").isNull()).as("%s: sin empresa, companyId es nulo y no vacío", type).isTrue();
         }
         if (body.hasNonNull("occurredAt")) {
             soft.assertThat(isInstant(body.get("occurredAt").asText())).as("%s: occurredAt es una fecha y hora", type).isTrue();
@@ -187,6 +210,21 @@ class OutboxEventsContractIntegrationTest {
                 soft.assertThat((List<String>) status.get("enum")).as("%s: estados que declara el contrato", type)
                     .contains(body.path("data").get("status").asText());
             }
+        }
+
+        // Los nombres del data son los que el contrato declara para ese dato (ERR-025): uno que no declara no lo puede leer un consumidor.
+        if (dataSchema != null) {
+            Set<String> declared = ((Map<String, Object>) dataSchema.get("properties")).keySet();
+            List<String> undeclared = new ArrayList<>();
+            body.path("data").fieldNames().forEachRemaining(name -> {
+                if (!declared.contains(name)) {
+                    undeclared.add(name);
+                }
+            });
+            soft.assertThat(undeclared).as("%s: campos del data que el contrato no declara", type).isEmpty();
+        }
+        if (type.equals("branch.created")) {
+            soft.assertThat(body.path("data").path("isHeadOffice").isBoolean()).as("%s: isHeadOffice booleano en el data", type).isTrue();
         }
     }
 

@@ -75,7 +75,7 @@ class WarehouseEventActorIntegrationTest {
                 .toList();
 
         assertThat(own).extracting(InventoryOutboxEventJpaEntity::getEventType)
-                .contains("warehouse.created", "warehouse.activated");
+                .contains("inventory.warehouse.created", "inventory.warehouse.activated");
         assertThat(own).extracting(InventoryOutboxEventJpaEntity::getActorUserId)
                 .containsOnly(ACTOR);
     }

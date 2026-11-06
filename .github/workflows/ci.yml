@@ -74,3 +74,36 @@ jobs:
           name: surefire-reports-postgres
           path: '**/target/surefire-reports'
           if-no-files-found: ignore
+
+  # La suite sobre PostgreSQL y RabbitMQ reales, ambos en contenedores (Testcontainers). Las pruebas del Outbox contra un
+  # broker real se omiten en `test` y en `postgres`, así que sin este job un verde no dice nada sobre el broker: ni que el
+  # evento llega a su cola, ni qué pasa con el broker caído o colgado, ni los enlaces de las colas. Usa `-Ppostgres,rabbitmq`
+  # porque es la combinación de producción. Las pruebas de broker caído y colgado usan `rabbitmqctl stop_app` y
+  # `docker pause` del contenedor; se verificaron en local y en un runner de GitHub se verifican en la primera corrida.
+  rabbitmq:
+    name: rabbitmq
+    runs-on: ubuntu-latest
+    # Cada clase con broker real levanta su contenedor (35 a 45 s) y las de broker colgado esperan confirmaciones.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Versión de Docker
+        run: docker version --format 'servidor {{.Server.Version}}'
+
+      - name: Pruebas de todos los módulos sobre PostgreSQL y RabbitMQ
+        run: mvn -B -ntp -Ppostgres,rabbitmq test
+
+      - name: Subir los reportes de pruebas si algo falla
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: surefire-reports-rabbitmq
+          path: '**/target/surefire-reports'
+          if-no-files-found: ignore

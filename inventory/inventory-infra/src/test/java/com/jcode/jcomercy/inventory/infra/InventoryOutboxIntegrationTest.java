@@ -49,7 +49,7 @@ class InventoryOutboxIntegrationTest {
                 Map.of("productId", "prod-1", "quantity", 50)
         );
 
-        List<InventoryOutboxEventJpaEntity> pending = outboxRepository.findTop50ByStatusOrderByCreatedAtAsc("PENDING");
+        List<InventoryOutboxEventJpaEntity> pending = outboxRepository.findDispatchable(java.time.Instant.now(), org.springframework.data.domain.Pageable.ofSize(50));
         assertThat(pending).hasSize(1);
 
         InventoryOutboxEventJpaEntity event = pending.get(0);
@@ -59,8 +59,11 @@ class InventoryOutboxIntegrationTest {
         assertThat(event.getActorUserId()).isEqualTo(actorUserId);
         assertThat(event.getCorrelationId()).isEqualTo(correlationId);
         assertThat(event.getStatus()).isEqualTo("PENDING");
-        assertThat(event.getPayload()).contains("\"schemaVersion\":\"1.0\"");
-        assertThat(event.getPayload()).contains("\"productId\":\"prod-1\"");
+        // El sobre lo arma el despachador con las columnas; en la fila queda la versión del esquema, el número de secuencia
+        // y solo el data (ERR-026).
+        assertThat(event.getSchemaVersion()).isEqualTo("1.0");
+        assertThat(event.getSequence()).isPositive();
+        assertThat(event.getPayload()).contains("\"productId\":\"prod-1\"").doesNotContain("eventId");
     }
 
     @Test

@@ -29,6 +29,11 @@ spring:
     password: ${RABBITMQ_PASSWORD:guest}
     publisher-confirm-type: correlated
     publisher-returns: true
+    # Un broker colgado (conexión abierta que no responde) debe notarse en segundos y no en minutos (ERR-021):
+    # sin estos tiempos, el cliente tardaba unos 130 s en darla por muerta.
+    connection-timeout: 5s
+    requested-heartbeat: 10s
+    channel-rpc-timeout: 10s
 
 server:
   port: ${SERVER_PORT:8081}

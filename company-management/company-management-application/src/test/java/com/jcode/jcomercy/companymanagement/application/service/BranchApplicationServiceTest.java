@@ -59,14 +59,19 @@ class BranchApplicationServiceTest {
     }
 
     private static EventOutboxPort eventPort() {
-        return (eventType, schemaVersion, aggregateVersion, sequence, producerModule, correlationId,
+        return (eventType, schemaVersion, aggregateVersion, producerModule, correlationId,
                 causationId, accountId, companyId, branchId, actorUserId, dataPayload) -> { };
     }
 
     private static final class ExistingCompanyRepository implements CompanyRepositoryPort {
         @Override public com.jcode.jcomercy.companymanagement.domain.model.company.Company save(com.jcode.jcomercy.companymanagement.domain.model.company.Company company) { return company; }
         @Override public Optional<com.jcode.jcomercy.companymanagement.domain.model.company.Company> findById(UUID id) { return Optional.empty(); }
-        @Override public Optional<com.jcode.jcomercy.companymanagement.domain.model.company.Company> findByPublicCompanyId(String id) { return Optional.empty(); }
+        @Override public Optional<com.jcode.jcomercy.companymanagement.domain.model.company.Company> findByPublicCompanyId(String id) {
+            // El evento de la sucursal lleva la cuenta de su empresa: el repositorio falso devuelve una empresa de la cuenta «acc_owner».
+            return "com_owner".equals(id) ? Optional.of(com.jcode.jcomercy.companymanagement.domain.model.company.Company.create("acc_owner", "Legal", "Trade", "RFC123456789", "601",
+                java.time.LocalDate.of(2020, 1, 15), "5512345678", "empresa@example.com", "https://example.com", "https://example.com/logo.png",
+                new DomicilioFiscal("Reforma", "100", "10", "Juárez", "06600", "Cuauhtémoc", "Ciudad de México", "México"))) : Optional.empty();
+        }
         @Override public List<com.jcode.jcomercy.companymanagement.domain.model.company.Company> findByPublicAccountId(String id) { return List.of(); }
         @Override public boolean existsByPublicCompanyId(String id) { return "com_owner".equals(id); }
     }

@@ -84,15 +84,16 @@ public class BranchApplicationService {
             folioActual, moneda, responsableId, fechaApertura, fechaCierre);
         Branch saved = branchRepository.save(branch);
 
+        String publicAccountId = companyRepository.findByPublicCompanyId(publicCompanyId)
+            .orElseThrow(() -> new EntityNotFoundException("Company", publicCompanyId)).getPublicAccountId();
         outboxPort.recordEvent(
             "branch.created",
             "1.0",
             saved.getVersion(),
-            1L,
             "company_management",
             correlationId != null ? correlationId : "cor_" + UUID.randomUUID().toString().replace("-", ""),
             null,
-            "",
+            publicAccountId,
             publicCompanyId,
             saved.getPublicBranchId(),
             actorUserId,
@@ -102,8 +103,7 @@ public class BranchApplicationService {
                 Map.entry("code", saved.getCode()),
                 Map.entry("name", saved.getName()),
                 Map.entry("type", saved.getType().name()),
-                Map.entry("domicilio", saved.getDomicilio().getCalle()),
-                Map.entry("phoneNumber", saved.getPhoneNumber()),
+                Map.entry("isHeadOffice", saved.isHeadOffice()),
                 Map.entry("status", saved.getStatus().name())
             )
         );
@@ -134,6 +134,8 @@ public class BranchApplicationService {
         Branch branch = branchRepository.findByPublicCompanyIdAndPublicBranchId(publicCompanyId, publicBranchId)
             .orElseThrow(() -> new EntityNotFoundException("Branch", publicBranchId));
 
+        String publicAccountId = companyRepository.findByPublicCompanyId(publicCompanyId)
+            .orElseThrow(() -> new EntityNotFoundException("Company", publicCompanyId)).getPublicAccountId();
         branch.activate();
         Branch saved = branchRepository.save(branch);
 
@@ -141,11 +143,10 @@ public class BranchApplicationService {
             "branch.activated",
             "1.0",
             saved.getVersion(),
-            2L,
             "company_management",
             correlationId != null ? correlationId : "cor_" + UUID.randomUUID().toString().replace("-", ""),
             null,
-            "",
+            publicAccountId,
             saved.getPublicCompanyId(),
             saved.getPublicBranchId(),
             actorUserId,
