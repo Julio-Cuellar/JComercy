@@ -53,6 +53,7 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-026 | Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola | RESUELTO (BIT-041 el punto 3; BIT-044 los puntos 1 y 2) |
 | ERR-027 | La cola de company-management, unida con `#`, recibía también los eventos de inventario | RESUELTO (BIT-041) |
 | ERR-028 | La primera ejecución del despachador programado resucita filas del Outbox que una prueba acaba de borrar | RESUELTO (BIT-043) |
+| ERR-029 | La recuperación de contraseña genera su código pero no lo entrega por ningún medio | ABIERTO |
 
 ---
 
@@ -909,6 +910,15 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Sigue pendiente:** la versión de PostgreSQL de producción (V011 exige 15 o más), marcar `rabbitmq` como verificación requerida (decisión de quien administra el repositorio) y el resto de lo anotado en BIT-047.
 - **Sin tocar, por si son tuyas:** las ramas locales `contracts-v1`, `feat/pruebas-postgres`, `feat/pruebas-rabbitmq` y `feat/token-por-empresa` siguen existiendo; no se comprobó si están fusionadas.
 
+### BIT-049 · Plan del frente de roles y membresías con alta de empleados por RH (M0)
+
+- **Qué se hizo:** se escribió el plan de ocho etapas (M0 a M8) del frente de roles y membresías, con cuatro diagramas (dos de secuencia, uno de flujo y uno de estados) y las decisiones tomadas, en `documentacion/diagramas-roles-membresias.md`. Se registró ERR-029. No cambia código.
+- **Cómo se hizo:** lectura del contrato OpenAPI (secciones 33 a 39), de `CompanyMembership`, `Role`, `Account`, `AuthController`, `CompanyAccessService` y las migraciones `V003`, `V006`, `V009` y `V018`.
+  - **Hallazgo:** el inicio de sesión busca la cuenta por el correo de la persona dueña (`findByOwnerEmail`) y una `Account` exige una persona dueña con RFC, único en todo el sistema (V018). Un empleado necesita cuenta para iniciar sesión, así que al activar se crea una con los datos que RH registró.
+  - **Hallazgo:** nada en el código crea membresías (`CompanyMembership.create` solo se usa en el dominio) y no hay envío de correo en ningún módulo.
+- **Afectaciones:** ninguna en código, contratos ni datos. Fija el diseño de M1 a M8.
+- **Sin verificar:** si la persona dueña exige campos que RH no registra (fecha de nacimiento, teléfono, domicilio); lo dirá la primera prueba de M3.
+
 ---
 
 ## Errores
@@ -1171,3 +1181,12 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cómo mitigarlo:** correr la clase aislada.
 - **Cómo se resolvió:** el despachador de company-management lee `outbox.publisher.initial-delay-ms` (0 por defecto, igual que antes) y el `application.properties` de pruebas lo pone en una hora. Dos corridas completas seguidas pasaron; dos pasadas no demuestran que no vuelva a aparecer.
 - **Lo que no cubre:** el despachador de inventario ya está apagado en las pruebas (`outbox.publisher.enabled=false`), así que no tiene el problema.
+
+### ERR-029 · La recuperación de contraseña genera su código pero no lo entrega por ningún medio
+
+- **Estado:** ABIERTO. Visto al leer `AuthController` para el plan de BIT-049.
+- **De qué trata:** `POST /api/v1/auth/password-recovery` crea un código aleatorio, guarda solo su huella y responde 202; el código original no se devuelve, no se envía y no se escribe en ningún registro. El módulo no tiene ningún envío de correo. Quien pide recuperar su contraseña nunca recibe el código que necesita para confirmarla.
+- **Cuándo se manifiesta:** siempre que una persona real intenta recuperar su contraseña. Las pruebas no lo ven porque pueden leer la huella de la base.
+- **Cómo mitigarlo:** mientras no se resuelva, un cambio de contraseña solo puede hacerse con acceso directo a la base de datos.
+- **Sin verificar:** se concluyó leyendo el código y buscando clases de correo; no se probó con un cliente real.
+- **Cómo se resolverá:** M4 de BIT-049 introduce un puerto de correo y la recuperación pasa a usarlo.
