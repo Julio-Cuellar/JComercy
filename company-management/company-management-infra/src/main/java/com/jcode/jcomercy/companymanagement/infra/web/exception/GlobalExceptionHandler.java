@@ -53,6 +53,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
     }
 
+    @ExceptionHandler(com.jcode.jcomercy.companymanagement.domain.exception.InvalidRequestException.class)
+    public ResponseEntity<ProblemDetails> handleInvalidRequest(
+        com.jcode.jcomercy.companymanagement.domain.exception.InvalidRequestException ex, HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/validation",
+            "Datos Inválidos",
+            HttpStatus.BAD_REQUEST.value(),
+            ex.getMessage(),
+            request.getRequestURI(),
+            "VALIDATION_ERROR"
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
     @ExceptionHandler(DomainRuleViolationException.class)
     public ResponseEntity<ProblemDetails> handleUnprocessable(DomainRuleViolationException ex, HttpServletRequest request) {
         ProblemDetails problem = ProblemDetails.of(

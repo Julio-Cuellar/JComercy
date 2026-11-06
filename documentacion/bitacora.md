@@ -919,6 +919,20 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Afectaciones:** ninguna en código, contratos ni datos. Fija el diseño de M1 a M8.
 - **Sin verificar:** si la persona dueña exige campos que RH no registra (fecha de nacimiento, teléfono, domicilio); lo dirá la primera prueba de M3.
 
+### BIT-050 · Ver membresías, roles y mis permisos efectivos (M1)
+
+- **Qué se hizo:** cinco rutas de lectura bajo `/api/v1/companies/{publicCompanyId}`: `GET /memberships` (filtros `status`, `branchId`, `roleId`; paginación `limit` y `after`), `GET /memberships/{id}`, `GET /memberships/me/effective-permissions`, `GET /roles` (filtros `type` y `status`) y `GET /roles/{id}`. Los puertos de membresías y roles ya existían, pero no tenían adaptador.
+- **Cómo se hizo:**
+  - **RED:** `MembershipsReadIntegrationTest` (7 pruebas) contra el código sin rutas → 7 de 7 fallan con 404, la causa buscada.
+  - **GREEN:** misma clase → 7 de 7, más `RequiredPermissionsContractTest` (2) y `OpenApiContractTest` (2), que comparan cada ruta con su `x-required-permission` del contrato.
+  - **Código:** adaptadores `JdbcMembershipRepositoryAdapter` y `JdbcRoleRepositoryAdapter` (SQL directo, como `EffectivePermissions`), servicios `MembershipApplicationService` y `RoleApplicationService`, controladores `MembershipController` y `RoleController`, DTO nuevos (`PageDto`, `MembershipSummaryDto`, `MembershipDetailDto`, `RoleViewDto`, `EffectivePermissionsDto`), `InvalidRequestException` con su manejador (400), y el método `findAssignmentsByPublicCompanyId` en el puerto de membresías. Los roles de una membresía se guardan por nombre y la API los publica por identificador.
+  - **Migración `V026`:** los tres roles del sistema reciben `effective_permissions.read_own`; sin eso, ningún rol salvo la persona dueña podía consultar sus propios permisos.
+  - **Mutaciones temporales (script, 4), todas detectadas y revertidas, con la huella de cada archivo igual a la de antes:** M1 los roles incluyen los de otras empresas → cae 1; M2 el detalle no comprueba la empresa → cae 1; M3 la página nunca da cursor → cae 1; M4 un rol de otra empresa se puede consultar → cae 1.
+  - **Suite de company-management:** 138 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Incidente mío:** la primera corrida completa falló en dos pruebas. Una era `CompanyAccessIntegrationTest`, que esperaba exactamente dos permisos para un miembro STAFF; ahora recibe también `effective_permissions.read_own` y la expectativa se actualizó. La otra era un efecto de mi script de mutaciones: al restaurar el archivo su fecha quedó anterior a la clase compilada y Maven conservó la clase mutada. El script ahora actualiza la fecha al restaurar y la segunda corrida completa pasó.
+- **Afectaciones:** los roles `COMPANY_ADMIN`, `BRANCH_MANAGER` y `STAFF` tienen un permiso más, y el token de un miembro lo lleva. El contrato OpenAPI ya declaraba estas rutas; no cambió.
+- **Sin verificar:** los adaptadores solo corrieron sobre H2 (la suite con `-Ppostgres` se corre en M8). El contrato define `permissionsVersion` y la versión de los permisos no existe, así que no se publica. La consulta de permisos de otra persona (`GET /effective-permissions/{userId}`) no se hizo. El filtro por rol se aplica en memoria, no en SQL: sirve para el tamaño de un equipo de empresa pequeña, no para decenas de miles de membresías.
+
 ---
 
 ## Errores

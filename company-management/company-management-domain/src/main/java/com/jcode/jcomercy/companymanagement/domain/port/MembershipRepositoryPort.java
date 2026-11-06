@@ -17,5 +17,6 @@ public interface MembershipRepositoryPort {
     BranchAssignment saveAssignment(BranchAssignment assignment);
     Optional<BranchAssignment> findAssignmentByPublicId(String publicAssignmentId);
     List<BranchAssignment> findAssignmentsByPublicMembershipId(String publicMembershipId);
+    List<BranchAssignment> findAssignmentsByPublicCompanyId(String publicCompanyId);
     boolean existsAssignment(String publicMembershipId, String publicBranchId);
 }
