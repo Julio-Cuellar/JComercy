@@ -12,7 +12,6 @@ import com.jcode.jcomercy.sales.domain.port.SaleRepositoryPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Clock;
 import java.util.UUID;
 
 /**
@@ -29,12 +28,12 @@ public class SaleCancellationService {
 
     private final SaleRepositoryPort sales;
     private final InventoryGatewayPort inventory;
-    private final Clock clock;
+    private final SaleCancellationRecorder recorder;
 
-    public SaleCancellationService(SaleRepositoryPort sales, InventoryGatewayPort inventory, Clock clock) {
+    public SaleCancellationService(SaleRepositoryPort sales, InventoryGatewayPort inventory, SaleCancellationRecorder recorder) {
         this.sales = sales;
         this.inventory = inventory;
-        this.clock = clock;
+        this.recorder = recorder;
     }
 
     public Sale cancel(CancelCommand command) {
@@ -51,10 +50,7 @@ public class SaleCancellationService {
             case PENDING -> releaseAll(sale, command);
             case COMPLETED -> returnAll(sale, command);
         }
-        Sale cancelled = sales.save(sale.cancel(command.reason(), clock.instant()));
-        log.info("Venta cancelada saleId={} folio={} estadoAnterior={} actor={}", cancelled.id(), cancelled.folio(),
-                sale.status(), command.actorUserId());
-        return cancelled;
+        return recorder.record(sale, command.reason(), command.actorUserId(), command.caller().correlationId());
     }
 
     private void releaseAll(Sale sale, CancelCommand command) {

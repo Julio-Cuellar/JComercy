@@ -40,6 +40,7 @@ class SaleCancellationServiceTest {
     private static final InventoryGatewayPort.Caller CALLER = new InventoryGatewayPort.Caller("Bearer token-del-gerente", "cor_test");
 
     private InMemorySalesPorts.Sales sales;
+    private InMemorySalesPorts.Events events;
     private FakeInventory inventory;
     private SaleCheckoutService checkout;
     private SaleCancellationService service;
@@ -48,6 +49,7 @@ class SaleCancellationServiceTest {
     void service() {
         var prices = new InMemorySalesPorts.Prices();
         sales = new InMemorySalesPorts.Sales();
+        events = new InMemorySalesPorts.Events();
         inventory = new FakeInventory();
         inventory.product(CAFE, "CAFE", "Café", "NONE", "ACTIVE", "10");
         inventory.product(GALLETA, "GALLETA", "Galleta", "NONE", "ACTIVE", "5");
@@ -55,8 +57,50 @@ class SaleCancellationServiceTest {
         prices.save(new ProductPrice("cmp_1", GALLETA, new BigDecimal("10.00"), "MXN", NOW, "usr_gerente"));
         Clock sellClock = Clock.fixed(NOW, ZoneOffset.UTC);
         checkout = new SaleCheckoutService(prices, sales, inventory,
-            new SaleCompletionService(sales, new InMemorySalesPorts.Folios(), sellClock), sellClock, Duration.ofMinutes(15));
-        service = new SaleCancellationService(sales, inventory, Clock.fixed(LATER, ZoneOffset.UTC));
+            new SaleCompletionService(sales, new InMemorySalesPorts.Folios(), events, sellClock), sellClock, Duration.ofMinutes(15));
+        service = new SaleCancellationService(sales, inventory,
+            new SaleCancellationRecorder(sales, events, Clock.fixed(LATER, ZoneOffset.UTC)));
+    }
+
+    @Test
+    @DisplayName("Cancelar una venta completada deja un evento de venta cancelada, con quien la canceló y el seguimiento")
+    void cancellingACompletedSaleEmitsACancelledEvent() {
+        Sale sale = completedSale("k-1");
+        events.emitted.clear();
+
+        Sale cancelled = service.cancel(cancel(sale, "El cliente devolvió todo"));
+
+        assertThat(events.emitted).hasSize(1);
+        var event = events.emitted.get(0);
+        assertThat(event.type()).isEqualTo("cancelled");
+        assertThat(event.sale()).isEqualTo(cancelled);
+        assertThat(event.actorUserId()).isEqualTo("usr_gerente");
+        assertThat(event.correlationId()).isEqualTo("cor_test");
+    }
+
+    @Test
+    @DisplayName("Cancelar una venta pendiente no emite nada: nunca se completó")
+    void cancellingAPendingSaleEmitsNothing() {
+        service.cancel(cancel(pendingSale(), "Se abandonó"));
+
+        assertThat(events.emitted).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Si la cancelación se rechaza o inventario falla a medias, no sale ningún evento hasta que termina")
+    void noEventComesOutUntilTheCancellationFinishes() {
+        Sale sale = completedSale("k-1");
+        events.emitted.clear();
+        inventory.failReturnsAfter(1);
+        assertThatThrownBy(() -> service.cancel(cancel(sale, "x"))).isInstanceOf(InventoryUnavailableException.class);
+        assertThat(events.emitted).isEmpty();
+
+        inventory.healReturns();
+        service.cancel(cancel(sale, "x"));
+
+        assertThat(events.emitted).hasSize(1);
+        assertThatThrownBy(() -> service.cancel(cancel(sale, "x"))).isInstanceOf(SalesApplicationException.class);
+        assertThat(events.emitted).hasSize(1);
     }
 
     @Test

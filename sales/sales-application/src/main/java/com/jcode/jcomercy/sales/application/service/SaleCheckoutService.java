@@ -129,7 +129,7 @@ public class SaleCheckoutService {
             }
         }
         commitAll(current, command);
-        return completion.complete(current);
+        return completion.complete(current, command.caller().correlationId());
     }
 
     private Built build(CheckoutCommand command) {

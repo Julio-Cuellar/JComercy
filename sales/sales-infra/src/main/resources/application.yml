@@ -12,6 +12,25 @@ spring:
     schemas: sales
     default-schema: sales
     locations: classpath:db/migration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    # RabbitMQ expone 5673 en el host; 5672 es el puerto interno del contenedor.
+    port: ${RABBITMQ_PORT:5673}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    # Un broker colgado (conexión abierta que no responde) debe notarse en segundos y no en minutos (ERR-021).
+    connection-timeout: 5s
+    requested-heartbeat: 10s
+    channel-rpc-timeout: 10s
+
+outbox:
+  publisher:
+    fixed-delay-ms: ${OUTBOX_PUBLISHER_FIXED_DELAY_MS:5000}
+  rabbit:
+    exchange: ${OUTBOX_RABBIT_EXCHANGE:jcomercy.events}
+    sales-staging-queue: ${OUTBOX_RABBIT_SALES_STAGING_QUEUE:jcomercy.events.sales.pending}
 
 sales:
   inventory:

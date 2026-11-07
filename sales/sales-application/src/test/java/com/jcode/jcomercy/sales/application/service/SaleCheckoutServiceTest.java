@@ -43,6 +43,7 @@ class SaleCheckoutServiceTest {
     private InMemorySalesPorts.Prices prices;
     private InMemorySalesPorts.Sales sales;
     private InMemorySalesPorts.Folios folios;
+    private InMemorySalesPorts.Events events;
     private FakeInventory inventory;
     private SaleCheckoutService service;
 
@@ -51,6 +52,7 @@ class SaleCheckoutServiceTest {
         prices = new InMemorySalesPorts.Prices();
         sales = new InMemorySalesPorts.Sales();
         folios = new InMemorySalesPorts.Folios();
+        events = new InMemorySalesPorts.Events();
         inventory = new FakeInventory();
         inventory.product(CAFE, "CAFE", "Café", "NONE", "ACTIVE", "10");
         inventory.product(GALLETA, "GALLETA", "Galleta", "NONE", "ACTIVE", "5");
@@ -58,8 +60,55 @@ class SaleCheckoutServiceTest {
         prices.save(new ProductPrice("cmp_1", CAFE, new BigDecimal("45.50"), "MXN", NOW, "usr_gerente"));
         prices.save(new ProductPrice("cmp_1", GALLETA, new BigDecimal("10.00"), "MXN", NOW, "usr_gerente"));
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-        service = new SaleCheckoutService(prices, sales, inventory, new SaleCompletionService(sales, folios, clock), clock,
+        service = new SaleCheckoutService(prices, sales, inventory, new SaleCompletionService(sales, folios, events, clock), clock,
             Duration.ofMinutes(15));
+    }
+
+    @Test
+    @DisplayName("Una venta completada deja un solo evento de venta completada, con quien vendió y el seguimiento de la petición")
+    void aCompletedSaleEmitsOneCompletedEvent() {
+        var sale = service.checkout(command("k-1", List.of(line(CAFE, "2")), List.of(cash("91.00")))).sale();
+
+        assertThat(events.emitted).hasSize(1);
+        var event = events.emitted.get(0);
+        assertThat(event.type()).isEqualTo("completed");
+        assertThat(event.sale()).isEqualTo(sale);
+        assertThat(event.actorUserId()).isEqualTo("usr_cajera");
+        assertThat(event.correlationId()).isEqualTo("cor_test");
+    }
+
+    @Test
+    @DisplayName("Repetir la llave de una venta cobrada no vuelve a emitir el evento")
+    void aReplayDoesNotEmitTheEventAgain() {
+        var command = command("k-1", List.of(line(CAFE, "1")), List.of(cash("50.00")));
+        service.checkout(command);
+
+        service.checkout(command);
+
+        assertThat(events.emitted).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Una venta que se cancela antes de completarse no emite nada: nadie fue avisado de ella")
+    void aSaleCancelledBeforeCompletingEmitsNothing() {
+        assertThatThrownBy(() -> service.checkout(command("k-1", List.of(line(GALLETA, "9")), List.of(cash("500.00")))))
+            .isInstanceOf(SalesApplicationException.class);
+
+        assertThat(events.emitted).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Mientras la venta está confirmándose no hay evento; al terminarse con la misma llave sale una sola vez")
+    void theEventComesOutOnlyWhenTheSaleIsFinished() {
+        inventory.failCommitsAfter(0);
+        var command = command("k-1", List.of(line(CAFE, "1")), List.of(cash("50.00")));
+        assertThatThrownBy(() -> service.checkout(command)).isInstanceOf(SaleConfirmationPendingException.class);
+        assertThat(events.emitted).isEmpty();
+
+        inventory.healCommits();
+        service.checkout(command);
+
+        assertThat(events.emitted).hasSize(1);
     }
 
     @Test

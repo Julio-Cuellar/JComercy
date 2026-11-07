@@ -1,7 +1,9 @@
 package com.jcode.jcomercy.sales.infra.config;
 
 import com.jcode.jcomercy.sales.application.port.InventoryGatewayPort;
+import com.jcode.jcomercy.sales.application.port.SaleEventsPort;
 import com.jcode.jcomercy.sales.application.service.PriceApplicationService;
+import com.jcode.jcomercy.sales.application.service.SaleCancellationRecorder;
 import com.jcode.jcomercy.sales.application.service.SaleCancellationService;
 import com.jcode.jcomercy.sales.application.service.SaleCheckoutService;
 import com.jcode.jcomercy.sales.application.service.SaleCompletionService;
@@ -45,13 +47,20 @@ public class SalesSpringConfig {
     }
 
     @Bean
-    public SaleCompletionService saleCompletionService(SaleRepositoryPort sales, FolioGeneratorPort folios, Clock clock) {
-        return new SaleCompletionService(sales, folios, clock);
+    public SaleCompletionService saleCompletionService(SaleRepositoryPort sales, FolioGeneratorPort folios, SaleEventsPort events,
+                                                       Clock clock) {
+        return new SaleCompletionService(sales, folios, events, clock);
     }
 
     @Bean
-    public SaleCancellationService saleCancellationService(SaleRepositoryPort sales, InventoryGatewayPort inventory, Clock clock) {
-        return new SaleCancellationService(sales, inventory, clock);
+    public SaleCancellationRecorder saleCancellationRecorder(SaleRepositoryPort sales, SaleEventsPort events, Clock clock) {
+        return new SaleCancellationRecorder(sales, events, clock);
+    }
+
+    @Bean
+    public SaleCancellationService saleCancellationService(SaleRepositoryPort sales, InventoryGatewayPort inventory,
+                                                           SaleCancellationRecorder recorder) {
+        return new SaleCancellationService(sales, inventory, recorder);
     }
 
     /** El plazo con que se aparta el stock de una venta: si se abandona, inventario lo libera solo al vencer. */

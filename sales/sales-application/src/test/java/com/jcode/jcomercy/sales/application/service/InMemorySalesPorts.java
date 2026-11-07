@@ -1,5 +1,6 @@
 package com.jcode.jcomercy.sales.application.service;
 
+import com.jcode.jcomercy.sales.application.port.SaleEventsPort;
 import com.jcode.jcomercy.sales.domain.exception.DuplicateSaleException;
 import com.jcode.jcomercy.sales.domain.model.price.ProductPrice;
 import com.jcode.jcomercy.sales.domain.model.sale.Sale;
@@ -40,6 +41,23 @@ final class InMemorySalesPorts {
         @Override
         public List<ProductPrice> findByCompanyIdAndProductIds(String companyId, Collection<UUID> productIds) {
             return findByCompanyId(companyId).stream().filter(price -> productIds.contains(price.productId())).toList();
+        }
+    }
+
+    /** Los eventos que Ventas habría dejado en el Outbox: qué tipo, de qué venta, quién y con qué seguimiento. */
+    static final class Events implements SaleEventsPort {
+        record Emitted(String type, Sale sale, String actorUserId, String correlationId) { }
+
+        final List<Emitted> emitted = new ArrayList<>();
+
+        @Override
+        public void completed(Sale sale, String correlationId) {
+            emitted.add(new Emitted("completed", sale, sale.actorUserId(), correlationId));
+        }
+
+        @Override
+        public void cancelled(Sale sale, String actorUserId, String correlationId) {
+            emitted.add(new Emitted("cancelled", sale, actorUserId, correlationId));
         }
     }
 

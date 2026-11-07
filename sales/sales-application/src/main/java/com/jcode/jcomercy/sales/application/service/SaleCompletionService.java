@@ -1,5 +1,6 @@
 package com.jcode.jcomercy.sales.application.service;
 
+import com.jcode.jcomercy.sales.application.port.SaleEventsPort;
 import com.jcode.jcomercy.sales.domain.model.sale.Sale;
 import com.jcode.jcomercy.sales.domain.port.FolioGeneratorPort;
 import com.jcode.jcomercy.sales.domain.port.SaleRepositoryPort;
@@ -19,18 +20,22 @@ public class SaleCompletionService {
 
     private final SaleRepositoryPort sales;
     private final FolioGeneratorPort folios;
+    private final SaleEventsPort events;
     private final Clock clock;
 
-    public SaleCompletionService(SaleRepositoryPort sales, FolioGeneratorPort folios, Clock clock) {
+    public SaleCompletionService(SaleRepositoryPort sales, FolioGeneratorPort folios, SaleEventsPort events, Clock clock) {
         this.sales = sales;
         this.folios = folios;
+        this.events = events;
         this.clock = clock;
     }
 
+    /** El folio, la venta completada y su aviso van juntos: si cualquiera falla, ninguno queda. */
     @Transactional
-    public Sale complete(Sale confirming) {
+    public Sale complete(Sale confirming, String correlationId) {
         String folio = folios.next(confirming.companyId(), confirming.branchId());
         Sale done = sales.save(confirming.complete(folio, clock.instant()));
+        events.completed(done, correlationId);
         log.info("Venta completada saleId={} folio={} branchId={} total={}", done.id(), done.folio(), done.branchId(), done.total());
         return done;
     }

@@ -40,6 +40,10 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
         <dependency>
@@ -94,6 +98,12 @@
             <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Solo para el perfil rabbitmq: un RabbitMQ real en un contenedor. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>rabbitmq</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -115,6 +125,23 @@
                                     <targetPath>static</targetPath>
                                     <includes>
                                         <include>openapi-sales-v1.yaml</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                    <!-- El contrato de eventos solo lo leen las pruebas: va al classpath de pruebas y no a la aplicación. -->
+                    <execution>
+                        <id>copy-asyncapi-contract-for-tests</id>
+                        <phase>process-test-resources</phase>
+                        <goals><goal>copy-resources</goal></goals>
+                        <configuration>
+                            <outputDirectory>${project.build.testOutputDirectory}</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/../../documentacion</directory>
+                                    <includes>
+                                        <include>asyncapi-sales-v1.yaml</include>
                                     </includes>
                                 </resource>
                             </resources>
