@@ -55,7 +55,9 @@ jcomercy:
   mail:
     # disabled: sin servidor de correo, el envío falla a la vista (por defecto).
     # smtp: entrega al servidor de spring.mail.*; sin servidor, el sistema no arranca.
-    # recording: guarda los correos en memoria, solo para pruebas y trabajo local; en producción nadie recibiría nada.
+    # console: imprime el correo completo (con sus enlaces y códigos) en la consola; para trabajo local mientras no hay
+    #   servidor de correo. No arranca con el perfil prod ni production. Para probar a mano: JCOMERCY_MAIL_MODE=console.
+    # recording: guarda los correos en memoria, solo para pruebas automáticas; en producción nadie recibiría nada.
     mode: ${JCOMERCY_MAIL_MODE:disabled}
     from: ${JCOMERCY_MAIL_FROM:no-responder@jcomercy.com}
 
