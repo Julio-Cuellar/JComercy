@@ -15,6 +15,12 @@ public interface StockBalanceRepositoryPort {
     List<StockBalance> findAllocatableForUpdate(String companyId, UUID warehouseId, UUID productId,
                                                 InventoryStatus inventoryStatus, UUID locationId);
     Optional<StockBalance> findByIdForUpdate(UUID id);
+    /**
+     * El id del saldo con esa identidad, sin leer el saldo ni bloquearlo. Sirve para decidir en qué orden bloquear varios
+     * saldos: leer primero el saldo dejaría una copia vieja si otra transacción lo cambia mientras se espera el bloqueo.
+     */
+    Optional<UUID> findIdByIdentity(UUID warehouseId, UUID locationId, UUID productId, String lotId, String serialNumber,
+                                    InventoryStatus inventoryStatus);
     boolean existsByCompanyIdAndSerialNumber(String companyId, String serialNumber);
     List<StockBalance> findByCompanyId(String companyId);
     List<StockBalance> findByCompanyIdAndProductId(String companyId, UUID productId);

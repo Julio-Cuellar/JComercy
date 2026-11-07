@@ -16,6 +16,10 @@ public class InventoryMovementRepositoryAdapter implements InventoryMovementRepo
     @Override public InventoryMovement save(InventoryMovement value) { return toDomain(repository.save(toEntity(value))); }
     @Override public List<InventoryMovement> findByCompanyId(String companyId) { return repository.findByCompanyIdOrderByOccurredAtDesc(companyId).stream().map(this::toDomain).toList(); }
     @Override public List<InventoryMovement> findByCompanyIdAndProductId(String companyId, UUID productId) { return repository.findByCompanyIdAndProductIdOrderByOccurredAtDesc(companyId, productId).stream().map(this::toDomain).toList(); }
+    @Override public List<InventoryMovement> findByCompanyIdAndReference(String companyId, String referenceType, String referenceId) {
+        return repository.findByCompanyIdAndReferenceTypeAndReferenceIdOrderByOccurredAtAsc(companyId, referenceType, referenceId)
+                .stream().map(this::toDomain).toList();
+    }
     private InventoryMovementJpaEntity toEntity(InventoryMovement value) {
         return new InventoryMovementJpaEntity(value.id(), value.publicMovementId(), value.companyId(), value.branchId(),
                 value.warehouseId(), value.locationId(), value.productId(), value.type(), value.quantity(), value.unitCode(),

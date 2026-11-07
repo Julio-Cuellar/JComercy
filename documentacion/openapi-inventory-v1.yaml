@@ -304,6 +304,30 @@ paths:
         '201':
           description: Salida registrada exitosamente
         '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/companies/{companyId}/branches/{branchId}/stock/returns:
+    post:
+      tags: [Stock]
+      summary: Devolver al saldo lo que salió con una referencia
+      description: >-
+        Regresa la mercancía de todas las salidas con esa referencia (por ejemplo una venta cancelada) al saldo de donde
+        salió, como disponible y con su costo original, y registra un movimiento RETURN por cada salida. Una referencia
+        solo se devuelve una vez. Sube la existencia, así que pide `inventory.stock.write`: el permiso
+        `inventory.reservations.write` no basta. La referencia se compara sin importar mayúsculas.
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReturnStockRequest' }
+      responses:
+        '201':
+          description: Devolución registrada; `returned` trae un movimiento RETURN por cada salida devuelta
+        '404':
+          description: La empresa no tiene salidas con esa referencia
+        '409': { $ref: '#/components/responses/Conflict' }
   /api/v1/companies/{companyId}/branches/{branchId}/stock/adjustments:
     post:
       tags: [Stock]
@@ -525,6 +549,13 @@ components:
         inventoryStatus: { type: string, enum: [AVAILABLE, QUARANTINED, DAMAGED] }
         referenceType: { type: string }
         referenceId: { type: string }
+    ReturnStockRequest:
+      type: object
+      required: [referenceType, referenceId]
+      properties:
+        referenceType: { type: string, description: Tipo de la referencia de la salida, por ejemplo SALE }
+        referenceId: { type: string, description: Identificador de la referencia de la salida }
+        reason: { type: string, description: Motivo de la devolución }
     IssueStockRequest:
       type: object
       required: [warehouseId, locationId, productId, quantity, unitCode]

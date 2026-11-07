@@ -1181,6 +1181,27 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Sin verificar:** la suite completa de los otros módulos no se volvió a correr (no cambiaron); se corre al cerrar en S9. El folio no se probó con contenedores PostgreSQL y varias instancias de la aplicación a la vez, solo con veinte hilos de una.
 
 ---
+### BIT-064 · Ventas, etapa S5: devolución de stock por referencia en inventario
+
+- **Qué se hizo:** inventario ahora sabe devolver al saldo lo que salió con una referencia (por ejemplo una venta que se cancela): `POST /companies/{c}/branches/{b}/stock/returns`. Hasta ahora `MovementType.RETURN` existía en el enum pero ninguna ruta lo usaba. Es el paso que S7 necesita para cancelar una venta ya completada.
+- **Cómo se hizo:**
+  - **Regla:** una entrada `RETURN` por cada salida de esa referencia, al mismo saldo (almacén, lugar, lote y serie) y con el costo original; la mercancía vuelve como disponible. Una referencia solo se devuelve una vez (409). Sin salidas con esa referencia, 404. La referencia se compara sin importar mayúsculas, porque los movimientos la guardan en mayúsculas. Si la salida vino de varios saldos (una reserva repartida), vuelve a cada uno. El movimiento publica `inventory.stock.movement` con tipo `RETURN` en el Outbox.
+  - **Permisos:** pide `inventory.stock.write`. **El permiso angosto `inventory.reservations.write` (S1) no basta:** devolver sube la existencia y no debe estar al alcance del personal general. Cancelar una venta pide `sales.cancel`, que tienen el encargado de sucursal y la administración, y los dos tienen `inventory.stock.write`.
+  - **Código:** `StockApplicationService.returnByReference`; método nuevo `findByCompanyIdAndReference` en el puerto de movimientos y `findIdByIdentity` en el de saldos; ruta en `StockController`; migración `V012` con un índice por (empresa, tipo y referencia) para que buscar una devolución no recorra la tabla de movimientos. Se extrajo a `operableWarehouse` la validación del almacén que `post` ya hacía (mismas reglas y mensajes).
+  - **Contratos:** la ruta y su esquema en `openapi-inventory-v1.yaml`; `RETURN` en la descripción de `StockMovementData` del AsyncAPI.
+  - **Pruebas nuevas (10):** `StockReturnIntegrationTest`: devolver una reserva confirmada, solo una vez, referencia sin salidas, salida directa y mayúsculas, salida repartida en dos saldos, permisos (el angosto no basta), otra empresa, sucursal que no opera el almacén, evento en el Outbox y **ocho devoluciones simultáneas de la misma referencia: una gana y el stock no se duplica**.
+  - **RED:** la prueba compila contra el código anterior, así que el rojo es de ejecución: 7 de 9 fallaron porque la ruta no existía (404 donde se esperaba 201, 409 o 403). **Las otras 2** (referencia sin salidas y referencia de otra empresa, que esperan 404) **pasaron por casualidad**, porque la ruta inexistente también responde 404; no demuestran nada del RED. **GREEN:** 9 de 9 y la suite completa de inventario sin fallos en H2 (al final, con la prueba de concurrencia y la corrección de abajo: `inventory-infra` 109 pruebas, 7 omitidas de los perfiles `postgres` y `rabbitmq`; dominio 27).
+- **Un error real que solo apareció contra PostgreSQL:** la prueba de ocho devoluciones a la vez, agregada después del GREEN, **falló con `ObjectOptimisticLockingFailureException`** (siete respuestas 500). Mi primera versión leía los saldos sin bloquear para saber sus ids; eso los dejaba en la caché de JPA, y cuando después los bloqueaba y esperaba a la otra transacción, JPA entregaba la versión vieja y fallaba al guardar. En H2 no se notaba. **Se corrigió** buscando solo los **ids** (consulta escalar que no carga entidades), bloqueando en orden de id y leyendo después, que es lo que ya hacen las reservas; la comprobación de «ya devuelta» ocurre con los saldos bloqueados. Con `-Ppostgres`: `StockReturnIntegrationTest` 10 de 10, `ReservationIntegrationTest` 20, `StockConcurrencyIntegrationTest` 6, `InventoryMigrationTest` 1 y `OpenApiContractTest` 1 (38 de 38).
+- **Mutaciones temporales (6), todas detectadas y revertidas con la huella igual:** quitar la comprobación de «ya devuelta», devolver una unidad de más, perder el costo original, quitar la validación de sucursal, buscar el saldo en otro estado y quitar el permiso. Una primera versión de la prueba del estado no compiló porque usé una constante inexistente; se repitió con `DAMAGED`.
+- **Afectaciones:** inventario tiene una ruta, una migración (`V012`) y un método más en dos puertos. Una devolución cambia saldos y movimientos; la reversa de una venta cancelada queda lista para S7. Nada cambia para quien no la use.
+- **Límites conocidos:**
+  - **La mercancía vuelve como disponible:** la salida no guarda de qué estado de inventario salió. Para ventas (las reservas solo toman stock disponible) es correcto; una salida directa desde otro estado se devolvería a disponible.
+  - **No se devuelve parte de una referencia:** es todo o nada.
+  - **No hay verificación de producto:** un producto desactivado después de la salida también se devuelve.
+  - **El latente de `post()`:** `post` trata como salida todo tipo que no sea entrada; por eso la devolución **no** pasa por él y usa su propia ruta. Si algún día alguien llama a `post` con `RETURN`, restaría stock. No se tocó.
+- **Sin verificar:** la suite completa de inventario con `-Ppostgres,rabbitmq` no se corrió (solo las clases nombradas arriba); se corre completa en S9.
+
+---
 
 ## Errores
 
