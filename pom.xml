@@ -33,6 +33,7 @@
         <module>jcomercy-core</module>
         <module>company-management</module>
         <module>inventory</module>
+        <module>sales</module>
     </modules>
 
     <profiles>

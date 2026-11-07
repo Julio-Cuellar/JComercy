@@ -30,6 +30,10 @@ public class StockBalanceRepositoryAdapter implements StockBalanceRepositoryPort
     @Override public Optional<StockBalance> findByIdForUpdate(UUID id) {
         return repository.findByIdForUpdate(id).map(this::toDomain);
     }
+    @Override public Optional<UUID> findIdByIdentity(UUID warehouseId, UUID locationId, UUID productId, String lotId,
+                                                     String serialNumber, InventoryStatus status) {
+        return repository.findIdByIdentity(warehouseId, locationId, productId, lotId, serialNumber, status);
+    }
     @Override public boolean existsByCompanyIdAndSerialNumber(String companyId, String serialNumber) {
         return repository.existsByCompanyIdAndSerialNumber(companyId, serialNumber);
     }

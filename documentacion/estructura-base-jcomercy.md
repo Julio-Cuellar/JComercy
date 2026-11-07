@@ -52,7 +52,7 @@ JComercy/
 | Billing | `billing` | Planes, suscripciones, complementos y capacidad contratada. |
 | Customers | `customers` | Clientes comerciales generales. |
 | Inventory | `inventory` | Productos, existencias, movimientos y almacenes. |
-| Sales | `sales` | Ventas, pedidos y líneas de venta. |
+| Sales | `sales` | Ventas, pedidos y líneas de venta. Diseño en [diseno-modulo-ventas.md](diseno-modulo-ventas.md). |
 | Cash | `cash` | Cajas, sesiones, cobros y movimientos. |
 | Accounting | `accounting` | Catálogo contable, asientos y reportes operativos. |
 | Tax MX SAT | `tax_mx_sat` | Reglas fiscales y CFDI de México. |
