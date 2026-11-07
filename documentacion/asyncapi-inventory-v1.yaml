@@ -281,7 +281,7 @@ components:
           type: string
         type:
           type: string
-          description: Tipo de movimiento, por ejemplo RECEIPT, ISSUE, ADJUSTMENT_IN o ADJUSTMENT_OUT.
+          description: Tipo de movimiento, por ejemplo RECEIPT, ISSUE, ADJUSTMENT_IN, ADJUSTMENT_OUT o RETURN (la devolución de una salida; llega en `inventory.stock.movement`).
         quantity:
           type: number
         onHand:

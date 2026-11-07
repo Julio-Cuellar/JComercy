@@ -151,7 +151,8 @@ class CompanyAccessIntegrationTest {
         assertThat(claims.get("ctx").asText()).isEqualTo(companyB);
         assertThat(texts(claims.get("companyIds"))).containsExactly(companyB);
         assertThat(List.of(claims.get("permissions").asText().split(" ")))
-            .containsExactlyInAnyOrder("operational_context.select", "inventory.stock.read", "effective_permissions.read_own");
+            .containsExactlyInAnyOrder("operational_context.select", "inventory.stock.read", "effective_permissions.read_own",
+                "inventory.reservations.write", "inventory.products.read", "inventory.warehouses.read", "sales.create", "sales.read");
     }
 
     @Test

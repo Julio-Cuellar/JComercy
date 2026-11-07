@@ -9,4 +9,6 @@ import java.util.UUID;
 public interface InventoryMovementJpaRepository extends JpaRepository<InventoryMovementJpaEntity, UUID> {
     List<InventoryMovementJpaEntity> findByCompanyIdOrderByOccurredAtDesc(String companyId);
     List<InventoryMovementJpaEntity> findByCompanyIdAndProductIdOrderByOccurredAtDesc(String companyId, UUID productId);
+    List<InventoryMovementJpaEntity> findByCompanyIdAndReferenceTypeAndReferenceIdOrderByOccurredAtAsc(
+            String companyId, String referenceType, String referenceId);
 }

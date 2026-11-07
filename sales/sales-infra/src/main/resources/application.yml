@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: sales
+  datasource:
+    url: jdbc:h2:mem:sales_db;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    schemas: sales
+    default-schema: sales
+    locations: classpath:db/migration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    # RabbitMQ expone 5673 en el host; 5672 es el puerto interno del contenedor.
+    port: ${RABBITMQ_PORT:5673}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    # Un broker colgado (conexión abierta que no responde) debe notarse en segundos y no en minutos (ERR-021).
+    connection-timeout: 5s
+    requested-heartbeat: 10s
+    channel-rpc-timeout: 10s
+
+outbox:
+  publisher:
+    fixed-delay-ms: ${OUTBOX_PUBLISHER_FIXED_DELAY_MS:5000}
+  rabbit:
+    exchange: ${OUTBOX_RABBIT_EXCHANGE:jcomercy.events}
+    sales-staging-queue: ${OUTBOX_RABBIT_SALES_STAGING_QUEUE:jcomercy.events.sales.pending}
+
+sales:
+  inventory:
+    # El inventario al que Ventas le pide apartar, confirmar y devolver stock, con el token de quien vende.
+    base-url: ${SALES_INVENTORY_URL:http://localhost:8081}
+    connect-timeout-ms: ${SALES_INVENTORY_CONNECT_TIMEOUT_MS:2000}
+    read-timeout-ms: ${SALES_INVENTORY_READ_TIMEOUT_MS:5000}
+  checkout:
+    # Cuánto tiempo se aparta el stock de una venta que no se termina de cobrar; después inventario lo libera solo.
+    reservation-minutes: 15
+
+server:
+  port: ${SERVER_PORT:8082}
+
+security:
+  jwt:
+    # Sobrescribir con SECURITY_JWT_SECRET en cualquier entorno no local; es la misma llave que firma company-management.
+    secret: ${SECURITY_JWT_SECRET:local-only-change-me-012345678901234567890123456789}
+    issuer: ${SECURITY_JWT_ISSUER:jcomercy}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    url: /openapi-sales-v1.yaml
+    disable-swagger-default-url: true
+  api-docs:
+    enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.jcode.jcomercy.sales: INFO

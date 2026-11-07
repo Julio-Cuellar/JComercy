@@ -87,6 +87,31 @@ public class StockController {
                 .body(result);
     }
 
+    /**
+     * Devuelve al saldo lo que salió con una referencia, por ejemplo una venta cancelada. Sube la existencia, así que pide
+     * {@code inventory.stock.write}: el permiso angosto de reservas no basta.
+     */
+    @PostMapping("/companies/{companyId}/branches/{branchId}/stock/returns")
+    public ResponseEntity<?> returnStock(@PathVariable String companyId, @PathVariable String branchId,
+                                         @Valid @RequestBody ReturnStockRequest request,
+                                         @RequestHeader("Idempotency-Key") String idempotencyKey,
+                                         @RequestHeader(value = "X-Correlation-Id", required = false) String correlationId,
+                                         Authentication authentication) {
+        log.info("Solicitud devolución de stock companyId={} branchId={} referencia={}/{} actor={}",
+                companyId, branchId, request.referenceType(), request.referenceId(), actor(authentication));
+
+        if (!authorization.canAccessCompany(authentication, companyId)
+                || !authorization.canAccessBranch(authentication, branchId)
+                || !authorization.hasPermission(authentication, "inventory.stock.write")) {
+            log.warn("Devolución de stock rechazada por permisos companyId={} branchId={} actor={}", companyId, branchId, actor(authentication));
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        var result = stockService.returnByReference(new StockApplicationService.ReturnCommand(companyId, branchId,
+                request.referenceType(), request.referenceId(), request.reason(), actor(authentication), correlation(correlationId)));
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
+    }
+
     @PostMapping("/companies/{companyId}/branches/{branchId}/stock/adjustments")
     public ResponseEntity<?> adjust(@PathVariable String companyId, @PathVariable String branchId,
                                     @Valid @RequestBody AdjustStockRequest request,
@@ -174,6 +199,12 @@ public class StockController {
             InventoryStatus inventoryStatus,
             String referenceType,
             String referenceId
+    ) { }
+
+    public record ReturnStockRequest(
+            @NotBlank String referenceType,
+            @NotBlank String referenceId,
+            String reason
     ) { }
 
     public record AdjustStockRequest(
