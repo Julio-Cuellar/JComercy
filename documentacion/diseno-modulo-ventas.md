@@ -51,7 +51,7 @@ Hoy solo existe la política de mostrador, y no hay ningún endpoint externo. El
 3. Guarda la venta en `PENDING` y aparta el stock en Inventory, una referencia `SALE` por línea, con expiración. Si falla una línea, libera las anteriores.
 4. Valida los pagos. La suma debe cubrir el total. El efectivo da cambio; tarjeta y transferencia deben ser exactas. Nunca se guarda un número de tarjeta, solo una referencia opcional.
 5. Pasa a `CONFIRMING` y confirma cada reserva con una llave de idempotencia derivada. Después queda `COMPLETED`, con su folio por sucursal (`TCK-000123`).
-6. Un job reintenta las ventas que quedaron en `CONFIRMING`.
+6. **No hay job de reintento** (se cambió al implementar S6, BIT-065). Si inventario no responde al confirmar, la venta queda en `CONFIRMING`, ya cobrada, y se retoma **repitiendo la misma petición con la misma `Idempotency-Key` y la misma persona**: cada llamada a inventario lleva una llave que sale de la venta y de la línea (`sale-<id>-commit-1`) y un cuerpo estable, así que inventario no repite lo que ya hizo. Un job no tiene el token de quien vende, que es con el que inventario decide, y guardar tokens ajenos sería peor.
 7. Cancelar una venta `PENDING` libera su reserva. Cancelar una `COMPLETED` pide motivo y `sales.cancel`, y regresa el stock con la devolución nueva de Inventory. Se cancela completa.
 
 ## 6. Etapas
@@ -64,7 +64,7 @@ Hoy solo existe la política de mostrador, y no hay ningún endpoint externo. El
 | S3 | Dominio: venta, línea, pago, estados, totales, cambio, política de canal |
 | S4 | Precios, folio por sucursal y persistencia |
 | S5 | Inventory: operación de devolución |
-| S6 | Cobrar: adaptador HTTP a Inventory, apartado, pago, confirmación, compensación y reintento |
+| S6 | Cobrar: adaptador HTTP a Inventory, apartado, pago, confirmación, compensación y reentrada con la misma llave |
 | S7 | Cancelación |
 | S8 | Eventos con Outbox y RabbitMQ |
 | S9 | Cierre: prueba a mano con las tres aplicaciones, suite completa y documentos |
@@ -73,7 +73,7 @@ Hoy solo existe la política de mostrador, y no hay ningún endpoint externo. El
 
 | Riesgo | Cómo se atiende |
 |---|---|
-| Ventas e Inventory no comparten transacción | Estado `CONFIRMING`, confirmaciones idempotentes y job de reintento |
+| Ventas e Inventory no comparten transacción | Estado `CONFIRMING`, llaves deterministas y cuerpos estables hacia inventario, y reentrada repitiendo la petición con la misma llave. Una venta a la que inventario rechaza confirmar queda en `CONFIRMING` sin salida automática: pendiente de resolver a mano |
 | Productos con lote o serie: la devolución no sabría a qué saldo volver | La primera versión solo vende productos sin seguimiento; los demás se rechazan con un mensaje claro |
 | La política por canal se sobrediseña sin un segundo canal real | Solo un parámetro con tres reglas y una sola implementación |
 | Tercera copia del filtro JWT, del Outbox y de la idempotencia | Deuda anotada en la bitácora; extraerlo es otro frente |

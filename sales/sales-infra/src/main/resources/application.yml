@@ -13,6 +13,16 @@ spring:
     default-schema: sales
     locations: classpath:db/migration
 
+sales:
+  inventory:
+    # El inventario al que Ventas le pide apartar, confirmar y devolver stock, con el token de quien vende.
+    base-url: ${SALES_INVENTORY_URL:http://localhost:8081}
+    connect-timeout-ms: ${SALES_INVENTORY_CONNECT_TIMEOUT_MS:2000}
+    read-timeout-ms: ${SALES_INVENTORY_READ_TIMEOUT_MS:5000}
+  checkout:
+    # Cuánto tiempo se aparta el stock de una venta que no se termina de cobrar; después inventario lo libera solo.
+    reservation-minutes: 15
+
 server:
   port: ${SERVER_PORT:8082}
 

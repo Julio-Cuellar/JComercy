@@ -127,6 +127,34 @@ class JdbcSaleRepositoryAdapterIntegrationTest {
     }
 
     @Test
+    @DisplayName("Una venta creada con la llave de su petición se encuentra por esa llave en su sucursal, y la llave no se repite")
+    void aSaleCreatedWithAKeyIsFoundByItAndTheKeyCannotRepeat() {
+        Sale sale = sale("br_1", NOW, null);
+        sales.create(sale, "llave-1");
+
+        assertThat(sales.findByIdempotencyKey(company, "br_1", "llave-1")).map(Sale::id).contains(sale.id());
+        assertThat(sales.findByIdempotencyKey(company, "br_2", "llave-1")).isEmpty();
+        assertThat(sales.findByIdempotencyKey("cmp_otra_" + UUID.randomUUID(), "br_1", "llave-1")).isEmpty();
+        assertThatThrownBy(() -> sales.create(sale("br_1", NOW.plusSeconds(1), null), "llave-1"))
+            .isInstanceOf(DuplicateSaleException.class);
+        // En otra sucursal la misma llave es otra venta.
+        sales.create(sale("br_2", NOW, null), "llave-1");
+    }
+
+    @Test
+    @DisplayName("Guardar el avance de una venta no le quita su llave")
+    void savingTheProgressOfASaleKeepsItsKey() {
+        Sale pending = sales.create(sale("br_1", NOW, null), "llave-2");
+        Sale paid = pending.registerPayments(List.of(new Payment(PaymentMethod.CASH, new BigDecimal("101.00"), null)));
+
+        sales.save(paid);
+
+        Sale found = sales.findByIdempotencyKey(company, "br_1", "llave-2").orElseThrow();
+        assertThat(found.status()).isEqualTo(SaleStatus.CONFIRMING);
+        assertThat(found.payments()).hasSize(1);
+    }
+
+    @Test
     @DisplayName("Las ventas de mostrador, sin referencia externa, no chocan entre sí")
     void salesWithoutAnExternalReferenceNeverClash() {
         sales.save(sale("br_1", NOW, null));

@@ -71,13 +71,26 @@ paths:
             schema: { $ref: '#/components/schemas/CreateSaleRequest' }
       responses:
         '201':
-          description: Venta cobrada
+          description: Venta cobrada ahora
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sale' }
+        '200':
+          description: La misma `Idempotency-Key` ya había cobrado esa venta; se devuelve tal cual, sin tocar inventario
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Sale' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '503':
+          description: >-
+            Inventario no respondió. Si la respuesta trae `code: SALE_CONFIRMATION_PENDING`, la venta quedó cobrada y
+            falta confirmar la salida de inventario: repetir la misma petición, con la misma `Idempotency-Key` y la
+            misma persona, la termina sin duplicar nada. Con `INVENTORY_UNAVAILABLE` no quedó nada guardado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     get:
       tags: [Sales]
       summary: Listar las ventas de una sucursal

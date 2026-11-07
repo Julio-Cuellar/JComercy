@@ -65,7 +65,7 @@ public class JdbcSaleRepositoryAdapter implements SaleRepositoryPort {
                 """, sale.status().name(), sale.folio(), sale.received(), sale.change(), at(sale.completedAt()),
                 at(sale.cancelledAt()), sale.cancelReason(), sale.id());
             if (updated == 0) {
-                insert(sale);
+                insert(sale, null);
             }
             jdbc.update("DELETE FROM sales.sale_payment WHERE sale_id = ?", sale.id());
             int number = 0;
@@ -83,6 +83,27 @@ public class JdbcSaleRepositoryAdapter implements SaleRepositoryPort {
     }
 
     @Override
+    @Transactional
+    public Sale create(Sale sale, String idempotencyKey) {
+        try {
+            insert(sale, idempotencyKey);
+        } catch (DuplicateKeyException e) {
+            // No se registra el mensaje de la base de datos: cita el valor repetido, que puede ser un dato del cliente.
+            log.warn("Venta rechazada por estar ya registrada companyId={} branchId={} channel={}", sale.companyId(),
+                sale.branchId(), sale.channel());
+            throw new DuplicateSaleException();
+        }
+        return sale;
+    }
+
+    @Override
+    public Optional<Sale> findByIdempotencyKey(String companyId, String branchId, String idempotencyKey) {
+        List<Header> headers = jdbc.query("SELECT " + COLUMNS + " FROM sales.sale WHERE company_id = ? AND branch_id = ? "
+            + "AND idempotency_key = ?", headerMapper, companyId, branchId, idempotencyKey);
+        return assemble(headers).stream().findFirst();
+    }
+
+    @Override
     public Optional<Sale> findById(String companyId, String branchId, UUID id) {
         List<Header> headers = jdbc.query("SELECT " + COLUMNS + " FROM sales.sale WHERE company_id = ? AND branch_id = ? AND id = ?",
             headerMapper, companyId, branchId, id);
@@ -96,15 +117,15 @@ public class JdbcSaleRepositoryAdapter implements SaleRepositoryPort {
         return assemble(headers);
     }
 
-    private void insert(Sale sale) {
+    private void insert(Sale sale, String idempotencyKey) {
         jdbc.update("""
             INSERT INTO sales.sale
               (id, company_id, branch_id, warehouse_id, channel, external_reference, status, currency, folio, total, received,
-               change_amount, actor_user_id, created_at, completed_at, cancelled_at, cancel_reason, version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+               change_amount, actor_user_id, created_at, completed_at, cancelled_at, cancel_reason, idempotency_key, version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """, sale.id(), sale.companyId(), sale.branchId(), sale.warehouseId(), sale.channel().name(), sale.externalReference(),
             sale.status().name(), sale.currency(), sale.folio(), sale.total(), sale.received(), sale.change(), sale.actorUserId(),
-            at(sale.createdAt()), at(sale.completedAt()), at(sale.cancelledAt()), sale.cancelReason());
+            at(sale.createdAt()), at(sale.completedAt()), at(sale.cancelledAt()), sale.cancelReason(), idempotencyKey);
         for (SaleLine line : sale.lines()) {
             jdbc.update("""
                 INSERT INTO sales.sale_line (sale_id, line_number, product_id, sku, name, quantity, unit_price, line_total)

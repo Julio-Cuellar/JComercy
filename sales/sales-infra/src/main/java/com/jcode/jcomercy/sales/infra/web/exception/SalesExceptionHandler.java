@@ -1,5 +1,8 @@
 package com.jcode.jcomercy.sales.infra.web.exception;
 
+import com.jcode.jcomercy.sales.application.exception.InventoryRejectedException;
+import com.jcode.jcomercy.sales.application.exception.InventoryUnavailableException;
+import com.jcode.jcomercy.sales.application.exception.SaleConfirmationPendingException;
 import com.jcode.jcomercy.sales.application.exception.SalesApplicationException;
 import com.jcode.jcomercy.sales.domain.exception.DuplicateSaleException;
 import com.jcode.jcomercy.sales.domain.exception.SalesDomainException;
@@ -29,6 +32,27 @@ public class SalesExceptionHandler {
         boolean notFound = exception.kind() == SalesApplicationException.Kind.NOT_FOUND;
         return ResponseEntity.status(notFound ? HttpStatus.NOT_FOUND : HttpStatus.CONFLICT)
                 .body(Map.of("code", notFound ? "NOT_FOUND" : "CONFLICT", "message", exception.getMessage()));
+    }
+
+    @ExceptionHandler(SaleConfirmationPendingException.class)
+    public ResponseEntity<Map<String, String>> handleConfirmationPending(SaleConfirmationPendingException exception) {
+        log.warn("Venta pendiente de confirmar saleId={}", exception.saleId());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("code", "SALE_CONFIRMATION_PENDING",
+                "message", exception.getMessage(), "saleId", exception.saleId().toString()));
+    }
+
+    @ExceptionHandler(InventoryUnavailableException.class)
+    public ResponseEntity<Map<String, String>> handleInventoryUnavailable(InventoryUnavailableException exception) {
+        log.warn("Inventario no disponible: {}", exception.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("code", "INVENTORY_UNAVAILABLE",
+                "message", "No pudimos comunicarnos con inventario. Intenta de nuevo en unos segundos."));
+    }
+
+    @ExceptionHandler(InventoryRejectedException.class)
+    public ResponseEntity<Map<String, String>> handleInventoryRejected(InventoryRejectedException exception) {
+        log.warn("Inventario rechazó la operación: {}", exception.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("code", "INVENTORY_REJECTED",
+                "message", "Inventario no permitió la operación: " + exception.getMessage()));
     }
 
     @ExceptionHandler(DuplicateSaleException.class)
