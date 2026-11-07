@@ -1088,6 +1088,18 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Datos personales:** RFC y CURP se guardan en claro en `employee_profile`; no hay cifrado en reposo ni política de retención.
   - **Estabilidad:** la suite de company-management pasó completa al cerrar cada etapa (M1 a M7), la de todos los módulos pasó al cerrar, y la que usa servicios reales pasó en su segunda corrida (la primera falló por ERR-030). Eso no demuestra que no haya fallas intermitentes.
 
+### BIT-058 · Los correos salen por la consola mientras no hay servidor de correo
+
+- **Qué se hizo:** un modo nuevo del puerto de correo, `jcomercy.mail.mode=console`, que imprime el correo completo (a quién va, asunto y cuerpo, con sus enlaces y códigos) en la consola y no manda nada a nadie. Es la decisión del usuario: todavía no se usa un servidor SMTP, y en pruebas y trabajo local los códigos y enlaces se leen en la consola.
+- **Cómo se hizo:**
+  - `ConsoleMailAdapter` (infra/mail) lo elige `@ConditionalOnProperty`. Para probar la aplicación a mano basta arrancarla con `JCOMERCY_MAIL_MODE=console`. El modo por defecto sigue siendo `disabled` (falla a la vista) y las pruebas automáticas siguen usando `recording`; `application.yml` documenta los cuatro modos.
+  - **Resguardo:** el enlace lleva el código que da acceso y la consola es el registro, así que **el modo consola no arranca si el perfil activo es `prod` o `production`**. Lo comprueban las pruebas.
+  - **Pruebas:** 3 nuevas en `MailAdaptersTest` (imprime a quién va, el asunto y el cuerpo con el enlace; se elige con su modo; se niega a arrancar en producción) y `ConsoleMailIntegrationTest` (2): con el enlace impreso en la consola se cambia una contraseña y se activa un acceso de punta a punta. 13 de 13 con las existentes de esa clase.
+  - **RED:** las pruebas se escribieron antes que el código, **pero no se ejecutó el RED por compilación antes de implementar**; no hay evidencia de esa corrida. Como compensación, 5 mutaciones temporales (el asunto cambia de nombre, el resguardo ignora `production`, el resguardo se quita, el cuerpo no se imprime, el modo cambia de nombre) se detectaron todas y se revirtieron con la huella igual.
+  - **Suite de company-management:** 209 pruebas, 0 fallos, 6 omitidas.
+- **Afectaciones:** ninguna en datos ni en contratos. Con este modo, **el código de acceso queda en el registro de la aplicación**: cualquiera que lea la consola puede usar el enlace durante su vigencia (15 minutos la recuperación, 7 días la invitación). Por eso es solo para trabajo local.
+- **Sin verificar:** la suite con `-Ppostgres,rabbitmq` no se volvió a correr con este cambio. Añade un contexto de Spring más, que usa 10 conexiones de las 500 que ahora admite el contenedor (ERR-030). El envío por SMTP real sigue sin probarse (BIT-053).
+
 ---
 
 ## Errores
