@@ -90,7 +90,8 @@ class RequiredPermissionsContractTest {
     private static String validBody(String operation) {
         return switch (operation) {
             case "PUT /api/v1/companies/{}/products/{}/price" -> "{\"amount\":10.00,\"currency\":\"MXN\"}";
-            case "POST /api/v1/companies/{}/branches/{}/sales" -> "{\"warehouseId\":\"" + UUID.randomUUID()
+            case "POST /api/v1/companies/{}/branches/{}/sales/{}/cancellation" -> "{\"reason\":\"Motivo de prueba\"}";
+            case "POST /api/v1/companies/{}/branches/{}/sales" ->"{\"warehouseId\":\"" + UUID.randomUUID()
                 + "\",\"lines\":[{\"productId\":\"" + UUID.randomUUID() + "\",\"quantity\":1}],"
                 + "\"payments\":[{\"method\":\"CASH\",\"amount\":10}]}";
             default -> "{}";

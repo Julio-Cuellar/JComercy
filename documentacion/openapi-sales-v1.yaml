@@ -128,13 +128,16 @@ paths:
       tags: [Sales]
       summary: Cancelar una venta
       description: >-
-        Cancela la venta completa y regresa su stock. Pide un motivo. Una venta ya cancelada no se cancela otra vez.
+        Cancela la venta completa y regresa su stock a inventario. Pide un motivo (hasta 500 caracteres). Una venta ya
+        cancelada no se cancela otra vez (409), y una que se está confirmando espera a terminar. Una venta pendiente libera
+        su apartado; una completada devuelve el stock de cada línea. Es segura de repetir sin `Idempotency-Key`: si
+        inventario falla a medias (503), la venta sigue completada y repetir la cancelación la termina sin devolver dos
+        veces. Devolver stock lo hace inventario con el token de quien cancela y pide `inventory.stock.write`.
       x-required-permission: sales.cancel
       parameters:
         - $ref: '#/components/parameters/CompanyId'
         - $ref: '#/components/parameters/BranchId'
         - $ref: '#/components/parameters/SaleId'
-        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -150,6 +153,11 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '503':
+          description: Inventario no respondió (`INVENTORY_UNAVAILABLE`). La venta sigue como estaba; se puede repetir la cancelación.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 components:
   securitySchemes:
     bearerAuth:

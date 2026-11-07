@@ -1225,6 +1225,25 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Sin verificar:** nunca se corrió contra el inventario real, solo contra el falso por HTTP; esa prueba es la de cierre (S9, a mano con las tres aplicaciones). El 422 de falta de stock se reconoce por el texto del mensaje de inventario (`insufficient available stock…`), que es frágil si ese mensaje cambia.
 
 ---
+### BIT-066 · Ventas, etapa S7: cancelar una venta
+
+- **Qué se hizo:** `POST /companies/{c}/branches/{b}/sales/{saleId}/cancellation` cancela una venta completa. Una venta pendiente libera lo que tenía apartado; una completada devuelve el stock de cada línea a inventario (con la devolución de S5); una ya cancelada o que se está confirmando se rechaza con 409.
+- **Cómo se hizo:**
+  - **`SaleCancellationService`:** pide el motivo **antes** de tocar inventario (si faltara al final, el stock ya habría vuelto), busca la venta por empresa, sucursal e id (404 si no es de esa sucursal), comprueba el estado y llama a inventario por su puerto. No es transaccional y es seguro de repetir: cada llamada lleva una llave que sale de la venta y la línea (`sale-<id>-return-<n>`, `-release-<n>`), así que si inventario falla a medias la venta sigue completada (503) y repetir la cancelación la termina sin devolver dos veces. Si inventario responde que esa referencia ya se devolvió, se da por hecho; cualquier otro rechazo deja la venta completada y explica por qué (409). Al liberar una venta pendiente, un apartado que ya venció no bloquea la cancelación.
+  - **Ruta:** `SaleController.cancel`, con `sales.cancel` y el alcance de la sucursal; el token de quien cancela se reenvía a inventario. El motivo es obligatorio y de hasta 500 caracteres (400 si no).
+  - **Cambio de contrato:** se quitó `Idempotency-Key` de la operación de cancelación (la propia cancelación es idempotente por el estado de la venta y por las llaves que salen de ella; pedir una llave que nadie usaba era ruido) y se documentó el 503.
+  - **Pruebas nuevas (20):** `SaleCancellationServiceTest` (11): completada, llaves y motivo, pendiente, apartado vencido, ya cancelada, confirmándose, otra sucursal o empresa, sin motivo, falla a medias y reintento, «ya se devolvió» y otro rechazo. `SaleCancellationIntegrationTest` (9, de punta a punta contra el inventario falso por HTTP): stock de vuelta, token y llave a inventario, doble cancelación, permisos y alcance, 404, motivo, inventario caído con reintento, rechazo y venta confirmándose. Más el cuerpo de la cancelación en `RequiredPermissionsContractTest`.
+  - **RED:** de la capa de aplicación, por compilación (`cannot find symbol: class SaleCancellationService`). **De la prueba de infraestructura no corrí el RED antes de implementar la ruta** (escribí la ruta y la prueba pasó a la primera); lo compensé con mutaciones, abajo. **GREEN:** módulo de ventas en H2, 138 pruebas (37 dominio, 37 aplicación, 64 infraestructura).
+  - **Mutaciones temporales (8), todas detectadas y revertidas con la huella igual:** no pedir el motivo antes, dejar pasar una venta ya cancelada, no reconocer «ya devuelta», no tolerar un apartado vencido, llave de devolución que cambia con el tiempo, no guardar la cancelación, liberar en vez de devolver y pedir `sales.read` para cancelar. Dos de ellas (la de «ya devuelta» y la del apartado vencido) las atrapó un error y no una aserción: la prueba falló por la excepción que dejó pasar.
+- **Afectaciones:** cancelar una venta completada pide además `inventory.stock.write` (lo exige la devolución de inventario): lo tienen el encargado de sucursal y la administración, que son quienes tienen `sales.cancel`. Cancelar una pendiente pide `inventory.stock.write` o `inventory.reservations.write`, y también lo tienen.
+- **Límites conocidos:**
+  - **La cancelación no registra ni devuelve dinero.** Los pagos quedan en la venta tal como se cobraron; reembolsar al cliente (y el efectivo que sale de la caja) es de caja, que no existe todavía.
+  - **«Ya se devolvió» se reconoce por el texto del mensaje de inventario** (`this reference has already been returned`), frágil si ese mensaje cambia.
+  - **Una venta confirmándose no se puede cancelar** y, si inventario rechaza confirmarla, no tiene salida automática (ver BIT-065).
+  - **Se cancela completa:** no hay devolución parcial.
+- **Sin verificar:** nunca se corrió contra el inventario real (solo el falso por HTTP); eso es S9. La suite del módulo no se corrió contra PostgreSQL en esta etapa (no cambió SQL); se corre completa en S9.
+
+---
 
 ## Errores
 

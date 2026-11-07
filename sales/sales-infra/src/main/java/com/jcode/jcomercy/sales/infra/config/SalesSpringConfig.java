@@ -2,6 +2,7 @@ package com.jcode.jcomercy.sales.infra.config;
 
 import com.jcode.jcomercy.sales.application.port.InventoryGatewayPort;
 import com.jcode.jcomercy.sales.application.service.PriceApplicationService;
+import com.jcode.jcomercy.sales.application.service.SaleCancellationService;
 import com.jcode.jcomercy.sales.application.service.SaleCheckoutService;
 import com.jcode.jcomercy.sales.application.service.SaleCompletionService;
 import com.jcode.jcomercy.sales.application.service.SaleQueryService;
@@ -46,6 +47,11 @@ public class SalesSpringConfig {
     @Bean
     public SaleCompletionService saleCompletionService(SaleRepositoryPort sales, FolioGeneratorPort folios, Clock clock) {
         return new SaleCompletionService(sales, folios, clock);
+    }
+
+    @Bean
+    public SaleCancellationService saleCancellationService(SaleRepositoryPort sales, InventoryGatewayPort inventory, Clock clock) {
+        return new SaleCancellationService(sales, inventory, clock);
     }
 
     /** El plazo con que se aparta el stock de una venta: si se abandona, inventario lo libera solo al vencer. */

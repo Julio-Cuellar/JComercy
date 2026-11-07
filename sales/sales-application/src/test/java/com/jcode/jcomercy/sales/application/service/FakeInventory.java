@@ -85,6 +85,8 @@ final class FakeInventory implements InventoryGatewayPort {
     @Override
     public void release(Caller caller, StockReference reference) {
         calls.add("release " + reference.referenceId() + " key=" + reference.idempotencyKey());
+        if (unavailable) throw new InventoryUnavailableException("inventario no responde");
+        if (rejectReleaseWith != null) throw new InventoryRejectedException(rejectReleaseWith);
         if (!seenKeys.add(reference.idempotencyKey())) return;
         effects.add("release " + reference.referenceId());
     }
@@ -103,9 +105,37 @@ final class FakeInventory implements InventoryGatewayPort {
 
     @Override
     public void returnStock(Caller caller, StockReference reference) {
-        calls.add("return " + reference.referenceId() + " key=" + reference.idempotencyKey());
+        calls.add("return " + reference.referenceId() + " key=" + reference.idempotencyKey() + " reason=" + reference.reason());
         if (unavailable) throw new InventoryUnavailableException("inventario no responde");
+        if (returnsSoFar >= failReturnsAfter && !seenKeys.contains(reference.idempotencyKey())) {
+            throw new InventoryUnavailableException("inventario no responde");
+        }
+        if (rejectReturnWith != null) throw new InventoryRejectedException(rejectReturnWith);
         if (!seenKeys.add(reference.idempotencyKey())) return;
+        returnsSoFar++;
         effects.add("return " + reference.referenceId());
     }
+
+    /** Las devoluciones a partir del número n+1 fallan como si inventario no respondiera. */
+    void failReturnsAfter(int n) {
+        this.failReturnsAfter = n;
+        this.returnsSoFar = 0;
+    }
+
+    void healReturns() {
+        this.failReturnsAfter = Integer.MAX_VALUE;
+    }
+
+    void rejectReturns(String message) {
+        this.rejectReturnWith = message;
+    }
+
+    void rejectReleases(String message) {
+        this.rejectReleaseWith = message;
+    }
+
+    private int failReturnsAfter = Integer.MAX_VALUE;
+    private int returnsSoFar;
+    private String rejectReturnWith;
+    private String rejectReleaseWith;
 }
