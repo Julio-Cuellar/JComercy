@@ -2625,6 +2625,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Role'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2694,6 +2698,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Role'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2768,6 +2776,256 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
       x-required-permission: roles.deactivate
+  /api/v1/companies/{publicCompanyId}/employees:
+    parameters:
+    - $ref: '#/components/parameters/PublicCompanyId'
+    get:
+      tags:
+      - Companies
+      summary: Listar a las personas registradas por RH
+      operationId: listEmployees
+      parameters:
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - PENDING_ACTIVATION
+          - ACTIVE
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/After'
+      responses:
+        '200':
+          description: Personas registradas, con sus datos personales
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeePage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-required-permission: employees.read
+    post:
+      tags:
+      - Companies
+      summary: Registrar a una persona del equipo
+      description: RH registra los datos, el rol y las sucursales de la persona. Queda pendiente de activar su acceso. Si el correo o el RFC ya pertenecen a otra cuenta responde 409 sin decir cuál chocó.
+      operationId: registerEmployee
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+      responses:
+        '201':
+          description: Persona registrada, pendiente de activar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+      x-required-permission: employees.create
+  /api/v1/companies/{publicCompanyId}/employees/{employeeId}:
+    parameters:
+    - $ref: '#/components/parameters/PublicCompanyId'
+    - name: employeeId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: emp_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+    get:
+      tags:
+      - Companies
+      summary: Consultar a una persona registrada por RH
+      operationId: getEmployee
+      responses:
+        '200':
+          description: La persona, con sus datos personales
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-required-permission: employees.read
+    patch:
+      tags:
+      - Companies
+      summary: Corregir los datos de una persona que aún no activa su acceso
+      operationId: correctEmployee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+      responses:
+        '200':
+          description: Persona corregida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+      x-required-permission: employees.update
+  /api/v1/companies/{publicCompanyId}/employees/{employeeId}/invitation:
+    parameters:
+    - $ref: '#/components/parameters/PublicCompanyId'
+    - name: employeeId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: emp_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+    post:
+      tags:
+      - Companies
+      summary: Reenviar la invitación a una persona que aún no activa su acceso
+      description: Manda un enlace nuevo y el anterior deja de servir. Hay un tiempo mínimo entre envíos.
+      operationId: resendEmployeeInvitation
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: La persona, con el estado de su nueva invitación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+      x-required-permission: employees.invite
+    delete:
+      tags:
+      - Companies
+      summary: Cancelar la invitación vigente de una persona
+      description: La persona sigue pendiente de activar su acceso y se le puede volver a invitar.
+      operationId: cancelEmployeeInvitation
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Invitación cancelada
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+      x-required-permission: employees.invite
+  /api/v1/employee-invitations/{code}:
+    parameters:
+    - name: code
+      in: path
+      required: true
+      description: Código del enlace que llegó por correo
+      schema:
+        type: string
+    get:
+      tags:
+      - Companies
+      summary: Ver a quién se invita antes de activar el acceso
+      description: Ruta pública. Un código vencido, usado, cancelado o inexistente responde 404 igual, sin decir por qué.
+      operationId: consultEmployeeInvitation
+      security: []
+      responses:
+        '200':
+          description: Nombre, empresa, roles y correo de la invitación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPreview'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/employee-invitations/{code}/acceptance:
+    parameters:
+    - name: code
+      in: path
+      required: true
+      description: Código del enlace que llegó por correo
+      schema:
+        type: string
+    post:
+      tags:
+      - Companies
+      summary: Activar el acceso con el enlace de la invitación
+      description: Quien no tiene cuenta manda la contraseña que eligió y se crea su cuenta. Quien ya la tiene inicia sesión con ella y manda el token de su cuenta; su contraseña no se toca. Crea la membresía y las sucursales en una sola operación.
+      operationId: acceptEmployeeInvitation
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptInvitationRequest'
+      responses:
+        '204':
+          description: Acceso activado
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
   /api/v1/companies/{publicCompanyId}/effective-permissions/{userId}:
     parameters:
     - $ref: '#/components/parameters/PublicCompanyId'
@@ -3094,6 +3352,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
       x-required-permission: memberships.suspend
   /api/v1/companies/{publicCompanyId}/memberships/{membershipId}/reactivation:
     parameters:
@@ -3170,6 +3430,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
       x-required-permission: memberships.revoke
   /api/v1/companies/{publicCompanyId}/memberships/{membershipId}/assignments:
     parameters:
@@ -3225,6 +3487,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Assignment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -3233,6 +3499,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
       x-required-permission: assignments.create
   /api/v1/companies/{publicCompanyId}/memberships/me/operational-contexts:
     parameters:
@@ -3660,6 +3928,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Assignment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -3668,6 +3940,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
     delete:
       tags:
       - Companies
@@ -4155,6 +4429,7 @@ components:
           type: string
         roleIds:
           type: array
+          description: Los roles de la persona (no hay roles distintos por sucursal).
           items:
             type: string
         status:
@@ -4162,6 +4437,8 @@ components:
           enum:
           - ACTIVE
           - SUSPENDED
+        version:
+          type: integer
     WebhookSubscriptionRequest:
       type: object
       required:
@@ -4741,6 +5018,170 @@ components:
         version:
           type: integer
           minimum: 1
+    EmployeeRequest:
+      type: object
+      required:
+      - firstName
+      - lastName
+      - birthDate
+      - rfc
+      - curp
+      - phoneNumber
+      - email
+      - state
+      - address
+      - roleIds
+      - branchIds
+      properties:
+        firstName:
+          type: string
+          maxLength: 100
+        lastName:
+          type: string
+          maxLength: 160
+        birthDate:
+          type: string
+          format: date
+        rfc:
+          type: string
+          description: 12 o 13 caracteres, por ejemplo PEPJ850412AB1
+        curp:
+          type: string
+          description: 18 caracteres, por ejemplo PEPJ850412HDFRRN09
+        phoneNumber:
+          type: string
+          maxLength: 30
+        email:
+          type: string
+          format: email
+        state:
+          type: string
+          maxLength: 100
+        address:
+          type: string
+          maxLength: 500
+        roleIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        branchIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+    Employee:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        profileType:
+          type: string
+          enum:
+          - EMPLEADO
+        status:
+          type: string
+          enum:
+          - PENDING_ACTIVATION
+          - ACTIVE
+        firstName:
+          type: string
+        lastName:
+          type: string
+        birthDate:
+          type: string
+          format: date
+        rfc:
+          type: string
+        curp:
+          type: string
+        phoneNumber:
+          type: string
+        email:
+          type: string
+          format: email
+        state:
+          type: string
+        address:
+          type: string
+        roleIds:
+          type: array
+          items:
+            type: string
+        branchIds:
+          type: array
+          items:
+            type: string
+        invitation:
+          $ref: '#/components/schemas/InvitationSummary'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+    InvitationSummary:
+      type: object
+      nullable: true
+      description: La invitación más reciente de la persona; nula si nunca tuvo una.
+      properties:
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACCEPTED
+          - CANCELLED
+          - EXPIRED
+        emailStatus:
+          type: string
+          enum:
+          - PENDING
+          - SENT
+          - FAILED
+        expiresAt:
+          type: string
+          format: date-time
+    InvitationPreview:
+      type: object
+      properties:
+        firstName:
+          type: string
+        companyName:
+          type: string
+        roleNames:
+          type: array
+          items:
+            type: string
+        email:
+          type: string
+          format: email
+        accountExists:
+          type: boolean
+          description: Si ese correo ya tiene cuenta; si es así debe iniciar sesión en vez de elegir contraseña.
+    AcceptInvitationRequest:
+      type: object
+      properties:
+        password:
+          type: string
+          minLength: 8
+          description: Solo para quien no tiene cuenta.
+    EmployeePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Employee'
+        page:
+          type: object
+          properties:
+            limit:
+              type: integer
+            nextCursor:
+              type: string
+              nullable: true
     MembershipPatchRequest:
       type: object
       minProperties: 1
@@ -4775,16 +5216,18 @@ components:
       type: object
       required:
       - branchId
-      - roleIds
       properties:
         branchId:
           type: string
+          description: Al cambiar una asignación (PATCH) debe ser la misma sucursal; no se puede mover.
         roleIds:
           type: array
+          description: Opcional. Los roles son de la persona, no de cada sucursal; si se mandan deben ser los que ya tiene.
           items:
             type: string
         permissions:
           type: array
+          description: Opcional y todavía sin uso; mandar permisos por sucursal se rechaza con 422.
           items:
             type: string
         status:

@@ -2,6 +2,7 @@ package com.jcode.jcomercy.companymanagement.infra.security;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jcode.jcomercy.companymanagement.infra.outbox.OutboxDispatcher;
 import com.jcode.jcomercy.companymanagement.infra.persistence.entity.OutboxEventJpaEntity;
 import com.jcode.jcomercy.companymanagement.infra.persistence.repository.OutboxSpringDataRepository;
@@ -42,6 +43,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -61,7 +64,10 @@ class OutboxEventsContractIntegrationTest {
 
     /** Los eventos que se emiten en esta prueba y el contrato debe cubrir. */
     private static final Set<String> EMITTED = Set.of("account.created", "account.suspended", "company.created",
-        "company.activated", "branch.created", "branch.activated");
+        "company.activated", "branch.created", "branch.activated", "role.created", "role.updated", "role.deactivated",
+        "role.deleted", "membership.invitation.created", "membership.invitation.accepted", "membership.invitation.revoked",
+        "membership.created", "branch-assignment.created", "branch-assignment.updated", "branch-assignment.revoked",
+        "membership.suspended", "membership.reactivated", "membership.revoked");
 
     private record Sent(String routingKey, Message message) { }
 
@@ -102,6 +108,9 @@ class OutboxEventsContractIntegrationTest {
     @Autowired
     private OutboxDispatcher dispatcher;
 
+    @Autowired
+    private com.jcode.jcomercy.companymanagement.infra.mail.RecordingMailAdapter mail;
+
     @Test
     @DisplayName("Cada evento que el módulo emite está declarado en el AsyncAPI y se publica como el sobre que el contrato exige")
     @SuppressWarnings("unchecked")
@@ -114,6 +123,48 @@ class OutboxEventsContractIntegrationTest {
         String branch = world.createBranch(company, companyBearer, "MATRIZ");
         world.activateBranch(company, branch, companyBearer);
         world.activateCompany(company, companyBearer);
+        // Los cuatro eventos de roles: crear, editar, desactivar y borrar un rol propio.
+        String cashier = createRole(company, companyBearer, "Cajero del contrato");
+        mockMvc.perform(patch("/api/v1/companies/{company}/roles/{role}", company, cashier)
+                .header("Authorization", companyBearer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Cajero del contrato\",\"permissions\":[{\"permissionCode\":\"sales.read\"},{\"permissionCode\":\"sales.cancel\"}]}"))
+            .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/companies/{company}/roles/{role}/deactivation", company, cashier)
+                .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString()))
+            .andExpect(status().isOk());
+        String disposable = createRole(company, companyBearer, "Rol desechable del contrato");
+        mockMvc.perform(delete("/api/v1/companies/{company}/roles/{role}?confirmation=true", company, disposable)
+                .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString()))
+            .andExpect(status().isNoContent());
+        // Los eventos de invitación y membresía: una persona activa su acceso con el enlace y a otra se le cancela la invitación.
+        ObjectNode activated = registerEmployee(company, companyBearer, branch);
+        mockMvc.perform(post("/api/v1/employee-invitations/{code}/acceptance", activationCodeSentTo(activated.get("email").asText()))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"password\":\"" + RestWorld.PASSWORD + "\"}"))
+            .andExpect(status().isNoContent());
+        ObjectNode cancelled = registerEmployee(company, companyBearer, branch);
+        mockMvc.perform(delete("/api/v1/companies/{company}/employees/{employee}/invitation", company, cancelled.get("employeeId").asText())
+                .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString()))
+            .andExpect(status().isNoContent());
+        // Los eventos de las sucursales de una persona: agregar una, suspenderla y quitarla.
+        String membershipOfActivated = jdbc.queryForObject("SELECT membership_public_id FROM company_management.employee_profile WHERE public_employee_id=?",
+            String.class, activated.get("employeeId").asText());
+        String secondBranch = world.createBranch(company, companyBearer, "SUCURSAL");
+        String assignment = objectMapper.readTree(mockMvc.perform(post("/api/v1/companies/{company}/memberships/{membership}/assignments", company, membershipOfActivated)
+                .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"branchId\":\"" + secondBranch + "\"}"))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).get("assignmentId").asText();
+        mockMvc.perform(patch("/api/v1/companies/{company}/memberships/{membership}/assignments/{assignment}", company, membershipOfActivated, assignment)
+                .header("Authorization", companyBearer).contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SUSPENDED\"}"))
+            .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/v1/companies/{company}/memberships/{membership}/assignments/{assignment}", company, membershipOfActivated, assignment)
+                .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString()))
+            .andExpect(status().isNoContent());
+        // Los eventos del acceso de una persona: suspenderlo, reactivarlo y revocarlo.
+        for (String action : List.of("suspension", "reactivation", "revocation")) {
+            mockMvc.perform(post("/api/v1/companies/{company}/memberships/{membership}/{action}", company, membershipOfActivated, action)
+                    .header("Authorization", companyBearer).header("Idempotency-Key", UUID.randomUUID().toString()))
+                .andExpect(status().isOk());
+        }
         RestWorld.Person other = world.register();
         suspendAccount(other.accountId(), world.login(other.email()));
 
@@ -151,6 +202,43 @@ class OutboxEventsContractIntegrationTest {
             soft.assertThat(sequences.get(i)).as("sequence del evento %d frente al anterior (%s)", i, sequences).isGreaterThan(sequences.get(i - 1));
         }
         soft.assertAll();
+    }
+
+    /** Registra a una persona nueva y devuelve su respuesta con el correo con el que se registró. */
+    private ObjectNode registerEmployee(String company, String bearer, String branch) throws Exception {
+        int n = RestWorld.next();
+        String homoclave = Integer.toString(n % 46656, 36).toUpperCase(java.util.Locale.ROOT);
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("firstName", "Persona" + n).put("lastName", "Contrato Ruiz").put("birthDate", "1990-05-17");
+        body.put("rfc", "PRUE850412" + "0".repeat(3 - homoclave.length()) + homoclave);
+        body.put("curp", "PRUE850412HDFRRN" + Integer.toString((n / 10) % 36, 36).toUpperCase(java.util.Locale.ROOT) + (n % 10));
+        body.put("phoneNumber", "5512345678").put("email", "contrato-" + n + "@example.com").put("state", "Jalisco").put("address", "Calle 1");
+        body.putArray("roleIds").add("rol_sys_staff");
+        body.putArray("branchIds").add(branch);
+        String response = mockMvc.perform(post("/api/v1/companies/{company}/employees", company)
+                .header("Authorization", bearer).header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        return (ObjectNode) objectMapper.readTree(response);
+    }
+
+    /** El código del enlace que llegó al correo de la persona. */
+    private String activationCodeSentTo(String email) {
+        String body = mail.sentTo(email).get(0).body();
+        String marker = "activar-acceso?codigo=";
+        int start = body.indexOf(marker) + marker.length();
+        int end = body.indexOf('\n', start);
+        return body.substring(start, end < 0 ? body.length() : end).trim();
+    }
+
+    private String createRole(String company, String bearer, String name) throws Exception {
+        String response = mockMvc.perform(post("/api/v1/companies/{company}/roles", company)
+                .header("Authorization", bearer).header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"" + name + "\",\"permissions\":[{\"permissionCode\":\"sales.read\"}]}"))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(response).get("roleId").asText();
     }
 
     // ---- Contraste con el contrato ----

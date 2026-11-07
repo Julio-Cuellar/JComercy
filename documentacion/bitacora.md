@@ -53,6 +53,8 @@ Los errores se numeran `ERR-001`, `ERR-002`… y las entradas de trabajo, `BIT-0
 | ERR-026 | Inventario publica sin AsyncAPI, con un sobre distinto al de company-management y con eventos que no llegan a su cola | RESUELTO (BIT-041 el punto 3; BIT-044 los puntos 1 y 2) |
 | ERR-027 | La cola de company-management, unida con `#`, recibía también los eventos de inventario | RESUELTO (BIT-041) |
 | ERR-028 | La primera ejecución del despachador programado resucita filas del Outbox que una prueba acaba de borrar | RESUELTO (BIT-043) |
+| ERR-029 | La recuperación de contraseña genera su código pero no lo entrega por ningún medio | RESUELTO (BIT-053) |
+| ERR-030 | Con PostgreSQL real, la suite de company-management se queda sin conexiones («too many clients already») | RESUELTO (BIT-057) |
 
 ---
 
@@ -909,6 +911,183 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Sigue pendiente:** la versión de PostgreSQL de producción (V011 exige 15 o más), marcar `rabbitmq` como verificación requerida (decisión de quien administra el repositorio) y el resto de lo anotado en BIT-047.
 - **Sin tocar, por si son tuyas:** las ramas locales `contracts-v1`, `feat/pruebas-postgres`, `feat/pruebas-rabbitmq` y `feat/token-por-empresa` siguen existiendo; no se comprobó si están fusionadas.
 
+### BIT-049 · Plan del frente de roles y membresías con alta de empleados por RH (M0)
+
+- **Qué se hizo:** se escribió el plan de ocho etapas (M0 a M8) del frente de roles y membresías, con cuatro diagramas (dos de secuencia, uno de flujo y uno de estados) y las decisiones tomadas, en `documentacion/diagramas-roles-membresias.md`. Se registró ERR-029. No cambia código.
+- **Cómo se hizo:** lectura del contrato OpenAPI (secciones 33 a 39), de `CompanyMembership`, `Role`, `Account`, `AuthController`, `CompanyAccessService` y las migraciones `V003`, `V006`, `V009` y `V018`.
+  - **Hallazgo:** el inicio de sesión busca la cuenta por el correo de la persona dueña (`findByOwnerEmail`) y una `Account` exige una persona dueña con RFC, único en todo el sistema (V018). Un empleado necesita cuenta para iniciar sesión, así que al activar se crea una con los datos que RH registró.
+  - **Hallazgo:** nada en el código crea membresías (`CompanyMembership.create` solo se usa en el dominio) y no hay envío de correo en ningún módulo.
+- **Afectaciones:** ninguna en código, contratos ni datos. Fija el diseño de M1 a M8.
+- **Sin verificar:** si la persona dueña exige campos que RH no registra (fecha de nacimiento, teléfono, domicilio); lo dirá la primera prueba de M3.
+
+### BIT-050 · Ver membresías, roles y mis permisos efectivos (M1)
+
+- **Qué se hizo:** cinco rutas de lectura bajo `/api/v1/companies/{publicCompanyId}`: `GET /memberships` (filtros `status`, `branchId`, `roleId`; paginación `limit` y `after`), `GET /memberships/{id}`, `GET /memberships/me/effective-permissions`, `GET /roles` (filtros `type` y `status`) y `GET /roles/{id}`. Los puertos de membresías y roles ya existían, pero no tenían adaptador.
+- **Cómo se hizo:**
+  - **RED:** `MembershipsReadIntegrationTest` (7 pruebas) contra el código sin rutas → 7 de 7 fallan con 404, la causa buscada.
+  - **GREEN:** misma clase → 7 de 7, más `RequiredPermissionsContractTest` (2) y `OpenApiContractTest` (2), que comparan cada ruta con su `x-required-permission` del contrato.
+  - **Código:** adaptadores `JdbcMembershipRepositoryAdapter` y `JdbcRoleRepositoryAdapter` (SQL directo, como `EffectivePermissions`), servicios `MembershipApplicationService` y `RoleApplicationService`, controladores `MembershipController` y `RoleController`, DTO nuevos (`PageDto`, `MembershipSummaryDto`, `MembershipDetailDto`, `RoleViewDto`, `EffectivePermissionsDto`), `InvalidRequestException` con su manejador (400), y el método `findAssignmentsByPublicCompanyId` en el puerto de membresías. Los roles de una membresía se guardan por nombre y la API los publica por identificador.
+  - **Migración `V026`:** los tres roles del sistema reciben `effective_permissions.read_own`; sin eso, ningún rol salvo la persona dueña podía consultar sus propios permisos.
+  - **Mutaciones temporales (script, 4), todas detectadas y revertidas, con la huella de cada archivo igual a la de antes:** M1 los roles incluyen los de otras empresas → cae 1; M2 el detalle no comprueba la empresa → cae 1; M3 la página nunca da cursor → cae 1; M4 un rol de otra empresa se puede consultar → cae 1.
+  - **Suite de company-management:** 138 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Incidente mío:** la primera corrida completa falló en dos pruebas. Una era `CompanyAccessIntegrationTest`, que esperaba exactamente dos permisos para un miembro STAFF; ahora recibe también `effective_permissions.read_own` y la expectativa se actualizó. La otra era un efecto de mi script de mutaciones: al restaurar el archivo su fecha quedó anterior a la clase compilada y Maven conservó la clase mutada. El script ahora actualiza la fecha al restaurar y la segunda corrida completa pasó.
+- **Afectaciones:** los roles `COMPANY_ADMIN`, `BRANCH_MANAGER` y `STAFF` tienen un permiso más, y el token de un miembro lo lleva. El contrato OpenAPI ya declaraba estas rutas; no cambió.
+- **Sin verificar:** los adaptadores solo corrieron sobre H2 (la suite con `-Ppostgres` se corre en M8). El contrato define `permissionsVersion` y la versión de los permisos no existe, así que no se publica. La consulta de permisos de otra persona (`GET /effective-permissions/{userId}`) no se hizo. El filtro por rol se aplica en memoria, no en SQL: sirve para el tamaño de un equipo de empresa pequeña, no para decenas de miles de membresías.
+
+### BIT-051 · Roles propios de la empresa: crear, editar, desactivar y borrar (M2)
+
+- **Qué se hizo:** cuatro rutas de escritura sobre `/api/v1/companies/{publicCompanyId}/roles`: `POST` (crear, con `Idempotency-Key`), `PATCH /{id}` (cambiar permisos, con `If-Match` opcional), `POST /{id}/deactivation` y `DELETE /{id}?confirmation=true` (borrado lógico). Emiten `role.created`, `role.updated`, `role.deactivated` y `role.deleted`, que el AsyncAPI ya declaraba.
+- **Cómo se hizo:**
+  - **RED:** `CustomRolesIntegrationTest` (11 pruebas) contra el código sin esas rutas → 11 de 11 fallan con 405, la causa buscada.
+  - **GREEN:** misma clase → 11 de 11; con `MembershipsReadIntegrationTest` (7), `RequiredPermissionsContractTest` (2), `OpenApiContractTest` (2) y `OutboxEventsContractIntegrationTest` (1, ampliada con los cuatro eventos de roles) pasan. Para el contrato OpenAPI se añadieron las respuestas 400 y 415 de «crear rol» y «editar rol» en `openapi-company-management-v1.yaml`.
+  - **Reglas:** el nombre no se repite en la empresa (sin distinguir mayúsculas) ni coincide con un rol del sistema → 409; solo se da un permiso que quien actúa tiene (`Permissions.grants` con su permiso efectivo de hoy; al editar solo cuenta lo que se agrega) → 422; el comodín total `*` no se delega → 422; un permiso limitado por sucursal → 422 porque el modelo todavía no lo soporta; un permiso con formato inválido, nombre vacío o de más de 160 caracteres, o lista vacía → 400; los roles del sistema no se editan, desactivan ni borran → 422; el nombre de un rol no cambia → 422; un rol que alguna membresía todavía tiene (de cualquier estado) no se borra → 409.
+  - **Borrado lógico:** `RoleStatus.DELETED`. El rol se conserva en la base, desaparece de lista y consulta y su nombre se puede volver a usar. `EffectivePermissions` solo cuenta roles `ACTIVE`, así que desactivar o borrar quita los permisos en la siguiente petición (probado).
+  - **Código:** `RoleApplicationService` (con Outbox e idempotencia), `RoleController`, `Role.markDeleted`, `ConflictException` con su manejador (409), y el servicio de membresías ya ignora roles borrados al traducir nombres a identificadores.
+  - **Mutaciones temporales (script, 7), todas detectadas (cada una hizo fallar una prueba) y revertidas, con la huella de `RoleApplicationService` igual a la de antes:** M1 sin la regla «nadie da lo que no tiene», M2 se borra un rol en uso, M3 se ignora `If-Match`, M4 el nombre distingue mayúsculas, M5 el rol borrado sigue visible, M6 no sale `role.deleted`, M7 se permite el comodín `*`.
+  - **Suite de company-management:** 149 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Afectaciones:** `RoleStatus` gana un valor y los adaptadores lo guardan como texto; no hay migración porque la columna no tiene restricción. Los eventos de roles ya existían en el contrato y ahora se emiten.
+- **Sin verificar:**
+  - **Nombre repetido en paralelo:** la unicidad se comprueba en la aplicación, no con un índice (H2 no admite índices parciales), así que dos peticiones simultáneas con el mismo nombre podrían crear dos roles.
+  - **Descripción:** el contrato tiene `description` en el rol y no se guarda; llega y se descarta.
+  - **Permisos sin catálogo:** el formato se valida, pero no que el permiso exista, porque no hay catálogo sembrado.
+  - **Un rol borrado cuyo nombre se reutiliza:** las membresías guardan el rol por nombre. Como no se borra un rol en uso, no queda ninguna membresía apuntándole, pero es una fragilidad del modelo.
+  - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
+
+### BIT-052 · RH registra a las personas del equipo con sus datos, rol y sucursales (M3)
+
+- **Qué se hizo:** cuatro rutas bajo `/api/v1/companies/{publicCompanyId}/employees`: `POST` (registrar, con `Idempotency-Key`), `GET` (lista con `status`, `limit` y `after`), `GET /{id}` y `PATCH /{id}` (corregir mientras la persona no activa su acceso). El perfil guarda nombre, apellidos, fecha de nacimiento, RFC, CURP, teléfono, correo, estado, domicilio, los roles y las sucursales que RH eligió, y el tipo de perfil (`EMPLEADO`). Queda en `PENDING_ACTIVATION`. Todavía no se envía nada: el correo y la activación son M4 y M5.
+- **Cómo se hizo:**
+  - **RED:** `EmployeesIntegrationTest` (11 pruebas) contra el código sin esas rutas → 11 de 11 fallan con 404, la causa buscada.
+  - **GREEN:** misma clase → 11 de 11, con M1 (7), M2 (11) y las pruebas de contrato (4) en verde. Las rutas nuevas se documentaron en `openapi-company-management-v1.yaml` (cuatro operaciones y tres esquemas, con su `x-required-permission`).
+  - **Tablas y permisos:** `V028` crea `company_management.employee_profile` con índices únicos por empresa en RFC, correo y CURP (una persona puede trabajar en dos empresas). `V027` da `employees.*`, `operations.*` y `operational_context.select` a `COMPANY_ADMIN`: dar un rol exige tener todos sus permisos, y sin esos tres la administración no podía registrar a nadie con los roles STAFF ni BRANCH_MANAGER.
+  - **Reglas:** formato de RFC, CURP, correo y fecha, y campos obligatorios → 400; el RFC, el correo y la CURP no se repiten dentro de la empresa → 409; los roles deben existir en la empresa, estar activos y ser delegables por quien registra (todos sus permisos) → 422; el rol de dueño de la cuenta nunca se da → 422; las sucursales deben ser de la empresa → 422; si el correo es de una cuenta con otro RFC, o el RFC de una cuenta con otro correo, → 409 con un mensaje que no dice cuál dato chocó; si coinciden ambos, se admite (esa cuenta será su acceso); la persona dueña de la cuenta no se registra como empleada → 422.
+  - **Privacidad:** RFC, CURP y correo solo salen en las respuestas a quien tiene `employees.read`; no se escriben en el registro (el adaptador descarta el mensaje de la base de datos, que cita el valor repetido) ni en eventos (una prueba lee todos los eventos de la empresa); la lista de membresías no los trae. M3 no emite ningún evento.
+  - **Código:** `EmployeeProfile` (con `PersonalData`), `EmployeeProfileRepositoryPort`, `JdbcEmployeeProfileRepositoryAdapter`, `EmployeeApplicationService`, `EmployeeController`, `EmployeeInput`, `EmployeeDto`, y `PageCursor`, que sustituye la copia privada del cursor en `MembershipApplicationService`.
+  - **Mutaciones temporales (script, 8), todas detectadas y revertidas, con la huella de `EmployeeApplicationService` igual a la de antes:** M1 sin validar el RFC, M2 sin validar la CURP, M3 sin la regla de delegación, M4 un correo con otro RFC pasa, M5 la dueña de la cuenta se registra, M6 al corregir choca con sí mismo, M7 un perfil de otra empresa se ve, M8 se da el rol de dueño. Antes de lanzarlas se añadió a la prueba el caso del rol de dueño, que ninguna prueba cubría.
+  - **Suite de company-management:** 160 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Afectaciones:** `COMPANY_ADMIN` tiene tres permisos más, y el token de un miembro con ese rol los lleva. Rutas y esquemas nuevos en el contrato OpenAPI. El contrato no define empleados; esta API es nueva y los nombres de campo siguen los del resto del contrato.
+- **Sin verificar:**
+  - **El correo y el RFC contra cuentas existentes** se comprueban al registrar. Si alguien crea una cuenta con ese correo después, el choque aparecerá al activar (M5).
+  - **Fuga limitada de existencia:** un 409 de cuenta ajena frente a un 201 deja saber que ese par correo y RFC no coincide con una cuenta, aunque no cuál. Es parecido a lo que ya hace el registro de cuentas.
+  - **Las personas se listan en memoria** (por empresa), igual que las membresías.
+  - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
+
+### BIT-053 · El sistema manda correos: puerto, adaptadores y recuperación de contraseña (M4)
+
+- **Qué se hizo:** `MailPort` y tres adaptadores elegidos por `jcomercy.mail.mode`: `smtp` (entrega a un servidor SMTP con `spring-boot-starter-mail`), `recording` (guarda en memoria, para pruebas y trabajo local) y `disabled` (por defecto: falla a la vista en vez de tirar el correo). La recuperación de contraseña ya entrega su código por correo (ERR-029, resuelto).
+- **Cómo se hizo:**
+  - **RED (por compilación):** `MailAdaptersTest`, `PasswordRecoveryMailIntegrationTest` y `PasswordRecoveryMailFailureIntegrationTest` no compilaban porque `MailPort` y los adaptadores no existían.
+  - **GREEN:** 12 pruebas, 12 de 12: 8 de adaptadores y elección de modo, 3 de la recuperación con correo y 1 con el servidor de correo caído.
+  - **Qué comprueban:** el correo llega con el asunto «Cambia tu contraseña de JComercy» y un enlace `{jcomercy.public-url}/recuperar-contrasena?codigo=…` de 15 minutos; el enlace cambia la contraseña, con la nueva se entra y con la vieja no, y no sirve dos veces; dos peticiones dan enlaces distintos; el correo en mayúsculas encuentra la misma cuenta; un correo que no existe recibe 202 y no se le manda nada; si el servidor de correo falla, la respuesta sigue siendo 202; el correo no lleva el identificador de la cuenta ni la contraseña; el error del SMTP no cita al destinatario; con `mode=smtp` y sin servidor el sistema no arranca.
+  - **Diseño:** `AccessMailer` arma el correo y lo manda después de confirmar la transacción que guardó el código, en otro hilo: así el enlace funciona al abrirlo y pedir la recuperación de una cuenta que existe no tarda más que la de una que no. Un fallo se anota en el registro sin el código ni el destinatario. El código solo viaja en el correo: no se devuelve en la respuesta ni se escribe en el registro. `application.yml` documenta los modos; `SPRING_MAIL_HOST`, `SPRING_MAIL_USERNAME` y `SPRING_MAIL_PASSWORD` se pasan por variable de entorno y no se escriben ahí. Las pruebas usan `recording` desde su `application.properties`.
+  - **Mutaciones temporales (script, 5), todas detectadas y revertidas, con la huella de cada archivo igual a la de antes:** M1 el enlace usa otro nombre de parámetro → caen 2; M2 la recuperación no manda el correo → cae 1 y falla 1 por error; M3 el SMTP no pone remitente → cae 1; M4 el error del SMTP se deja pasar sin traducir → cae 1; M5 el modo por defecto deja de ser `disabled` → cae 1.
+  - **Suite de company-management:** 172 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Afectaciones:** dependencia nueva `spring-boot-starter-mail`. Claves nuevas en `application.yml`: `jcomercy.public-url`, `jcomercy.mail.mode`, `jcomercy.mail.from` y `spring.mail.*`. **Despliegue:** sin `JCOMERCY_MAIL_MODE=smtp` y un servidor de correo, la recuperación de contraseña responde 202 pero no entrega nada y deja un error en el registro. Es el modo por defecto a propósito.
+- **Sin verificar:**
+  - **El envío real por SMTP:** no hay servidor de correo elegido y no se probó contra uno; el adaptador solo se probó con un `JavaMailSender` simulado. Hace falta el servidor, el usuario y un remitente verificado.
+  - **La pantalla del enlace:** `/recuperar-contrasena` no existe en el frontend, que es una maqueta; el enlace apunta a una dirección que todavía no atiende.
+  - **Correos perdidos:** si el hilo de envío falla, o el proceso se detiene entre confirmar y enviar, el correo no se reintenta. Quien lo pidió puede pedirlo otra vez.
+  - Las invitaciones usarán el mismo puerto en M5, con un envío que sí informa su resultado.
+
+### BIT-054 · Invitación por correo y activación del acceso del empleado (M5)
+
+- **Qué se hizo:** RH registra a una persona (M3) y el sistema le manda un enlace por correo; la persona lo abre, elige su contraseña y queda con acceso. Rutas nuevas: `POST` y `DELETE /api/v1/companies/{publicCompanyId}/employees/{id}/invitation` (reenviar y cancelar), y dos rutas públicas, `GET /api/v1/employee-invitations/{code}` (ver a quién se invita) y `POST /api/v1/employee-invitations/{code}/acceptance` (activar). Las respuestas de empleados traen ahora `invitation` con su estado (`PENDING`, `ACCEPTED`, `CANCELLED` o `EXPIRED`) y el del correo (`PENDING`, `SENT` o `FAILED`, «correo no enviado»).
+- **Cómo se hizo:**
+  - **RED:** `EmployeeActivationIntegrationTest` (13), `EmployeeInvitationMailFailureIntegrationTest` (1) y `EmployeeInvitationResendLimitIntegrationTest` (1) contra el código sin esas rutas → 15 pruebas, 14 fallan por aserción y 1 por error, todas por la funcionalidad que falta.
+  - **GREEN:** 15 de 15 a la primera corrida, con `EmployeesIntegrationTest` (11) y las pruebas de contrato en verde. `OutboxEventsContractIntegrationTest` se amplió con un alta, una activación con el enlace del correo y una cancelación, y ahora comprueba contra el AsyncAPI `membership.invitation.created`, `.accepted`, `.revoked` y `membership.created`.
+  - **Tabla:** `V029` crea `employee_invitation`. Solo guarda la huella SHA-256 del código; el código (32 bytes aleatorios) viaja únicamente en el correo. «Vencida» no se guarda: se deduce de `expires_at` (7 días).
+  - **Activar:** una sola transacción que crea la cuenta (con `AccountApplicationService.registerAccount`, con la clave de idempotencia nueva en cada intento para que un reintento no reciba una cuenta deshecha), la membresía, las asignaciones de sucursal, marca a la persona `ACTIVE` y la invitación `ACCEPTED`. Si algo falla no queda nada a medias (probado con contraseña corta y rol desactivado). Quien ya tiene cuenta (mismo correo y mismo RFC) debe traer el token de su cuenta: sin sesión → 401, con otra cuenta → 403, y su contraseña no se toca.
+  - **Reglas:** un enlace vencido, usado, cancelado o inexistente responde el mismo 404 (se comparó el cuerpo, sin citar el código); la empresa debe estar activa → 422; los roles deben seguir activos → 422; si la persona ya pertenece a la empresa → 409; solo una invitación vigente por persona (reenviar o cancelar deja sin efecto la anterior); entre reenvíos hay un tiempo mínimo (`jcomercy.invitations.resend-min-interval-seconds`, 60 por defecto) → 409; reenviar o cancelar exige `employees.invite`, que `COMPANY_ADMIN` ya tiene por `employees.*`.
+  - **Correo:** `InvitationMailer` lo manda al confirmar la transacción y en el mismo hilo, y anota si salió (`SENT`) o no (`FAILED`) en su propia transacción. Es lo contrario de la recuperación de contraseña, que sale en otro hilo y no avisa: aquí quien registra es una persona con permiso y necesita saberlo. `AfterCommit` se extrajo de `AccessMailer` y lo usan los dos.
+  - **Eventos:** los de invitación se publican con los datos de la membresía que el contrato define (empresa, roles y estado), sin identificador de membresía porque todavía no existe, y sin correo ni datos personales. Una prueba lee **todos** los eventos de la base y comprueba que no llevan RFC, CURP, correo ni contraseña de ninguna de las dos personas.
+  - **Mutaciones temporales (script, 12), todas detectadas y revertidas, con la huella de cada archivo igual a la de antes:** M1 el enlace sirve aunque esté usado o vencido → caen 3; M2 se activa con la empresa inactiva; M3 se omite la sesión de quien ya tiene cuenta; M4 sirve la sesión de otra cuenta; M5 no se comprueba la membresía repetida; M6 reenviar no cancela la anterior; M7 el evento `membership.created` cambia de nombre → caen 2; M8 aceptar no marca la invitación como usada; M9 se ignora el tiempo mínimo entre reenvíos; M10 se acepta un rol desactivado; M11 un correo fallido se anota como enviado; M12 la sesión de la cuenta no llega al servicio → caen 2.
+  - **Guarda del repositorio:** `RestOwnershipIntegrationTest` exige que toda ruta sea pública a propósito o esté cubierta por la comprobación de pertenencia. Detectó las dos rutas públicas nuevas y se declararon como públicas, con la razón escrita.
+  - **Suite de company-management:** 187 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Afectaciones:** tabla nueva, tres rutas públicas y dos de RH; `SecurityConfig` deja pasar `/api/v1/employee-invitations/**` sin sesión. `EmployeeDto` gana el campo `invitation` y `EmployeeApplicationService.register` recibe quién registra y la correlación. Sin `JCOMERCY_MAIL_MODE=smtp` el alta se guarda y la invitación queda en `FAILED` (el modo por defecto es `disabled` a propósito).
+- **Sin verificar:**
+  - **El envío real por SMTP**, igual que en BIT-053.
+  - **La pantalla `/activar-acceso`** no existe en el frontend, que es una maqueta; el enlace apunta a una dirección que todavía no atiende.
+  - **Fuerza bruta contra el código:** no hay límite de intentos en las rutas públicas; con 32 bytes aleatorios adivinar uno es inviable, pero un atacante puede generar carga.
+  - **Fugas limitadas de existencia:** `accountExists` en la consulta, y el 401/403 de la activación, le dicen a quien tiene el código si ese correo tiene cuenta. Solo lo ve quien recibió el correo.
+  - **Una persona que ya se había revocado** y se vuelve a invitar choca con la restricción de una sola membresía por empresa y usuario (409 en la activación); reactivar una membresía revocada no está resuelto (M7).
+  - **Un correo que no sale por un fallo del proceso** entre confirmar y enviar queda en `PENDING`, sin reintento automático; RH puede reenviar.
+  - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
+
+### BIT-055 · Sucursales de una persona: listar, agregar, suspender y quitar (M6)
+
+- **Qué se hizo:** cuatro rutas bajo `/api/v1/companies/{publicCompanyId}/memberships/{membershipId}/assignments`: `GET` (lista), `POST` (agregar, con `Idempotency-Key`), `PATCH /{id}` (suspender o reactivar, con `If-Match` opcional) y `DELETE /{id}` (quitar, con `Idempotency-Key`). Emiten `branch-assignment.created`, `.updated` y `.revoked`, que el AsyncAPI ya declaraba. La activación de acceso de M5 ahora también emite `branch-assignment.created` por cada sucursal que crea (antes no lo hacía).
+- **Cómo se hizo:**
+  - **RED:** `BranchAssignmentsIntegrationTest` (9 pruebas) contra el código sin esas rutas → 9 de 9 fallan con 404, la causa buscada.
+  - **GREEN:** misma clase → 9 de 9, con M1, M5, `RestOwnershipIntegrationTest` y las pruebas de contrato en verde. `OutboxEventsContractIntegrationTest` se amplió con agregar, suspender y quitar una sucursal y comprueba los tres eventos contra el AsyncAPI.
+  - **Reglas:** la sucursal debe existir en la empresa → 422; una sucursal repetida → 409; no se agregan a una membresía revocada → 422; **los roles son de la persona, no de cada sucursal**: pedir roles distintos de los que ya tiene, o permisos sueltos, se rechaza con 422 explicándolo (el contrato prevé roles por sucursal y el modelo todavía no los distingue); la sucursal de una asignación no se cambia (se quita y se agrega la otra) → 422; estado inválido o ausente → 400; versión vieja en `If-Match` → 409.
+  - **La última sucursal:** una persona con la membresía activa no se queda sin su última sucursal activa (ni suspendiéndola ni quitándola) → 409 con la instrucción de suspender su membresía en su lugar. Con la membresía suspendida o revocada sí se puede. El contrato habla de validar operaciones pendientes y sesiones activas; no hay módulo de operaciones, así que esta es la regla que se aplicó.
+  - **Retirar sin borrar:** `AssignmentStatus.REMOVED`. La fila se conserva, desaparece de la lista, del detalle de la membresía, del filtro por sucursal y del token, y volver a agregar esa sucursal reutiliza la misma fila. Suspender o quitar saca la sucursal del token en la siguiente entrada a la empresa (probado).
+  - **Permisos:** `V030` da `assignments.*` a `COMPANY_ADMIN`; sin eso la administración no podía usar las rutas.
+  - **Código:** `AssignmentApplicationService`, `BranchAssignmentController`, `AssignmentDto`, `AssignmentEvents` (lo comparten M5 y M6), `BranchAssignment.remove` y `restore`. En el contrato, `AssignmentRequest` ya no exige `roleIds` y `Assignment` gana `version`; se añadieron 400, 415 y 422 a las operaciones con cuerpo.
+  - **Mutaciones temporales (script, 11), todas detectadas y revertidas, con la huella de cada archivo igual a la de antes:** M1 se quita la última sucursal activa, M2 la regla también bloquea a una persona suspendida, M3 se admite una sucursal repetida, M4 se agrega a una membresía revocada, M5 se aceptan roles por sucursal, M6 la lista muestra las retiradas, M7 se cambia la sucursal de una asignación, M8 se ignora `If-Match`, M9 el evento de retirar cambia de nombre → caen 2, M10 el filtro por sucursal cuenta las retiradas, M11 el evento de retirar publica estado.
+  - **Suite de company-management:** 196 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Afectaciones:** `AssignmentStatus` gana `REMOVED` (la columna no tiene restricción, no hay migración de estructura). `COMPANY_ADMIN` tiene un permiso más. Cambios en el contrato OpenAPI. La lista de asignaciones no se pagina: una persona tiene tantas como sucursales.
+- **Sin verificar:**
+  - **Roles y permisos por sucursal** quedan sin implementar (el modelo guarda los roles en la membresía).
+  - **Cambiar los roles de una persona ya activa** (`PATCH /memberships/{id}` del contrato) no se hizo: no estaba en el plan. Hoy, para cambiar el rol hay que revocar y volver a registrar.
+  - **Dos peticiones simultáneas** que quiten las dos últimas sucursales activas de una persona podrían saltarse la regla: se comprueba en la aplicación, sin bloqueo de la fila.
+  - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
+
+### BIT-056 · Suspender, reactivar y revocar el acceso de una persona (M7)
+
+- **Qué se hizo:** tres rutas `POST` bajo `/api/v1/companies/{publicCompanyId}/memberships/{membershipId}`: `/suspension`, `/reactivation` y `/revocation`, con `Idempotency-Key`. Responden `LifecycleResponse` del contrato (`id`, `status`, `changedAt`, `correlationId`) y emiten `membership.suspended`, `membership.reactivated` y `membership.revoked`, que el AsyncAPI ya declaraba.
+- **Cómo se hizo:**
+  - **RED:** `MembershipLifecycleIntegrationTest` (8 pruebas) contra el código sin esas rutas → 8 de 8 fallan con 404, la causa buscada.
+  - **GREEN:** misma clase → 8 de 8 a la primera, con `OutboxEventsContractIntegrationTest` (ampliada con suspender, reactivar y revocar a una persona y comprobando los tres eventos contra el AsyncAPI), `RequiredPermissionsContractTest`, `OpenApiContractTest`, `RestOwnershipIntegrationTest` y M1 en verde.
+  - **Efecto inmediato (probado):** al suspender, el token de empresa que la persona ya tenía responde 403 en la siguiente petición, no puede volver a entrar a la empresa y la empresa desaparece de su lista de accesos; al reactivar, el mismo token vuelve a servir. Funciona porque cada petición revisa la membresía en la base de datos.
+  - **Reglas:** solo se suspende a quien está activo y solo se reactiva a quien está suspendido → 409 en otro caso; revocar sirve desde activa o suspendida, es definitivo (después no se puede suspender, reactivar ni revocar → 409) y exige registrar a la persona otra vez; **nadie se suspende ni se revoca a sí mismo** → 422, para no quedarse fuera de la empresa sin poder deshacerlo; la membresía de otra empresa o inexistente → 404; repetir la clave de idempotencia no repite el efecto ni el evento (probado). Los permisos son `memberships.suspend`, `.reactivate` y `.revoke`, que `COMPANY_ADMIN` ya tiene por `memberships.*`.
+  - **Eventos:** `MembershipData` del contrato (membresía, empresa, persona, roles y estado nuevo), sin correo ni datos personales (probado).
+  - **Código:** `MembershipLifecycleService`, `LifecycleDto` y las tres rutas en `MembershipController`. `CompanyMembership` ya tenía `suspend`, `reactivate` y `revoke`, pero nada los llamaba. En el contrato se añadió 422 a suspender y revocar.
+  - **Mutaciones temporales (script, 8), todas detectadas y revertidas, con la huella de cada archivo igual a la de antes:** M1 se permite suspenderse a sí mismo, M2 se suspende a quien no está activo → caen 2, M3 se reactiva a quien no está suspendido → caen 2, M4 se revoca dos veces, M5 el evento de reactivar cambia de nombre → caen 2, M6 se actúa sobre la membresía de otra empresa, M7 el cambio no se guarda → caen 6, M8 la ruta de revocar exige otro permiso que el contrato.
+  - **Suite de company-management:** 204 pruebas, 0 fallos, 6 omitidas (broker y PostgreSQL reales).
+- **Afectaciones:** ninguna tabla ni migración nueva. Rutas nuevas en el contrato OpenAPI ya existentes (se completó la respuesta 422).
+- **Sin verificar:**
+  - **Inventario:** valida el token por su cuenta y no revisa la membresía, así que una persona suspendida o revocada sigue pudiendo usar inventario hasta que su token venza (una hora por defecto). No se tocó inventario en este frente.
+  - **Los canales en vivo y el contexto operativo** que menciona el contrato (cerrar WebSockets, invalidar contextos) no existen todavía en este módulo.
+  - **Motivo y confirmación:** el contrato de suspensión habla de un `reasonCode` y una confirmación; la ruta del contrato para la membresía no declara cuerpo y no se guardó ningún motivo.
+  - **Revocar y volver a invitar:** la restricción de una sola membresía por empresa y usuario impide dar de alta otra vez a una persona revocada (409 al activar); reactivar una revocada no existe por diseño, y falta una salida para recontratar.
+  - **Cambiar el rol de una persona activa** (`PATCH /memberships/{id}`) sigue sin hacerse.
+  - Solo corrió sobre H2; la suite con `-Ppostgres,rabbitmq` se corre en M8.
+
+### BIT-057 · Cierre del frente de roles y membresías con alta de empleados por RH (M8)
+
+- **Qué se hizo:** verificación final de las etapas M0 a M7 (BIT-049 a BIT-056) en la rama `feat/roles-membresias`, con un commit por etapa. Se encontró y resolvió un error de las pruebas con PostgreSQL real (ERR-030).
+- **Cómo se hizo:**
+  - **Suite normal** (`mvn -B -ntp test`) → `BUILD SUCCESS`, **358 pruebas** (16 + 8 + 8 + 204 + 27 + 95), 13 omitidas (las de broker y PostgreSQL reales: 6 en company-management y 7 en inventario), sin Docker.
+  - **Suite con PostgreSQL 16 y RabbitMQ 3.13 reales** (`mvn -B -ntp -Ppostgres,rabbitmq test`) → la primera corrida **falló**: 7 errores en `OutboxDispatcherConnectionIntegrationTest`, `OutboxRabbitMqIntegrationTest` y `GraphQlOpenModeIntegrationTest`, por `too many clients already` (ERR-030), y los módulos de inventario no llegaron a correr. Con `max_connections=500` en el contenedor de pruebas, la segunda corrida completa pasó: `BUILD SUCCESS`, **358 de 358**, ninguna omitida. Sin contenedores de pruebas sobrantes.
+  - **Lo que esto verifica por primera vez sobre PostgreSQL:** las migraciones `V026` a `V030`, los cuatro adaptadores con SQL directo que se escribieron (membresías y asignaciones, roles, perfiles de empleado e invitaciones, con sus lecturas de `OffsetDateTime` y `UUID`), y los índices únicos por empresa.
+  - **AsyncAPI:** no necesitó cambios. Los 14 tipos de evento que este frente emite (`role.*`, `membership.*`, `membership.invitation.*`, `branch-assignment.*`) ya estaban declarados, y `OutboxEventsContractIntegrationTest` los comprueba contra el contrato con sus flujos reales. Los eventos de invitación se publican con los datos de la membresía que el contrato define, sin identificador de membresía (todavía no existe) y sin datos personales.
+- **Resumen por etapa:**
+
+  | Etapa | Entrada | Qué entrega | Pruebas nuevas | Mutaciones |
+  |---|---|---|---|---|
+  | M0 | BIT-049 | Plan, diagramas y ERR-029 | (documentación) | |
+  | M1 | BIT-050 | Ver membresías, roles y mis permisos | 7 | 4 |
+  | M2 | BIT-051 | Roles propios de la empresa | 11 | 7 |
+  | M3 | BIT-052 | Perfil de empleado por RH | 11 | 8 |
+  | M4 | BIT-053 | Correo y recuperación de contraseña | 12 | 5 |
+  | M5 | BIT-054 | Invitación y activación del acceso | 15 | 12 |
+  | M6 | BIT-055 | Sucursales de una persona | 9 | 11 |
+  | M7 | BIT-056 | Suspender, reactivar y revocar | 8 | 8 |
+
+- **Afectaciones:** migraciones `V026` a `V030` en company-management; dependencia `spring-boot-starter-mail`; rutas nuevas en el contrato OpenAPI; el rol `COMPANY_ADMIN` ganó `employees.*`, `assignments.*`, `operations.*`, `operational_context.select` y `effective_permissions.read_own`. Con el modo de correo por defecto (`disabled`), la recuperación de contraseña y las invitaciones no entregan nada hasta configurar `JCOMERCY_MAIL_MODE=smtp`.
+- **Pendiente y sin verificar (nada de esto se oculta):**
+  - **Correo real:** el envío por SMTP no se probó contra ningún servidor; falta elegir el servicio, el remitente verificado y la dirección pública de la aplicación (`JCOMERCY_PUBLIC_URL`).
+  - **Pantallas:** el frontend sigue siendo una maqueta. No existen `/activar-acceso` ni `/recuperar-contrasena`, a donde apuntan los enlaces de los correos, ni pantallas para registrar equipo, roles ni sucursales.
+  - **Inventario** valida el token por su cuenta y no revisa la membresía: una persona suspendida o revocada sigue usándolo hasta que su token venza (una hora por defecto).
+  - **Cambiar el rol de una persona ya activa** (`PATCH /memberships/{id}`), **roles y permisos por sucursal**, y la **consulta de los permisos de otra persona** no se hicieron.
+  - **Recontratar** a una persona revocada no tiene salida (restricción de una sola membresía por empresa y usuario).
+  - **Una cuenta de empleado puede crear empresas propias:** nada lo impide hoy; las rutas de empresas no distinguen el tipo de cuenta.
+  - **Condiciones de carrera:** el nombre único de un rol, la última sucursal activa de una persona y el código de una invitación se comprueban en la aplicación, sin bloqueo; dos peticiones simultáneas podrían saltarse las dos primeras reglas.
+  - **Sin límite de intentos** en las rutas públicas de invitación y recuperación.
+  - **Datos personales:** RFC y CURP se guardan en claro en `employee_profile`; no hay cifrado en reposo ni política de retención.
+  - **Estabilidad:** la suite de company-management pasó completa al cerrar cada etapa (M1 a M7), la de todos los módulos pasó al cerrar, y la que usa servicios reales pasó en su segunda corrida (la primera falló por ERR-030). Eso no demuestra que no haya fallas intermitentes.
+
 ---
 
 ## Errores
@@ -1171,3 +1350,22 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Cómo mitigarlo:** correr la clase aislada.
 - **Cómo se resolvió:** el despachador de company-management lee `outbox.publisher.initial-delay-ms` (0 por defecto, igual que antes) y el `application.properties` de pruebas lo pone en una hora. Dos corridas completas seguidas pasaron; dos pasadas no demuestran que no vuelva a aparecer.
 - **Lo que no cubre:** el despachador de inventario ya está apagado en las pruebas (`outbox.publisher.enabled=false`), así que no tiene el problema.
+
+### ERR-029 · La recuperación de contraseña genera su código pero no lo entrega por ningún medio
+
+- **Estado:** RESUELTO el 2026-11-07 (BIT-053). Visto al leer `AuthController` para el plan de BIT-049.
+- **De qué trata:** `POST /api/v1/auth/password-recovery` crea un código aleatorio, guarda solo su huella y responde 202; el código original no se devuelve, no se envía y no se escribe en ningún registro. El módulo no tiene ningún envío de correo. Quien pide recuperar su contraseña nunca recibe el código que necesita para confirmarla.
+- **Cuándo se manifiesta:** siempre que una persona real intenta recuperar su contraseña. Las pruebas no lo ven porque pueden leer la huella de la base.
+- **Cómo mitigarlo:** mientras no se resuelva, un cambio de contraseña solo puede hacerse con acceso directo a la base de datos.
+- **Sin verificar:** se concluyó leyendo el código y buscando clases de correo; no se probó con un cliente real.
+- **Cómo se resolvió:** BIT-053 introduce `MailPort` y la recuperación manda el código en un correo con un enlace de un solo uso. Las pruebas leen el correo, usan el enlace para cambiar la contraseña, entran con la nueva y comprueban que el enlace no sirve dos veces.
+- **Lo que no cubre:** el envío real por SMTP no se probó contra un servidor de correo (ver BIT-053).
+
+### ERR-030 · Con PostgreSQL real, la suite de company-management se queda sin conexiones
+
+- **Estado:** RESUELTO el 2026-11-07 (BIT-057). Visto al correr `mvn -B -ntp -Ppostgres,rabbitmq test` como cierre de BIT-049 (M8).
+- **De qué trata:** el contenedor de PostgreSQL de las pruebas usa el máximo por defecto, 100 conexiones, y cada contexto de Spring que el caché de pruebas conserva (hasta 32) guarda su propio pool de 10. Las pruebas de M1 a M7 añadieron clases con configuración propia (correo caído, límite de reenvío), cada una con su contexto, y la suma pasó de 100: `PSQLException: FATAL: sorry, too many clients already`. Fallaron 7 pruebas de tres clases que arrancan su contexto tarde (`OutboxDispatcherConnectionIntegrationTest`, `OutboxRabbitMqIntegrationTest` y `GraphQlOpenModeIntegrationTest`), por error al crear el contexto y no por una aserción. La suite normal, con H2, pasaba entera, así que solo lo habría descubierto el job `postgres` del CI.
+- **Cuándo se manifiesta:** solo con `-Ppostgres`, y solo cuando el módulo tiene tantos contextos distintos que sus pools juntos pasan de 100 conexiones.
+- **Cómo mitigarlo:** correr las clases afectadas por separado.
+- **Cómo se resolvió:** `PostgresTestDatabase` arranca el contenedor con `max_connections=500` (y repite `fsync=off`, porque el comando se reemplaza completo). No se redujo el tamaño de los pools porque varias pruebas de concurrencia dependen de tener conexiones disponibles. La suite completa con `-Ppostgres,rabbitmq` pasó después: 358 de 358.
+- **Lo que no cubre:** el límite sigue existiendo, solo está más lejos: 500 conexiones alcanzan para los 32 contextos que el caché conserva con pools de 10. Si el módulo crece mucho más, o se sube el tamaño del caché, habrá que revisarlo.

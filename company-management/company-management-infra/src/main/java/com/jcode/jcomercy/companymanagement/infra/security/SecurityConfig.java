@@ -40,6 +40,8 @@ public class SecurityConfig {
                     "/api/v1/auth/refresh",
                     "/api/v1/auth/password-recovery",
                     "/api/v1/auth/password-recovery/confirm",
+                    // La persona que abre el enlace de su invitación todavía no tiene sesión: la identifica el código del correo.
+                    "/api/v1/employee-invitations/**",
                     "/swagger-ui.html",
                     "/swagger-ui/**",
                     "/v3/api-docs/**",

@@ -54,4 +54,86 @@ public class CompanyManagementSpringConfig {
     ) {
         return new BranchApplicationService(branchRepository, companyRepository, outboxPort, idempotencyRegistry);
     }
+
+    @Bean
+    public com.jcode.jcomercy.companymanagement.application.service.MembershipApplicationService membershipApplicationService(
+        com.jcode.jcomercy.companymanagement.domain.port.MembershipRepositoryPort membershipRepository,
+        com.jcode.jcomercy.companymanagement.domain.port.RoleRepositoryPort roleRepository,
+        CompanyRepositoryPort companyRepository
+    ) {
+        return new com.jcode.jcomercy.companymanagement.application.service.MembershipApplicationService(
+            membershipRepository, roleRepository, companyRepository);
+    }
+
+    @Bean
+    public com.jcode.jcomercy.companymanagement.application.service.RoleApplicationService roleApplicationService(
+        com.jcode.jcomercy.companymanagement.domain.port.RoleRepositoryPort roleRepository,
+        CompanyRepositoryPort companyRepository,
+        com.jcode.jcomercy.companymanagement.domain.port.MembershipRepositoryPort membershipRepository,
+        EventOutboxPort outboxPort,
+        IdempotencyRegistry idempotencyRegistry
+    ) {
+        return new com.jcode.jcomercy.companymanagement.application.service.RoleApplicationService(
+            roleRepository, companyRepository, membershipRepository, outboxPort, idempotencyRegistry);
+    }
+
+    @Bean
+    public com.jcode.jcomercy.companymanagement.application.service.EmployeeApplicationService employeeApplicationService(
+        com.jcode.jcomercy.companymanagement.domain.port.EmployeeProfileRepositoryPort employeeRepository,
+        CompanyRepositoryPort companyRepository,
+        com.jcode.jcomercy.companymanagement.domain.port.RoleRepositoryPort roleRepository,
+        BranchRepositoryPort branchRepository,
+        AccountRepositoryPort accountRepository,
+        IdempotencyRegistry idempotencyRegistry,
+        com.jcode.jcomercy.companymanagement.application.service.EmployeeInvitationService invitationService
+    ) {
+        return new com.jcode.jcomercy.companymanagement.application.service.EmployeeApplicationService(
+            employeeRepository, companyRepository, roleRepository, branchRepository, accountRepository, idempotencyRegistry,
+            invitationService);
+    }
+
+    @Bean
+    public com.jcode.jcomercy.companymanagement.application.service.MembershipLifecycleService membershipLifecycleService(
+        com.jcode.jcomercy.companymanagement.domain.port.MembershipRepositoryPort membershipRepository,
+        CompanyRepositoryPort companyRepository,
+        EventOutboxPort outboxPort,
+        IdempotencyRegistry idempotencyRegistry
+    ) {
+        return new com.jcode.jcomercy.companymanagement.application.service.MembershipLifecycleService(
+            membershipRepository, companyRepository, outboxPort, idempotencyRegistry);
+    }
+
+    @Bean
+    public com.jcode.jcomercy.companymanagement.application.service.AssignmentApplicationService assignmentApplicationService(
+        com.jcode.jcomercy.companymanagement.domain.port.MembershipRepositoryPort membershipRepository,
+        BranchRepositoryPort branchRepository,
+        CompanyRepositoryPort companyRepository,
+        com.jcode.jcomercy.companymanagement.domain.port.RoleRepositoryPort roleRepository,
+        EventOutboxPort outboxPort,
+        IdempotencyRegistry idempotencyRegistry
+    ) {
+        return new com.jcode.jcomercy.companymanagement.application.service.AssignmentApplicationService(
+            membershipRepository, branchRepository, companyRepository, roleRepository, outboxPort, idempotencyRegistry);
+    }
+
+    @Bean
+    public com.jcode.jcomercy.companymanagement.application.service.EmployeeInvitationService employeeInvitationService(
+        com.jcode.jcomercy.companymanagement.domain.port.EmployeeInvitationRepositoryPort invitationRepository,
+        com.jcode.jcomercy.companymanagement.domain.port.EmployeeProfileRepositoryPort employeeRepository,
+        CompanyRepositoryPort companyRepository,
+        com.jcode.jcomercy.companymanagement.domain.port.RoleRepositoryPort roleRepository,
+        BranchRepositoryPort branchRepository,
+        AccountRepositoryPort accountRepository,
+        AccountApplicationService accountService,
+        com.jcode.jcomercy.companymanagement.domain.port.MembershipRepositoryPort membershipRepository,
+        EventOutboxPort outboxPort,
+        com.jcode.jcomercy.companymanagement.domain.port.InvitationDeliveryPort delivery,
+        IdempotencyRegistry idempotencyRegistry,
+        @org.springframework.beans.factory.annotation.Value("${jcomercy.invitations.resend-min-interval-seconds:60}") long resendMinIntervalSeconds
+    ) {
+        return new com.jcode.jcomercy.companymanagement.application.service.EmployeeInvitationService(
+            invitationRepository, employeeRepository, companyRepository, roleRepository, branchRepository, accountRepository,
+            accountService, membershipRepository, outboxPort, delivery, idempotencyRegistry,
+            java.time.Duration.ofSeconds(resendMinIntervalSeconds));
+    }
 }

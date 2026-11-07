@@ -244,7 +244,10 @@ class RestOwnershipIntegrationTest {
             .andReturn().getResponse().getContentAsString();
         Set<String> uncovered = new TreeSet<>();
         objectMapper.readTree(generated).get("paths").fieldNames().forEachRemaining(path -> {
-            boolean isPublic = path.equals("/api/v1/accounts/registration") || path.startsWith("/api/v1/auth/");
+            // Públicas a propósito: quien las usa todavía no tiene acceso. La invitación se identifica con el código del
+            // correo (de 32 bytes, de un solo uso y con vencimiento), y un código que no sirve responde siempre lo mismo.
+            boolean isPublic = path.equals("/api/v1/accounts/registration") || path.startsWith("/api/v1/auth/")
+                || path.startsWith("/api/v1/employee-invitations/");
             boolean underAnAccount = path.startsWith("/api/v1/accounts/{publicAccountId}");
             boolean underACompany = path.startsWith("/api/v1/companies/{publicCompanyId}");
             if (!isPublic && !underAnAccount && !underACompany) {

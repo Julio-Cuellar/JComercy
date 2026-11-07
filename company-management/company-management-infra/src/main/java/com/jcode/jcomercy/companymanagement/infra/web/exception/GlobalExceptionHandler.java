@@ -53,6 +53,48 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
     }
 
+    @ExceptionHandler(com.jcode.jcomercy.companymanagement.domain.exception.InvalidRequestException.class)
+    public ResponseEntity<ProblemDetails> handleInvalidRequest(
+        com.jcode.jcomercy.companymanagement.domain.exception.InvalidRequestException ex, HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/validation",
+            "Datos Inválidos",
+            HttpStatus.BAD_REQUEST.value(),
+            ex.getMessage(),
+            request.getRequestURI(),
+            "VALIDATION_ERROR"
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    @ExceptionHandler(com.jcode.jcomercy.companymanagement.domain.exception.ConflictException.class)
+    public ResponseEntity<ProblemDetails> handleStateConflict(
+        com.jcode.jcomercy.companymanagement.domain.exception.ConflictException ex, HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/conflict",
+            "Conflicto de Estado",
+            HttpStatus.CONFLICT.value(),
+            ex.getMessage(),
+            request.getRequestURI(),
+            "CONFLICT"
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
+    }
+
+    @ExceptionHandler(com.jcode.jcomercy.companymanagement.domain.exception.AuthenticationRequiredException.class)
+    public ResponseEntity<ProblemDetails> handleAuthenticationRequired(
+        com.jcode.jcomercy.companymanagement.domain.exception.AuthenticationRequiredException ex, HttpServletRequest request) {
+        ProblemDetails problem = ProblemDetails.of(
+            "https://jcomercy.com/errors/authentication-required",
+            "Inicia Sesión",
+            HttpStatus.UNAUTHORIZED.value(),
+            ex.getMessage(),
+            request.getRequestURI(),
+            "AUTHENTICATION_REQUIRED"
+        );
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(problem);
+    }
+
     @ExceptionHandler(DomainRuleViolationException.class)
     public ResponseEntity<ProblemDetails> handleUnprocessable(DomainRuleViolationException ex, HttpServletRequest request) {
         ProblemDetails problem = ProblemDetails.of(
