@@ -56,18 +56,22 @@ Hoy solo existe la política de mostrador, y no hay ningún endpoint externo. El
 
 ## 6. Etapas
 
-| Etapa | Qué se hace |
-|---|---|
-| S0 | Contratos y documentos (este) |
-| S1 | Permisos: migración de roles en company-management y `inventory.reservations.write` en Inventory |
-| S2 | Esqueleto del módulo `sales`: puerto 8082, esquema `sales`, Flyway, filtro JWT |
-| S3 | Dominio: venta, línea, pago, estados, totales, cambio, política de canal |
-| S4 | Precios, folio por sucursal y persistencia |
-| S5 | Inventory: operación de devolución |
-| S6 | Cobrar: adaptador HTTP a Inventory, apartado, pago, confirmación, compensación y reentrada con la misma llave |
-| S7 | Cancelación |
-| S8 | Eventos con Outbox y RabbitMQ |
-| S9 | Cierre: prueba a mano con las tres aplicaciones, suite completa y documentos |
+Todas hechas (la rama `feat/ventas`, un commit por etapa); el detalle y la evidencia de cada una están en la bitácora.
+
+| Etapa | Qué se hizo | Bitácora |
+|---|---|---|
+| S0 | Contratos y documentos | BIT-059 |
+| S1 | Permisos: migración de roles en company-management y `inventory.reservations.write` en Inventory | BIT-060 |
+| S2 | Esqueleto del módulo `sales`: puerto 8082, esquema `sales`, Flyway, filtro JWT | BIT-061 |
+| S3 | Dominio: venta, línea, pago, estados, totales, cambio, política de canal | BIT-062 |
+| S4 | Precios, folio por sucursal y persistencia | BIT-063 |
+| S5 | Inventory: operación de devolución | BIT-064 |
+| S6 | Cobrar: adaptador HTTP a Inventory, apartado, pago, confirmación, compensación y reentrada con la misma llave | BIT-065 |
+| S7 | Cancelación | BIT-066 |
+| S8 | Eventos con Outbox y RabbitMQ | BIT-067 |
+| S9 | Cierre: prueba a mano con las tres aplicaciones y suite completa con servicios reales | BIT-068 |
+
+Lo que quedó abierto (ventas atoradas en confirmándose, reembolsos y caja, la lista de ventas con intentos fallidos, frontend, consumidores de eventos y las copias del filtro JWT, del Outbox y de la idempotencia) está listado al final de BIT-068.
 
 ## 7. Riesgos
 

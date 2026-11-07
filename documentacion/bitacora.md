@@ -1264,6 +1264,31 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Sin verificar:** nunca se corrió con la aplicación de inventario real, solo con el inventario falso por HTTP; eso es S9. El tiempo de espera de 5 s de la confirmación del broker no se probó (tarda 5 s).
 
 ---
+### BIT-068 · Ventas, etapa S9: cierre del frente de ventas, con las tres aplicaciones reales
+
+- **Qué se hizo:** se cierra el frente de ventas (S0 a S9, BIT-059 a BIT-068) con dos comprobaciones: la suite completa de los tres módulos, por defecto y con servicios reales, y una prueba a mano con las tres aplicaciones corriendo a la vez.
+- **Cómo se hizo:**
+  - **Suite completa por defecto (H2), `mvn test` desde la raíz, BUILD SUCCESS, 14 módulos:** núcleo 16; company-management 8 + 8 + 213 (6 omitidas); inventario 27 + 109 (7 omitidas); ventas 37 + 44 + 77 (1 omitida). Las omitidas son las de los perfiles `postgres` y `rabbitmq`.
+  - **Suite completa con servicios reales, `mvn -Ppostgres,rabbitmq test`, BUILD SUCCESS, sin ninguna prueba omitida:** las mismas cifras con 0 omitidas (company-management 213, inventario 109, ventas 77 en infraestructura) sobre PostgreSQL 16 y RabbitMQ 3.13 en contenedores.
+  - **Prueba a mano** (script temporal fuera del repositorio): se empaquetaron las tres aplicaciones, se levantó un RabbitMQ real en el puerto 5673 y las tres aplicaciones corrieron a la vez (company-management con el correo por consola, inventario, ventas), cada una sobre su base H2 en memoria. Recorrido: se registró una dueña, una empresa y una sucursal; **RH dio de alta a una cajera con el rol `STAFF`, ella activó su acceso con el enlace de la consola** y entró a la empresa. Su token trajo exactamente `sales.create`, `sales.read`, `inventory.reservations.write`, `inventory.products.read`, `inventory.warehouses.read`, `inventory.stock.read`, `operational_context.select` y `effective_permissions.read_own`. Con él: no pudo fijar precios (403); la dueña los fijó; **la cajera cobró 2 cafés (201, folio `TCK-000001`, total 91.00, cambio 9.00) y el inventario real quedó en 8 piezas**; repetir la misma llave devolvió la misma venta (200) sin tocar el inventario; la cajera no pudo cancelar (403); **la dueña canceló y el inventario real volvió a 10 piezas**; cancelar de nuevo respondió 409. **Seis ventas simultáneas de la última pieza: exactamente una respondió 201 y cinco 409, el stock quedó en cero y sin reservas colgadas.** Los eventos llegaron a RabbitMQ: la cola `jcomercy.events.sales.pending` tenía 3 mensajes (2 completadas y 1 cancelada), sin eventos de otros módulos, y el registro de Ventas no tuvo ningún error. Las aplicaciones y el contenedor se apagaron al terminar.
+- **Una falla del guion de la prueba a mano, no de las aplicaciones:** la primera corrida terminó con 403 al crear el almacén porque la dueña había entrado a la empresa **antes** de crear la sucursal y su token no la nombraba; inventario lee la sucursal del token. Es el límite ya documentado de los tokens de empresa (ERR-011): **tras crear una sucursal hay que volver a entrar a la empresa** para que el token la incluya. El guion ahora vuelve a entrar.
+- **Afectaciones:** ninguna sobre lo ya hecho. Es una etapa de verificación y documentación.
+- **Estado del frente:** todas las etapas del plan están hechas: contratos (S0), permisos (S1), módulo (S2), dominio (S3), precios, folio y persistencia (S4), devolución en inventario (S5), cobro (S6), cancelación (S7), eventos (S8) y este cierre. El plan fue de diez commits en la rama `feat/ventas`.
+- **Cambios respecto al plan, ya registrados:** no hay job de reintento (el cobro es reentrante con la misma llave, BIT-065) y se quitó `Idempotency-Key` de la cancelación (BIT-066); STAFF recibió además la lectura de productos y almacenes (BIT-060).
+- **Pendiente y límites que quedan abiertos:**
+  - **Una venta a la que inventario rechaza confirmar queda en `CONFIRMING`, ya cobrada, sin salida automática** (BIT-065).
+  - **Retomar un cobro solo sirve para la misma persona con la misma llave** (BIT-065).
+  - **La cancelación no registra el reembolso:** el dinero y la caja no existen todavía (BIT-066).
+  - **Cada intento de venta que pierde por falta de stock deja una venta `CANCELLED` sin folio:** en la prueba a mano, cinco de las seis ventas simultáneas quedaron así en la lista. No gasta folios y es el rastro de lo que se intentó, pero **ensucia la lista de ventas de la sucursal**; conviene decidir si se oculta, se agrupa o se borra con el tiempo.
+  - **La lista de ventas devuelve las 200 más recientes** y no hay paginación (BIT-063).
+  - **No se venden productos con lote o serie.**
+  - **No hay frontend:** el de `jcomercy-frontend` es un mock; la pantalla de venta es una sesión aparte.
+  - **Nadie consume los eventos de ventas** y no se probó con varias instancias de Ventas a la vez.
+  - **Deuda:** Ventas es la tercera copia del filtro JWT, del Outbox y de la idempotencia; extraerlos a `jcomercy-core` es un frente aparte (BIT-059).
+  - **La prueba a mano usó bases H2 en memoria**, no PostgreSQL; PostgreSQL se cubrió con la suite de pruebas. Las dos cosas juntas, aplicaciones reales sobre PostgreSQL real, no se corrieron.
+- **Sin verificar:** el CI de GitHub no se corrió (todavía no hay pull request); recordar que el chequeo `rabbitmq` no es obligatorio en el repositorio (ver BIT-057 y BIT-058), así que conviene exigirlo antes de fusionar.
+
+---
 
 ## Errores
 
