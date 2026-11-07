@@ -1,0 +1,169 @@
+asyncapi: 2.6.0
+info:
+  title: JComercy Sales Async API
+  version: 1.0.0
+  description: Eventos de integración que publica el módulo Sales de JComercy. Comparte el exchange y el sobre
+    `EventEnvelope` con Company Management e Inventory; este contrato describe solo lo que Sales emite.
+  contact:
+    name: Equipo de Arquitectura JComercy
+    email: architecture@jcomercy.com
+defaultContentType: application/json
+servers:
+  eventBus:
+    url: rabbitmq.jcomercy.internal:5672
+    protocol: amqp
+    description: Bus de eventos de integración interno entre módulos de JComercy. Los eventos se publican en el exchange
+      `jcomercy.events` (tipo topic, durable) con la clave de enrutamiento igual al tipo de evento, por ejemplo
+      `sales.sale.completed`; el canal `events/sales/sale/completed` es su nombre lógico. Todos los eventos de Sales
+      empiezan por `sales.` y llegan a la cola `jcomercy.events.sales.pending`, enlazada con `sales.#`. El mensaje lleva
+      el sobre `EventEnvelope` como cuerpo JSON (`application/json`), es persistente y trae su `eventId` como
+      `messageId` AMQP. Los eventos se entregan al menos una vez, así que quien los consuma debe descartar los repetidos
+      por ese identificador. El orden de entrega no está garantizado; quien necesite orden debe usar `sequence` del
+      sobre. Sales todavía no conoce la cuenta ni la versión del agregado, y los publica como nulos.
+channels:
+  events/sales/sale/completed:
+    description: Se completó una venta y su mercancía salió del almacén. Es el aviso para quien necesite saber de ventas
+      cerradas, por ejemplo contabilidad o notificaciones.
+    publish:
+      message:
+        $ref: '#/components/messages/SaleCompleted'
+  events/sales/sale/cancelled:
+    description: Se canceló una venta ya completada y su mercancía volvió al almacén.
+    publish:
+      message:
+        $ref: '#/components/messages/SaleCancelled'
+components:
+  messages:
+    SaleCompleted:
+      name: sales.sale.completed
+      title: Venta completada
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/SaleData'
+    SaleCancelled:
+      name: sales.sale.cancelled
+      title: Venta cancelada
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/SaleData'
+  schemas:
+    EventEnvelope:
+      type: object
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - aggregateVersion
+      - sequence
+      - occurredAt
+      - producerModule
+      - correlationId
+      - causationId
+      - accountId
+      - companyId
+      - branchId
+      - actorUserId
+      - data
+      properties:
+        eventId:
+          type: string
+          example: 7b0c1f2e-5d4a-4a52-9d52-0a8f5f3a4c11
+        eventType:
+          type: string
+          example: sales.sale.completed
+        schemaVersion:
+          type: string
+          example: '1.0'
+        aggregateVersion:
+          type: integer
+          nullable: true
+          description: Sales todavía no publica la versión del agregado; siempre es nulo.
+        sequence:
+          type: integer
+          description: Número creciente que Sales asigna al registrar cada evento, en el orden de registro. Puede tener huecos y no garantiza el orden de confirmación entre transacciones concurrentes; sirve para ordenar y para descartar repetidos.
+          example: 42
+        occurredAt:
+          type: string
+          format: date-time
+          example: '2026-11-07T20:00:00Z'
+        producerModule:
+          type: string
+          example: sales
+        correlationId:
+          type: string
+          example: cor_3f9a1c2b
+        causationId:
+          type: string
+          nullable: true
+          description: Sales todavía no publica la causa; siempre es nulo.
+        accountId:
+          type: string
+          nullable: true
+          description: Sales no conoce la cuenta; siempre es nulo.
+        companyId:
+          type: string
+          example: com_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        branchId:
+          type: string
+          example: brn_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        actorUserId:
+          type: string
+          description: La persona que hizo la operación, o SYSTEM cuando la hizo el propio sistema.
+          example: usr_01J8Z9X2Y3W4V5U6T7S8R9Q0P1
+        data:
+          type: object
+    SaleData:
+      type: object
+      properties:
+        saleId:
+          type: string
+        folio:
+          type: string
+          example: TCK-000123
+        channel:
+          type: string
+          description: Canal de origen de la venta. Hoy solo MOSTRADOR.
+          enum:
+          - MOSTRADOR
+        externalReference:
+          type: string
+          nullable: true
+          description: Identificador de la venta en el canal de origen; nulo en mostrador.
+        status:
+          type: string
+          enum:
+          - COMPLETED
+          - CANCELLED
+        warehouseId:
+          type: string
+        currency:
+          type: string
+          example: MXN
+        total:
+          type: number
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaleLineData'
+        reason:
+          type: string
+          description: Solo en sales.sale.cancelled; el motivo de la cancelación.
+    SaleLineData:
+      type: object
+      properties:
+        productId:
+          type: string
+        quantity:
+          type: number
+        unitPrice:
+          type: number
+        lineTotal:
+          type: number

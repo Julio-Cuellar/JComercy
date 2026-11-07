@@ -1102,6 +1102,19 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 
 ---
 
+### BIT-059 · Ventas, etapa S0: contratos y documentos del módulo
+
+- **Qué se hizo:** se escribieron los contratos del módulo de ventas antes de cualquier código: el REST (`openapi-sales-v1.yaml`, 5 rutas) y los eventos (`asyncapi-sales-v1.yaml`, 2 eventos), más el documento de diseño con las decisiones D1–D6, el flujo de la venta y las etapas S0 a S9. Es el primer paso del plan de ventas que la persona usuaria aprobó el 2026-11-07, con la venta única para todos los canales (`channel` y `externalReference`), solo el canal de mostrador, REST síncrono hacia inventario y eventos para avisar.
+- **Cómo se hizo:**
+  - `documentacion/openapi-sales-v1.yaml`: precios (`PUT` de un producto y `GET` de la empresa), venta de mostrador (`POST`, `GET` de la lista y de una venta) y cancelación. Cada operación declara su `x-required-permission`. `Sale` lleva `channel` (hoy solo `MOSTRADOR`) y `externalReference`. El estado de atención para ventas externas sin stock queda reservado en la descripción de `SaleStatus` y no está en el enum.
+  - `documentacion/asyncapi-sales-v1.yaml`: `sales.sale.completed` y `sales.sale.cancelled` con el sobre común `EventEnvelope`; el `data` lleva `channel`, `externalReference`, el folio y las líneas. La cola será `jcomercy.events.sales.pending`, enlazada con `sales.#`.
+  - `documentacion/diseno-modulo-ventas.md` (nuevo), una sección nueva en `matriz-contratos-permisos-propietarios.md`, una nota en `modelo-autorizacion-jcomercy.md` y un enlace en `estructura-base-jcomercy.md`.
+  - **Verificación:** los dos YAML se cargan sin error con un intérprete de YAML (5 rutas y 2 canales). **No hay prueba automática de Java en esta etapa**: no existe aún el módulo `sales` que pueda arrancar. El RED y GREEN de contrato llegan con las rutas: `OpenApiContractTest` en S4 y S6, y la prueba de contrato de eventos en S8.
+- **Afectaciones:** ninguna en datos ni en código. Los contratos son una promesa que S1 a S9 deben cumplir; las rutas pueden cambiar de detalle durante la implementación y, si cambian, hay que actualizar el contrato en la misma etapa. Los permisos `sales.*` y `inventory.reservations.write` **todavía no existen en ningún rol**: los siembra S1.
+- **Deuda anotada:** Sales será la tercera copia del filtro JWT, del Outbox y de la idempotencia (decisión D4 del plan). Extraerlos a `jcomercy-core` queda como un frente aparte.
+
+---
+
 ## Errores
 
 ### ERR-001 · `AccountIntegrationTest` depende del orden de ejecución

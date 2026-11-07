@@ -1,0 +1,323 @@
+openapi: 3.1.0
+info:
+  title: JComercy Sales API
+  version: 1.0.0
+  description: >-
+    Ventas de mostrador del módulo Sales: precios, venta con cobro, consulta y cancelación. La venta es única para
+    todos los canales (`channel`); hoy solo existe `MOSTRADOR`. Los precios son finales, con IVA incluido y sin
+    desglose. Sales pide a Inventory que aparte, confirme y libere el stock por su API REST; nunca toca sus tablas.
+security:
+  - bearerAuth: []
+servers:
+  - url: http://localhost:8082
+tags:
+  - name: Prices
+    description: Precio de venta de cada producto
+  - name: Sales
+    description: Ventas de mostrador, su consulta y su cancelación
+paths:
+  /api/v1/companies/{companyId}/products/{productId}/price:
+    put:
+      tags: [Prices]
+      summary: Fijar el precio de un producto
+      description: Crea el precio del producto o lo reemplaza. Las ventas nuevas usan el precio vigente; las ya hechas conservan el suyo.
+      x-required-permission: sales.prices.write
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetPriceRequest' }
+      responses:
+        '200':
+          description: Precio vigente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductPrice' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/companies/{companyId}/prices:
+    get:
+      tags: [Prices]
+      summary: Listar los precios de una empresa
+      x-required-permission: sales.read
+      parameters: [{ $ref: '#/components/parameters/CompanyId' }]
+      responses:
+        '200':
+          description: Precios vigentes
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ProductPrice' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/companies/{companyId}/branches/{branchId}/sales:
+    post:
+      tags: [Sales]
+      summary: Vender en el mostrador de una sucursal
+      description: >-
+        Aparta el stock de cada línea, valida el pago y confirma la salida de inventario. La petición no trae precios:
+        salen de la lista de la empresa. Si falta el precio de un producto o no alcanza el stock, no se vende nada.
+        Repetir la misma `Idempotency-Key` devuelve la venta ya hecha.
+      x-required-permission: sales.create
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSaleRequest' }
+      responses:
+        '201':
+          description: Venta cobrada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sale' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    get:
+      tags: [Sales]
+      summary: Listar las ventas de una sucursal
+      x-required-permission: sales.read
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+      responses:
+        '200':
+          description: Ventas de la sucursal, de la más reciente a la más antigua
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Sale' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/companies/{companyId}/branches/{branchId}/sales/{saleId}:
+    get:
+      tags: [Sales]
+      summary: Consultar una venta
+      x-required-permission: sales.read
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/SaleId'
+      responses:
+        '200':
+          description: Venta
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sale' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/companies/{companyId}/branches/{branchId}/sales/{saleId}/cancellation:
+    post:
+      tags: [Sales]
+      summary: Cancelar una venta
+      description: >-
+        Cancela la venta completa y regresa su stock. Pide un motivo. Una venta ya cancelada no se cancela otra vez.
+      x-required-permission: sales.cancel
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/SaleId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelSaleRequest' }
+      responses:
+        '200':
+          description: Venta cancelada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sale' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de empresa emitido por Company Management; sus permisos y sucursales mandan.
+  parameters:
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      schema: { type: string }
+    BranchId:
+      name: branchId
+      in: path
+      required: true
+      schema: { type: string }
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      description: Identificador público del producto en Inventory.
+      schema: { type: string, format: uuid }
+    SaleId:
+      name: saleId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string }
+  responses:
+    BadRequest:
+      description: La petición no es válida; el mensaje dice qué corregir.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: El token no da acceso a esa empresa, esa sucursal o ese permiso.
+    NotFound:
+      description: No existe lo que se pide en esa empresa y sucursal.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: El estado actual no lo permite, por ejemplo stock insuficiente o una venta ya cancelada.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+    SetPriceRequest:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: number
+          minimum: 0
+          description: Precio final por unidad de venta, con IVA incluido, con dos decimales.
+          example: 45.50
+        currency:
+          type: string
+          description: Código ISO de la moneda.
+          example: MXN
+    ProductPrice:
+      type: object
+      properties:
+        productId: { type: string, format: uuid }
+        amount: { type: number }
+        currency: { type: string }
+        updatedAt: { type: string, format: date-time }
+    CreateSaleRequest:
+      type: object
+      required: [warehouseId, lines, payments]
+      properties:
+        warehouseId:
+          type: string
+          format: uuid
+          description: Almacén de inventario del que sale la mercancía.
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/SaleLineRequest' }
+        payments:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/PaymentRequest' }
+    SaleLineRequest:
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId: { type: string, format: uuid }
+        quantity:
+          type: number
+          exclusiveMinimum: 0
+    PaymentRequest:
+      type: object
+      required: [method, amount]
+      properties:
+        method: { $ref: '#/components/schemas/PaymentMethod' }
+        amount:
+          type: number
+          exclusiveMinimum: 0
+        reference:
+          type: string
+          description: Autorización o referencia opcional de tarjeta o transferencia. Nunca el número de tarjeta.
+    CancelSaleRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
+    PaymentMethod:
+      type: string
+      enum: [CASH, CARD, TRANSFER]
+    SaleChannel:
+      type: string
+      enum: [MOSTRADOR]
+      description: >-
+        Canal por el que entró la venta. Hoy solo `MOSTRADOR`; otros canales, como `MERCADO_LIBRE`, se agregan con su
+        propio conector sin cambiar la venta.
+    SaleStatus:
+      type: string
+      enum: [PENDING, CONFIRMING, COMPLETED, CANCELLED]
+      description: >-
+        PENDING: el stock está apartado. CONFIRMING: el pago está registrado y falta confirmar la salida de inventario.
+        COMPLETED: vendida. CANCELLED: cancelada y con su stock devuelto. Está reservado un estado de atención para ventas
+        de otros canales que entran sin stock suficiente; todavía no se usa.
+    Sale:
+      type: object
+      properties:
+        saleId: { type: string, format: uuid }
+        folio:
+          type: string
+          description: Folio de la venta en su sucursal.
+          example: TCK-000123
+        channel: { $ref: '#/components/schemas/SaleChannel' }
+        externalReference:
+          type: string
+          nullable: true
+          description: Identificador de la venta en el canal de origen; vacío en mostrador.
+        status: { $ref: '#/components/schemas/SaleStatus' }
+        branchId: { type: string }
+        warehouseId: { type: string, format: uuid }
+        currency: { type: string }
+        total: { type: number }
+        received:
+          type: number
+          description: Suma de lo que se recibió en los pagos.
+        change:
+          type: number
+          description: Cambio que se devuelve; solo hay cambio cuando se paga en efectivo.
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/SaleLine' }
+        payments:
+          type: array
+          items: { $ref: '#/components/schemas/Payment' }
+        actorUserId: { type: string }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+        cancelledAt: { type: string, format: date-time, nullable: true }
+        cancelReason: { type: string, nullable: true }
+    SaleLine:
+      type: object
+      properties:
+        lineNumber: { type: integer }
+        productId: { type: string, format: uuid }
+        sku: { type: string }
+        name: { type: string }
+        quantity: { type: number }
+        unitPrice: { type: number }
+        lineTotal: { type: number }
+    Payment:
+      type: object
+      properties:
+        method: { $ref: '#/components/schemas/PaymentMethod' }
+        amount: { type: number }
+        reference: { type: string, nullable: true }

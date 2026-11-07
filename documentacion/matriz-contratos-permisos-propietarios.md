@@ -115,3 +115,20 @@ Este documento define la asignación de propiedad exclusiva de datos y contratos
 | **Webhooks** | `POST` | `/api/v1/companies/{publicCompanyId}/webhook-subscriptions/{subscriptionId}/deliveries/{deliveryId}/redelivery` | `webhooks.redeliver` | `COMPANY` | Company Management |
 | **Billing Interno** | `GET` | `/internal/v1/companies/{publicCompanyId}/billing-capabilities` | `internal.billing.read` | `COMPANY` | Company Management |
 | **Billing Interno** | `POST` | `/internal/v1/companies/{publicCompanyId}/billing-change-requests` | `internal.billing.manage` | `COMPANY` | Company Management |
+
+---
+
+## 3. Rutas y permisos de Sales
+
+Contrato: [openapi-sales-v1.yaml](openapi-sales-v1.yaml); diseño: [diseno-modulo-ventas.md](diseno-modulo-ventas.md). Sales es propietario exclusivo de precios de venta, ventas, líneas, pagos y folios (esquema `sales`). Las rutas pueden cambiar de detalle hasta que cada etapa de BIT-059 en adelante las implemente.
+
+| Dominio | Método | Ruta HTTP | Permiso Explícito (`x-required-permission`) | Alcance Mínimo | Módulo Propietario |
+|---|:---:|---|---|:---:|:---:|
+| **Precios** | `PUT` | `/api/v1/companies/{companyId}/products/{productId}/price` | `sales.prices.write` | `COMPANY` | Sales |
+| **Precios** | `GET` | `/api/v1/companies/{companyId}/prices` | `sales.read` | `COMPANY` | Sales |
+| **Ventas** | `POST` | `/api/v1/companies/{companyId}/branches/{branchId}/sales` | `sales.create` | `BRANCH` | Sales |
+| **Ventas** | `GET` | `/api/v1/companies/{companyId}/branches/{branchId}/sales` | `sales.read` | `BRANCH` | Sales |
+| **Ventas** | `GET` | `/api/v1/companies/{companyId}/branches/{branchId}/sales/{saleId}` | `sales.read` | `BRANCH` | Sales |
+| **Ventas** | `POST` | `/api/v1/companies/{companyId}/branches/{branchId}/sales/{saleId}/cancellation` | `sales.cancel` | `BRANCH` | Sales |
+
+Permisos por rol del sistema (se siembran en la etapa S1): `COMPANY_ADMIN` recibe `sales.*`; `BRANCH_MANAGER`, `sales.create`, `sales.read`, `sales.cancel` y `sales.prices.write`; `STAFF`, `sales.create` y `sales.read`. Para vender, Sales reenvía el token de quien vende a Inventory, que exige además `inventory.reservations.write` (permiso nuevo, también en S1).
