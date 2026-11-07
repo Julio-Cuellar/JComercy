@@ -1128,6 +1128,22 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Sin verificar:** la suite con `-Ppostgres,rabbitmq` no se corrió en esta etapa (se corre al cerrar, en S9). La migración V031 solo se aplicó sobre H2.
 
 ---
+### BIT-061 · Ventas, etapa S2: esqueleto del módulo `sales`
+
+- **Qué se hizo:** nace el módulo `sales` (dominio, aplicación e infraestructura) como una aplicación Spring Boot propia: puerto 8082, esquema `sales`, Flyway, y el mismo token de empresa que emite company-management. Todavía no tiene rutas de negocio.
+- **Cómo se hizo:**
+  - **Módulo:** `sales/pom.xml`, `sales-domain`, `sales-application` y `sales-infra`, registrado en el pom raíz. `sales-infra` usa `JdbcTemplate` (`spring-boot-starter-jdbc`), no JPA, como las adaptaciones recientes de company-management. Sin RabbitMQ todavía (llega en S8).
+  - **Seguridad:** copia reducida de la de inventario (decisión D4): `JwtTokenService`, `JwtAuthenticationFilter`, `JwtContext`, `JwtAuthorizationService` (sin la parte de almacenes ni la compatibilidad con permisos heredados) y `SecurityConfig`. La llave sale de `security.jwt.secret` (`SECURITY_JWT_SECRET`).
+  - **Errores:** `SalesExceptionHandler` con 404, 405, validación, petición mal formada y 500, con el mismo estilo que inventario (ERR-003).
+  - **Datos:** `V001__sales_create_schema.sql`. `application.yml` con H2 por defecto y Flyway sobre `sales`.
+  - **Pruebas:** `JwtAuthorizationServiceTest` (4, unitarias: permisos exactos, comodines, sin permisos, alcance por empresa y sucursal) y `SalesApplicationSmokeIntegrationTest` (4: arranque con su esquema, sin token 401, token firmado con otra llave 401, ruta inexistente 404). `PostgresTestDatabase` y su `spring.factories`, copiados de inventario, para correr con `-Ppostgres` (con `max_connections=500` desde el principio, ERR-030).
+  - **RED (por compilación):** `mvn -pl sales/sales-infra -am test` falló al compilar con `cannot find symbol: class JwtAuthorizationService` y `class JwtContext`, que es la falta de implementación que se buscaba. **GREEN:** 8 de 8 en H2 y, con `-Ppostgres`, 4 de 4 de la prueba de arranque contra PostgreSQL 16 real.
+  - **Una aserción corregida:** la prueba del esquema esperaba exactamente 1 y H2 devuelve 2 (Flyway crea `"sales"` entre comillas y `V001` crea `SALES`). Era un error de la prueba, no del módulo; ahora pide al menos 1 y lo explica. En PostgreSQL es uno solo.
+- **Afectaciones:** el repositorio tiene un módulo más y la construcción raíz (`mvn test`) lo incluye. Una cuarta aplicación escucha en el 8082. Ningún contrato cambia. `OpenApiContractTest` de ventas todavía no existe: se agrega en S4, cuando haya rutas que comparar.
+- **Deuda:** tercera copia del filtro JWT (ver BIT-059).
+- **Sin verificar:** la suite completa de los otros módulos no se volvió a correr en esta etapa, porque ninguno de sus archivos cambió; se corre completa en S9. No se mutó el código de seguridad en esta etapa.
+
+---
 
 ## Errores
 
