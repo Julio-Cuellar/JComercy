@@ -81,6 +81,7 @@ paths:
     get:
       tags: [Sales]
       summary: Listar las ventas de una sucursal
+      description: Devuelve las 200 ventas más recientes de la sucursal. La paginación llega cuando haga falta.
       x-required-permission: sales.read
       parameters:
         - $ref: '#/components/parameters/CompanyId'

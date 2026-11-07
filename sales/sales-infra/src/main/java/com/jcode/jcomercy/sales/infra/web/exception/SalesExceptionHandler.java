@@ -1,5 +1,8 @@
 package com.jcode.jcomercy.sales.infra.web.exception;
 
+import com.jcode.jcomercy.sales.application.exception.SalesApplicationException;
+import com.jcode.jcomercy.sales.domain.exception.DuplicateSaleException;
+import com.jcode.jcomercy.sales.domain.exception.SalesDomainException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -19,6 +22,26 @@ import java.util.Map;
 @RestControllerAdvice
 public class SalesExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(SalesExceptionHandler.class);
+
+    @ExceptionHandler(SalesApplicationException.class)
+    public ResponseEntity<Map<String, String>> handleApplication(SalesApplicationException exception) {
+        log.warn("Operación de ventas rechazada: {}", exception.getMessage());
+        boolean notFound = exception.kind() == SalesApplicationException.Kind.NOT_FOUND;
+        return ResponseEntity.status(notFound ? HttpStatus.NOT_FOUND : HttpStatus.CONFLICT)
+                .body(Map.of("code", notFound ? "NOT_FOUND" : "CONFLICT", "message", exception.getMessage()));
+    }
+
+    @ExceptionHandler(DuplicateSaleException.class)
+    public ResponseEntity<Map<String, String>> handleDuplicate(DuplicateSaleException exception) {
+        log.warn("Venta repetida: {}", exception.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("code", "CONFLICT", "message", exception.getMessage()));
+    }
+
+    @ExceptionHandler(SalesDomainException.class)
+    public ResponseEntity<Map<String, String>> handleDomain(SalesDomainException exception) {
+        log.warn("Regla de ventas incumplida: {}", exception.getMessage());
+        return ResponseEntity.badRequest().body(Map.of("code", "SALES_RULE_VIOLATION", "message", exception.getMessage()));
+    }
 
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Map<String, String>> handleUnknownRoute(NoResourceFoundException exception) {

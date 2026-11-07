@@ -1159,6 +1159,28 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Sin verificar:** la regla de referencias de tarjeta es heurística (13 o más dígitos) y puede rechazar una autorización legítima muy larga; no hay manera de distinguirla de un número de tarjeta sin conocer el formato del procesador. No se probó con datos de un cobro real.
 
 ---
+### BIT-063 · Ventas, etapa S4: precios, folio por sucursal y persistencia de ventas
+
+- **Qué se hizo:** el módulo de ventas ya guarda precios, ventas (con líneas y pagos) y folios en su esquema `sales`, y expone cuatro de las cinco rutas del contrato: fijar y listar precios, y listar y consultar ventas. Cobrar y cancelar llegan en S6 y S7.
+- **Cómo se hizo:**
+  - **Dominio:** `ProductPrice` (centavos, moneda de tres letras, nunca negativo), `DuplicateSaleException` y tres puertos: `ProductPriceRepositoryPort`, `SaleRepositoryPort` y `FolioGeneratorPort`.
+  - **Aplicación:** `PriceApplicationService` (fijar reemplaza, listar), `SaleQueryService` (una venta de otra sucursal o empresa no se encuentra, igual que una que no existe) y `SalesApplicationException`.
+  - **Datos** (Flyway): `V002` `product_price`, `V003` `ticket_sequence` y `V004` `sale`, `sale_line` y `sale_payment`. La unicidad por (empresa, canal, referencia externa) protege contra registrar dos veces una venta de un canal externo; en mostrador la referencia es nula y los nulos no chocan, al revés que en el saldo de inventario (V011 de inventario). El folio también es único por sucursal y nulo hasta completar.
+  - **Adaptadores con `JdbcTemplate`:** el precio se crea o reemplaza en una sola sentencia (`ON CONFLICT` en PostgreSQL, `MERGE` en H2; `SqlDialect` decide), así que dos personas que fijan el precio de un producto nuevo a la vez no chocan. El folio crea la fila de la sucursal si falta y la bloquea con `FOR UPDATE` al tomar el número. La venta guarda sus líneas una sola vez y reescribe sus pagos al avanzar; la lista se lee con las líneas y pagos de todas las ventas en dos consultas.
+  - **Rutas:** `PUT /companies/{c}/products/{p}/price`, `GET /companies/{c}/prices`, `GET /companies/{c}/branches/{b}/sales` y `GET .../sales/{saleId}`, con el permiso y el alcance que el contrato declara. Errores: 403 sin permiso o alcance, 404 con «No encontramos esa venta en esta sucursal.», 400 de validación, 409 para una venta repetida y 400 para una regla de ventas incumplida.
+  - **Pruebas nuevas (44):** dominio 4 (`ProductPriceTest`), aplicación 7 (`PriceApplicationServiceTest`, `SaleQueryServiceTest`), infraestructura 29 (`ProductPriceIntegrationTest` 7, `SalesReadIntegrationTest` 6, `JdbcSaleRepositoryAdapterIntegrationTest` 7, `JdbcFolioGeneratorAdapterIntegrationTest` 3 con veinte hilos a la vez, `OpenApiContractTest` 1 y `RequiredPermissionsContractTest` 1, que recorre cada ruta implementada, exige el `x-required-permission` del contrato y comprueba que sin ese permiso responde 403 y con él no).
+  - **RED (por compilación):** `mvn -pl sales/sales-infra -am test-compile` falló con `cannot find symbol: class ProductPrice` en el dominio, que es lo que se buscaba. **GREEN:** el módulo de ventas completo, 77 pruebas (37 dominio, 7 aplicación, 33 infraestructura), en H2 y también con `-Ppostgres` contra PostgreSQL 16 real.
+  - **Mutaciones temporales (9), todas detectadas y revertidas con la huella igual:** quitar el `FOR UPDATE` del folio (la detecta la prueba de veinte hilos, incluso en H2), cambiar el formato del folio, que fijar precios pida `sales.read`, quitar el alcance por sucursal en la lista, no traducir el choque de unicidad, quitar la empresa de la llave del precio, quitar la sucursal de la búsqueda de una venta, comodines sin interpretar y la lista en orden inverso.
+  - **Una prueba ajustada antes del GREEN:** `RequiredPermissionsContractTest` mandaba `{}` como cuerpo, y Spring valida el cuerpo antes de entrar al controlador, así que una petición sin permiso y con cuerpo inválido respondía 400 y no 403. La prueba ahora manda un cuerpo válido por ruta (el mismo comportamiento ya existe en inventario).
+- **Afectaciones:** `openapi-sales-v1.yaml` suma que la lista devuelve las 200 ventas más recientes. Tres tablas y un índice nuevos en el esquema `sales`. Las rutas de cobro y cancelación del contrato todavía no existen; `OpenApiContractTest` solo exige que lo implementado esté documentado, no lo contrario.
+- **Límites conocidos:**
+  - **La lista de ventas devuelve como máximo 200** y no hay paginación todavía.
+  - **Ventas no comprueba que el producto de un precio exista en inventario:** se puede fijar el precio de un identificador que no es de ningún producto. El error aparecerá al vender, cuando S6 lea el producto.
+  - **El permiso se comprueba después de validar el cuerpo**, como en inventario: quien no tiene permiso ve un 400 antes que un 403 si manda un cuerpo inválido.
+  - **Una regla de ventas incumplida responde 400**, incluso «la venta ya está cancelada», que debería ser 409; S7 lo resuelve comprobando el estado antes.
+- **Sin verificar:** la suite completa de los otros módulos no se volvió a correr (no cambiaron); se corre al cerrar en S9. El folio no se probó con contenedores PostgreSQL y varias instancias de la aplicación a la vez, solo con veinte hilos de una.
+
+---
 
 ## Errores
 
