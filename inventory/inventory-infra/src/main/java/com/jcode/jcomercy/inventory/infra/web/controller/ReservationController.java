@@ -97,10 +97,14 @@ public class ReservationController {
         return ResponseEntity.ok(service.availability(companyId, productId));
     }
 
+    /**
+     * Apartar, liberar y confirmar las hace también quien vende, y el personal de ventas no debe poder recibir mercancía:
+     * por eso basta {@code inventory.reservations.write}, que no abre nada más de inventario.
+     */
     private boolean canWrite(Authentication authentication, String companyId, String branchId) {
         return authorization.canAccessCompany(authentication, companyId)
                 && authorization.canAccessBranch(authentication, branchId)
-                && authorization.hasPermission(authentication, "inventory.stock.write");
+                && authorization.hasAnyPermission(authentication, "inventory.stock.write", "inventory.reservations.write");
     }
 
     private static ReservationApplicationService.ReferenceCommand command(String companyId, String branchId,

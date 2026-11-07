@@ -131,4 +131,4 @@ Contrato: [openapi-sales-v1.yaml](openapi-sales-v1.yaml); diseño: [diseno-modul
 | **Ventas** | `GET` | `/api/v1/companies/{companyId}/branches/{branchId}/sales/{saleId}` | `sales.read` | `BRANCH` | Sales |
 | **Ventas** | `POST` | `/api/v1/companies/{companyId}/branches/{branchId}/sales/{saleId}/cancellation` | `sales.cancel` | `BRANCH` | Sales |
 
-Permisos por rol del sistema (se siembran en la etapa S1): `COMPANY_ADMIN` recibe `sales.*`; `BRANCH_MANAGER`, `sales.create`, `sales.read`, `sales.cancel` y `sales.prices.write`; `STAFF`, `sales.create` y `sales.read`. Para vender, Sales reenvía el token de quien vende a Inventory, que exige además `inventory.reservations.write` (permiso nuevo, también en S1).
+Permisos por rol del sistema (los siembra la migración V031, etapa S1): `COMPANY_ADMIN` recibe `sales.*`; `BRANCH_MANAGER`, `sales.create`, `sales.read`, `sales.cancel` y `sales.prices.write`; `STAFF`, `sales.create` y `sales.read`. Para vender, Sales reenvía el token de quien vende a Inventory, cuyas rutas de reserva aceptan `inventory.reservations.write` (permiso nuevo, en S1) además de `inventory.stock.write`; `STAFF` y `BRANCH_MANAGER` lo reciben.

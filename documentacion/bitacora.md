@@ -1114,6 +1114,20 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Deuda anotada:** Sales será la tercera copia del filtro JWT, del Outbox y de la idempotencia (decisión D4 del plan). Extraerlos a `jcomercy-core` queda como un frente aparte.
 
 ---
+### BIT-060 · Ventas, etapa S1: permisos de ventas y permiso angosto de reservas
+
+- **Qué se hizo:** los roles del sistema reciben los permisos de ventas, e inventario acepta un permiso angosto para apartar, liberar y confirmar stock. Quien vende (personal general) puede hacerlo sin poder recibir mercancía ni consultar existencias de más.
+- **Cómo se hizo:**
+  - **Inventario:** `ReservationController.canWrite` acepta `inventory.reservations.write` además de `inventory.stock.write` (`hasAnyPermission`, así que los comodines siguen valiendo). La lectura de disponibilidad sigue pidiendo `inventory.stock.read`.
+  - **Company-management:** migración `V031__company_management_sales_permissions_for_system_roles.sql`. `COMPANY_ADMIN` suma `sales.*`; `BRANCH_MANAGER` suma `inventory.reservations.write`, `sales.create`, `sales.read`, `sales.cancel` y `sales.prices.write`; `STAFF` suma `inventory.reservations.write`, `inventory.products.read`, `inventory.warehouses.read`, `sales.create` y `sales.read`. Se conserva lo que dejaron V026, V027 y V030. **STAFF recibe además la lectura de productos y almacenes, que el plan no nombraba:** Ventas lee el producto en inventario con el token de quien vende y la petición lleva el `warehouseId`, así que sin esa lectura el personal no podría vender.
+  - **Pruebas nuevas:** `ReservationNarrowPermissionIntegrationTest` (4, inventario): con solo el permiso angosto se aparta, se libera y se confirma; no se recibe stock ni se consulta; quien solo lee no aparta; el permiso respeta la sucursal del token. `SalesDefaultPermissionsIntegrationTest` (4, company-management): permisos de ventas por rol y los que conservan.
+  - **RED:** inventario, 4 pruebas con 1 fallo (apartar con el permiso angosto respondía 403 en vez de 201; las otras 3 fijan comportamiento que ya existía). Company-management, 4 pruebas con 3 fallos (los tres roles sin permisos de ventas). **GREEN:** 4 de 4 en cada una, mismas pruebas.
+  - **Prueba existente que cambió:** `CompanyAccessIntegrationTest.enteringAsAMemberNeverMixesTheOtherCompany` fijaba la lista exacta de permisos del personal; ahora lista los nuevos. Lo que protege (nada de `*` ni de la otra empresa) no cambió. La primera corrida completa falló por esa prueba y la segunda pasó.
+  - **Suite completa por defecto (H2):** `mvn test` desde la raíz, BUILD SUCCESS: jcomercy-core 16, company-management 8 + 8 + 213 (6 omitidas), inventario 27 + 99 (7 omitidas). Las omitidas son las de los perfiles `postgres` y `rabbitmq`.
+- **Afectaciones:** los roles del sistema de las empresas ya existentes cambian al aplicarse V031 (sube la `version` de las tres filas); los roles propios de cada empresa no. Una persona con rol `STAFF` ahora ve productos y almacenes de su empresa en inventario. El OpenAPI de inventario no declara permisos por ruta, así que no hubo contrato que actualizar.
+- **Sin verificar:** la suite con `-Ppostgres,rabbitmq` no se corrió en esta etapa (se corre al cerrar, en S9). La migración V031 solo se aplicó sobre H2.
+
+---
 
 ## Errores
 
