@@ -1144,6 +1144,21 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
 - **Sin verificar:** la suite completa de los otros módulos no se volvió a correr en esta etapa, porque ninguno de sus archivos cambió; se corre completa en S9. No se mutó el código de seguridad en esta etapa.
 
 ---
+### BIT-062 · Ventas, etapa S3: el dominio de la venta
+
+- **Qué se hizo:** el agregado `Sale` y sus piezas en `sales-domain`: líneas, pagos, estados, totales, cambio y política de canal. Es dominio puro, sin base de datos ni red; los casos de uso y la persistencia llegan en S4 y S6.
+- **Cómo se hizo:**
+  - **Clases** (`com.jcode.jcomercy.sales.domain`): `Sale` (record inmutable; cada paso devuelve otra venta), `SaleLine`, `Payment`, `PaymentMethod`, `SaleStatus`, `SaleChannel`, `ChannelPolicy` y `SalesDomainException`, con mensajes escritos para quien vende.
+  - **Reglas:** el total suma los importes de línea redondeados a centavos (mitad hacia arriba); no hay venta sin productos, con cantidad cero ni con el mismo producto en dos líneas; la moneda es un código de tres letras. **Cobro:** la suma de pagos debe cubrir el total; tarjeta y transferencia no pueden pasar del total, así que el cambio sale siempre del efectivo; **una referencia con 13 dígitos o más se rechaza** porque parece un número de tarjeta, y nunca se guarda. **Estados:** `PENDING` → `CONFIRMING` (con los pagos) → `COMPLETED` (con folio); se cancela desde `PENDING` o `COMPLETED`, con motivo; una venta `CONFIRMING` no se cancela hasta terminar, y una cancelada no se cancela otra vez.
+  - **Decisión de diseño:** el **folio se da al completar**, no al crear, para que los folios de una sucursal no tengan huecos por ventas rechazadas o abandonadas.
+  - **Política de canal:** `SaleChannel.MOSTRADOR.policy()` fija precio de la lista, pago dentro de la venta y rechazo si falta stock. Hoy ninguna regla del dominio la consulta: la usará la capa de aplicación en S6 (`stockShortage`). Queda como costura, con una sola implementación.
+  - **Pruebas nuevas (33):** `SaleTest` (10), `SalePaymentsTest` (11), `SaleLifecycleTest` (10), `ChannelPolicyTest` (2), con `SaleTestData` compartido.
+  - **RED (por compilación):** `mvn -pl sales/sales-domain -am test` falló al compilar con `cannot find symbol` para `Sale`, `SalesDomainException`, `SaleChannel`, `SaleStatus` y `Payment`, entre otras. **GREEN:** 33 de 33 a la primera.
+  - **Mutaciones temporales (9), todas detectadas y revertidas con la huella igual:** `>`→`>=` en el tope de tarjeta, `<`→`<=` en lo recibido, 13→14 dígitos de tarjeta, redondeo hacia abajo, quitar el rechazo de cancelar una venta confirmándose, quitar el rechazo de productos repetidos, cambio siempre cero, permitir pagos fuera de `PENDING` y permitir completar fuera de `CONFIRMING`.
+- **Afectaciones:** ninguna fuera de `sales-domain`. El contrato `openapi-sales-v1.yaml` ya describe estos estados y reglas; S4 y S6 los exponen.
+- **Sin verificar:** la regla de referencias de tarjeta es heurística (13 o más dígitos) y puede rechazar una autorización legítima muy larga; no hay manera de distinguirla de un número de tarjeta sin conocer el formato del procesador. No se probó con datos de un cobro real.
+
+---
 
 ## Errores
 
