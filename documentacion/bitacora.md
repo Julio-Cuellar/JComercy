@@ -1286,7 +1286,17 @@ Contexto: las ventas en línea necesitan apartar stock al recibir el pedido, des
   - **Nadie consume los eventos de ventas** y no se probó con varias instancias de Ventas a la vez.
   - **Deuda:** Ventas es la tercera copia del filtro JWT, del Outbox y de la idempotencia; extraerlos a `jcomercy-core` es un frente aparte (BIT-059).
   - **La prueba a mano usó bases H2 en memoria**, no PostgreSQL; PostgreSQL se cubrió con la suite de pruebas. Las dos cosas juntas, aplicaciones reales sobre PostgreSQL real, no se corrieron.
-- **Sin verificar:** el CI de GitHub no se corrió (todavía no hay pull request); recordar que el chequeo `rabbitmq` no es obligatorio en el repositorio (ver BIT-057 y BIT-058), así que conviene exigirlo antes de fusionar.
+- **Sin verificar:** el CI de GitHub no se corrió (todavía no hay pull request); recordar que el chequeo `rabbitmq` no es obligatorio en el repositorio (ver BIT-057 y BIT-058), así que conviene exigirlo antes de fusionar. *(Cubierto después: el PR #11 se fusionó con los tres chequeos en verde, ver BIT-069.)*
+
+### BIT-069 · Ventas: el CI del pull request y de `main` pasó tras fusionar
+
+- **Qué se hizo:** se registra que el frente de ventas ya está en `main` y que su CI pasó, lo que BIT-068 dejó «sin verificar».
+- **Cómo se hizo:** consulta con `gh`, sin cambios de código.
+  - **PR #11** (`feat/ventas` → `main`, «feat(ventas): módulo de ventas de mostrador con cobro, cancelación y eventos»): los tres chequeos pasaron, `test` (2m37s), `postgres` (2m37s) y `rabbitmq` (3m29s), en la corrida 42345262026.
+  - **Fusionado el 2026-11-07** a las 14:07 UTC, en el commit `0226860`. La corrida del CI sobre `main` tras la fusión (42380119097) terminó con éxito.
+  - Archivo tocado: `documentacion/bitacora.md` (esta entrada y la nota en BIT-068).
+- **Afectaciones:** ninguna sobre el código.
+- **Hallazgo:** `main` **no tiene protección de rama ni reglas** (la API de GitHub responde «Branch not protected» y la lista de reglas está vacía). Ningún chequeo es obligatorio para fusionar, ni siquiera `test`. Esta vez pasaron los tres, pero nada impide fusionar con el CI en rojo. Conviene exigir `test`, `postgres` y `rabbitmq` en `main`; es un ajuste del repositorio en GitHub que corresponde a quien lo administra.
 
 ---
 
